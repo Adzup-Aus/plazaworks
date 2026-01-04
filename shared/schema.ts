@@ -175,3 +175,138 @@ export type InsertScheduleEntry = z.infer<typeof insertScheduleEntrySchema>;
 export type JobWithSchedule = Job & {
   scheduleEntries: ScheduleEntry[];
 };
+
+// =====================
+// PHASE 2: PC Items, Notifications, Client Portal
+// =====================
+
+// PC Item statuses
+export const pcItemStatuses = [
+  "pending",
+  "in_progress",
+  "completed",
+  "not_applicable"
+] as const;
+
+export type PCItemStatus = typeof pcItemStatuses[number];
+
+// Notification types
+export const notificationTypes = [
+  "job_assigned",
+  "job_updated",
+  "job_completed",
+  "schedule_changed",
+  "pc_item_added",
+  "pc_item_completed",
+  "general"
+] as const;
+
+export type NotificationType = typeof notificationTypes[number];
+
+// PC Items - Practical Completion items for jobs
+export const pcItems = pgTable("pc_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobId: varchar("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  status: varchar("status", { length: 50 }).notNull().default("pending"),
+  assignedToId: varchar("assigned_to_id"),
+  dueDate: date("due_date"),
+  completedAt: timestamp("completed_at"),
+  completedById: varchar("completed_by_id"),
+  sortOrder: varchar("sort_order", { length: 10 }).default("0"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_pc_items_job").on(table.jobId),
+  index("idx_pc_items_status").on(table.status),
+]);
+
+// Notifications
+export const notifications = pgTable("notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  type: varchar("type", { length: 50 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message"),
+  relatedJobId: varchar("related_job_id"),
+  relatedPCItemId: varchar("related_pc_item_id"),
+  isRead: boolean("is_read").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_notifications_user").on(table.userId),
+  index("idx_notifications_read").on(table.isRead),
+  index("idx_notifications_created").on(table.createdAt),
+]);
+
+// Client access tokens - for shareable job links
+export const clientAccessTokens = pgTable("client_access_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobId: varchar("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
+  token: varchar("token", { length: 64 }).notNull().unique(),
+  expiresAt: timestamp("expires_at"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdById: varchar("created_by_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_client_tokens_job").on(table.jobId),
+  index("idx_client_tokens_token").on(table.token),
+]);
+
+// Phase 2 Relations
+export const pcItemsRelations = relations(pcItems, ({ one }) => ({
+  job: one(jobs, {
+    fields: [pcItems.jobId],
+    references: [jobs.id],
+  }),
+}));
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  job: one(jobs, {
+    fields: [notifications.relatedJobId],
+    references: [jobs.id],
+  }),
+}));
+
+export const clientAccessTokensRelations = relations(clientAccessTokens, ({ one }) => ({
+  job: one(jobs, {
+    fields: [clientAccessTokens.jobId],
+    references: [jobs.id],
+  }),
+}));
+
+// Phase 2 Insert Schemas
+export const insertPCItemSchema = createInsertSchema(pcItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  completedAt: true,
+  completedById: true,
+}).extend({
+  title: z.string().min(1, "Title is required"),
+  status: z.enum(pcItemStatuses).optional(),
+});
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  type: z.enum(notificationTypes),
+  title: z.string().min(1, "Title is required"),
+});
+
+export const insertClientAccessTokenSchema = createInsertSchema(clientAccessTokens).omit({
+  id: true,
+  createdAt: true,
+  token: true,
+});
+
+// Phase 2 Types
+export type PCItem = typeof pcItems.$inferSelect;
+export type InsertPCItem = z.infer<typeof insertPCItemSchema>;
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+
+export type ClientAccessToken = typeof clientAccessTokens.$inferSelect;
+export type InsertClientAccessToken = z.infer<typeof insertClientAccessTokenSchema>;

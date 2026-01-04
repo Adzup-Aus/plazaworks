@@ -5,14 +5,24 @@ import {
   type InsertJob,
   type ScheduleEntry,
   type InsertScheduleEntry,
+  type PCItem,
+  type InsertPCItem,
+  type Notification,
+  type InsertNotification,
+  type ClientAccessToken,
+  type InsertClientAccessToken,
   staffProfiles,
   jobs,
   scheduleEntries,
+  pcItems,
+  notifications,
+  clientAccessTokens,
   users,
   type User,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
+import crypto from "crypto";
 
 export interface IStorage {
   // Staff profile operations
@@ -40,6 +50,28 @@ export interface IStorage {
   createScheduleEntry(entry: InsertScheduleEntry): Promise<ScheduleEntry>;
   updateScheduleEntry(id: string, entry: Partial<InsertScheduleEntry>): Promise<ScheduleEntry | undefined>;
   deleteScheduleEntry(id: string): Promise<boolean>;
+
+  // PC Item operations
+  getPCItems(jobId: string): Promise<PCItem[]>;
+  getPCItem(id: string): Promise<PCItem | undefined>;
+  createPCItem(item: InsertPCItem): Promise<PCItem>;
+  updatePCItem(id: string, item: Partial<InsertPCItem>): Promise<PCItem | undefined>;
+  completePCItem(id: string, completedById: string): Promise<PCItem | undefined>;
+  deletePCItem(id: string): Promise<boolean>;
+
+  // Notification operations
+  getNotifications(userId: string): Promise<Notification[]>;
+  getUnreadNotificationCount(userId: string): Promise<number>;
+  createNotification(notification: InsertNotification): Promise<Notification>;
+  markNotificationRead(id: string): Promise<Notification | undefined>;
+  markAllNotificationsRead(userId: string): Promise<boolean>;
+  deleteNotification(id: string): Promise<boolean>;
+
+  // Client access token operations
+  getClientAccessToken(token: string): Promise<ClientAccessToken | undefined>;
+  getClientAccessTokensByJob(jobId: string): Promise<ClientAccessToken[]>;
+  createClientAccessToken(data: InsertClientAccessToken): Promise<ClientAccessToken>;
+  revokeClientAccessToken(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -167,6 +199,127 @@ export class DatabaseStorage implements IStorage {
 
   async deleteScheduleEntry(id: string): Promise<boolean> {
     await db.delete(scheduleEntries).where(eq(scheduleEntries.id, id));
+    return true;
+  }
+
+  // PC Item operations
+  async getPCItems(jobId: string): Promise<PCItem[]> {
+    return db.select().from(pcItems).where(eq(pcItems.jobId, jobId)).orderBy(pcItems.sortOrder);
+  }
+
+  async getPCItem(id: string): Promise<PCItem | undefined> {
+    const [item] = await db.select().from(pcItems).where(eq(pcItems.id, id));
+    return item;
+  }
+
+  async createPCItem(item: InsertPCItem): Promise<PCItem> {
+    const [created] = await db.insert(pcItems).values(item).returning();
+    return created;
+  }
+
+  async updatePCItem(id: string, item: Partial<InsertPCItem>): Promise<PCItem | undefined> {
+    const [updated] = await db
+      .update(pcItems)
+      .set({ ...item, updatedAt: new Date() })
+      .where(eq(pcItems.id, id))
+      .returning();
+    return updated;
+  }
+
+  async completePCItem(id: string, completedById: string): Promise<PCItem | undefined> {
+    const [updated] = await db
+      .update(pcItems)
+      .set({
+        status: "completed",
+        completedAt: new Date(),
+        completedById,
+        updatedAt: new Date(),
+      })
+      .where(eq(pcItems.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deletePCItem(id: string): Promise<boolean> {
+    await db.delete(pcItems).where(eq(pcItems.id, id));
+    return true;
+  }
+
+  // Notification operations
+  async getNotifications(userId: string): Promise<Notification[]> {
+    return db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.userId, userId))
+      .orderBy(desc(notifications.createdAt));
+  }
+
+  async getUnreadNotificationCount(userId: string): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(notifications)
+      .where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
+    return result[0]?.count || 0;
+  }
+
+  async createNotification(notification: InsertNotification): Promise<Notification> {
+    const [created] = await db.insert(notifications).values(notification).returning();
+    return created;
+  }
+
+  async markNotificationRead(id: string): Promise<Notification | undefined> {
+    const [updated] = await db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(eq(notifications.id, id))
+      .returning();
+    return updated;
+  }
+
+  async markAllNotificationsRead(userId: string): Promise<boolean> {
+    await db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(eq(notifications.userId, userId));
+    return true;
+  }
+
+  async deleteNotification(id: string): Promise<boolean> {
+    await db.delete(notifications).where(eq(notifications.id, id));
+    return true;
+  }
+
+  // Client access token operations
+  async getClientAccessToken(token: string): Promise<ClientAccessToken | undefined> {
+    const [accessToken] = await db
+      .select()
+      .from(clientAccessTokens)
+      .where(and(eq(clientAccessTokens.token, token), eq(clientAccessTokens.isActive, true)));
+    return accessToken;
+  }
+
+  async getClientAccessTokensByJob(jobId: string): Promise<ClientAccessToken[]> {
+    return db
+      .select()
+      .from(clientAccessTokens)
+      .where(eq(clientAccessTokens.jobId, jobId))
+      .orderBy(desc(clientAccessTokens.createdAt));
+  }
+
+  async createClientAccessToken(data: InsertClientAccessToken): Promise<ClientAccessToken> {
+    const token = crypto.randomBytes(32).toString("hex");
+    const [created] = await db
+      .insert(clientAccessTokens)
+      .values({ ...data, token })
+      .returning();
+    return created;
+  }
+
+  async revokeClientAccessToken(id: string): Promise<boolean> {
+    await db
+      .update(clientAccessTokens)
+      .set({ isActive: false })
+      .where(eq(clientAccessTokens.id, id));
     return true;
   }
 }
