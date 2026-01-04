@@ -51,6 +51,14 @@ const updateStaffSchema = z.object({
   isActive: z.boolean().optional(),
   phone: z.string().optional(),
   skills: z.array(z.string()).optional(),
+  salaryType: z.enum(["hourly", "annual"]).optional(),
+  salaryAmount: z.string().optional(),
+  overtimeRateMultiplier: z.string().optional(),
+  overtimeThresholdHours: z.string().optional(),
+  emailSignature: z.string().optional(),
+  timezone: z.string().optional(),
+  lunchBreakMinutes: z.number().optional(),
+  lunchBreakPaid: z.boolean().optional(),
 });
 
 export async function registerRoutes(

@@ -1934,7 +1934,18 @@ export class DatabaseStorage implements IStorage {
     const hoursLogged = timeEntries.reduce((sum, e) => sum + this.safeParseFloat(e.hoursWorked, 0), 0);
     
     // Calculate labor revenue (hours * hourly rate or estimate from job completions)
-    const hourlyRate = staff.hourlyCostLoaded ? this.safeParseFloat(staff.hourlyCostLoaded, 0) : 266; // $2000/7.5hrs
+    // Use salaryAmount if available, otherwise fall back to hourlyCostLoaded
+    let hourlyRate = 266; // Default: $2000/7.5hrs
+    if (staff.salaryAmount) {
+      if (staff.salaryType === "hourly") {
+        hourlyRate = this.safeParseFloat(staff.salaryAmount, 266);
+      } else if (staff.salaryType === "annual") {
+        // Convert annual to hourly assuming 2080 hours/year (52 weeks * 40 hours)
+        hourlyRate = this.safeParseFloat(staff.salaryAmount, 0) / 2080;
+      }
+    } else if (staff.hourlyCostLoaded) {
+      hourlyRate = this.safeParseFloat(staff.hourlyCostLoaded, 266);
+    }
     const laborRevenue = hoursLogged * hourlyRate;
     
     // Count completed jobs

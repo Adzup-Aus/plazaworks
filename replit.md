@@ -4,7 +4,7 @@
 A job management system for Plaza Works, a plumbing/renovation company. Building all 5 phases to replace their existing Fergus system.
 
 ## Current State
-**Phase 6 (KPI Module) Complete** - All 6 phases now implemented!
+**Phase 7 (Multi-Day Scheduling & Enhanced Staff Profiles) Complete** - All 7 phases now implemented!
 
 ### Phase 1 Complete - Foundation:
 - User authentication via Replit Auth (Google, GitHub, email/password)
@@ -61,6 +61,19 @@ A job management system for Plaza Works, a plumbing/renovation company. Building
 - **Bonus Tracking**: Calculate bonuses based on sales phase and labor value
 - **Sales Phase Progression**: 3-phase system (Learning, Growing, Full Performer)
 - **Phase Checklist**: Track requirements for phase advancement
+
+### Phase 7 Complete - Multi-Day Scheduling & Enhanced Staff Profiles:
+- **Multi-Day Scheduling**: Schedule jobs across multiple days with per-day staff assignment
+- **Schedule Status Tracking**: Track scheduled/completed/cancelled status per entry
+- **Duration Hours**: Configure working hours per scheduled day (default 7.5h)
+- **Bulk Schedule Creation**: Create multiple schedule entries at once
+- **Job Schedule Section**: View/manage schedule entries directly on job detail page
+- **Compensation Tracking**: Store salary type (hourly/annual) and amount
+- **Overtime Configuration**: Configurable overtime multiplier and threshold hours
+- **Working Hours Management**: Per-day working hours with start/end times
+- **Availability Checking**: Check staff availability considering working hours and time-off
+- **Enhanced Staff UI**: Tabbed profile editing (Roles, Pay, Contact, Hours)
+- **Hourly Cost Integration**: KPI calculations use salary data for labor revenue
 
 ## Tech Stack
 - **Frontend**: React + TypeScript + Tailwind CSS + shadcn/ui
@@ -131,6 +144,7 @@ A job management system for Plaza Works, a plumbing/renovation company. Building
 - **tradesman_bonus_periods** - Bonus tracking and approval
 - **phase_progression_checklist** - Phase advancement requirements
 - **user_phase_log** - Sales phase change history
+- **user_working_hours** - Per-day working hours for each staff member
 
 ## API Endpoints
 All endpoints require authentication except login/logout.
@@ -155,8 +169,17 @@ All endpoints require authentication except login/logout.
 ### Schedule
 - `GET /api/schedule` - List schedule entries
 - `POST /api/schedule` - Create entry
+- `POST /api/schedule/bulk` - Create multiple entries at once
 - `PATCH /api/schedule/:id` - Update entry
+- `POST /api/schedule/:id/complete` - Mark entry as completed
+- `POST /api/schedule/:id/cancel` - Mark entry as cancelled
 - `DELETE /api/schedule/:id` - Delete entry
+- `GET /api/schedule/availability/:staffId/:date` - Check staff availability
+
+### Working Hours (Phase 7)
+- `GET /api/working-hours/:staffId` - Get staff working hours
+- `POST /api/working-hours/:staffId` - Create/update working hours
+- `DELETE /api/working-hours/:id` - Delete working hours entry
 
 ### Vehicles (Phase 4)
 - `GET /api/vehicles` - List all vehicles

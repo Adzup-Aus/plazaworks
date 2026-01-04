@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -43,8 +45,13 @@ import {
   Shield,
   Briefcase,
   Loader2,
+  DollarSign,
+  Clock,
+  Mail,
 } from "lucide-react";
-import { userRoles, employmentTypes, userPermissions, type StaffProfile, type User } from "@shared/schema";
+import { userRoles, employmentTypes, userPermissions, type StaffProfile, type User, type UserWorkingHours } from "@shared/schema";
+
+const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 type StaffWithUser = StaffProfile & {
   user?: User;
@@ -91,7 +98,20 @@ export default function Team() {
   });
 
   const updateStaffMutation = useMutation({
-    mutationFn: async (data: { id: string; roles: string[]; employmentType: string; permissions: string[] }) => {
+    mutationFn: async (data: { 
+      id: string; 
+      roles: string[]; 
+      employmentType: string; 
+      permissions: string[];
+      salaryType?: string;
+      salaryAmount?: string;
+      overtimeRateMultiplier?: string;
+      overtimeThresholdHours?: string;
+      emailSignature?: string;
+      timezone?: string;
+      lunchBreakMinutes?: number;
+      lunchBreakPaid?: boolean;
+    }) => {
       return apiRequest("PATCH", `/api/staff/${data.id}`, data);
     },
     onSuccess: () => {
@@ -144,12 +164,50 @@ export default function Team() {
   const [editRoles, setEditRoles] = useState<string[]>([]);
   const [editEmploymentType, setEditEmploymentType] = useState<string>("permanent");
   const [editPermissions, setEditPermissions] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState("roles");
+  
+  const [editSalaryType, setEditSalaryType] = useState<string>("hourly");
+  const [editSalaryAmount, setEditSalaryAmount] = useState<string>("");
+  const [editOvertimeMultiplier, setEditOvertimeMultiplier] = useState<string>("1.5");
+  const [editOvertimeThreshold, setEditOvertimeThreshold] = useState<string>("38");
+  
+  const [editEmailSignature, setEditEmailSignature] = useState<string>("");
+  const [editTimezone, setEditTimezone] = useState<string>("Australia/Sydney");
+  const [editLunchBreakMinutes, setEditLunchBreakMinutes] = useState<string>("30");
+  const [editLunchBreakPaid, setEditLunchBreakPaid] = useState<boolean>(false);
+  
+  const [editWorkingHours, setEditWorkingHours] = useState<{
+    dayOfWeek: number;
+    isWorkingDay: boolean;
+    startTime: string;
+    endTime: string;
+  }[]>([]);
 
   const openEditDialog = (staff: StaffWithUser) => {
     setEditingStaff(staff);
     setEditRoles(staff.roles || []);
     setEditEmploymentType(staff.employmentType || "permanent");
     setEditPermissions(staff.permissions || []);
+    setActiveTab("roles");
+    
+    setEditSalaryType(staff.salaryType || "hourly");
+    setEditSalaryAmount(staff.salaryAmount || "");
+    setEditOvertimeMultiplier(staff.overtimeRateMultiplier || "1.5");
+    setEditOvertimeThreshold(staff.overtimeThresholdHours || "38");
+    
+    setEditEmailSignature(staff.emailSignature || "");
+    setEditTimezone(staff.timezone || "Australia/Sydney");
+    setEditLunchBreakMinutes(staff.lunchBreakMinutes?.toString() || "30");
+    setEditLunchBreakPaid(staff.lunchBreakPaid || false);
+    
+    const defaultHours = DAYS_OF_WEEK.map((_, i) => ({
+      dayOfWeek: i,
+      isWorkingDay: i >= 1 && i <= 5,
+      startTime: "07:00",
+      endTime: "15:30",
+    }));
+    setEditWorkingHours(defaultHours);
+    
     setIsDialogOpen(true);
   };
 
@@ -160,7 +218,23 @@ export default function Team() {
       roles: editRoles,
       employmentType: editEmploymentType,
       permissions: editPermissions,
+      salaryType: editSalaryType,
+      salaryAmount: editSalaryAmount || undefined,
+      overtimeRateMultiplier: editOvertimeMultiplier,
+      overtimeThresholdHours: editOvertimeThreshold,
+      emailSignature: editEmailSignature || undefined,
+      timezone: editTimezone,
+      lunchBreakMinutes: parseInt(editLunchBreakMinutes) || 30,
+      lunchBreakPaid: editLunchBreakPaid,
     });
+  };
+  
+  const updateWorkingDay = (dayIndex: number, field: keyof typeof editWorkingHours[0], value: string | boolean) => {
+    setEditWorkingHours((prev) =>
+      prev.map((day) =>
+        day.dayOfWeek === dayIndex ? { ...day, [field]: value } : day
+      )
+    );
   };
 
   const toggleRole = (role: string) => {
@@ -358,88 +432,332 @@ export default function Team() {
       </Card>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Staff Member</DialogTitle>
             <DialogDescription>
-              Update roles, employment type, and permissions for{" "}
-              {editingStaff?.user?.firstName} {editingStaff?.user?.lastName}
+              Update profile for {editingStaff?.user?.firstName} {editingStaff?.user?.lastName}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-6 py-4">
-            <div className="space-y-3">
-              <Label className="text-base font-semibold">Roles</Label>
-              <p className="text-sm text-muted-foreground">
-                Select one or more roles for this team member
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                {userRoles.map((role) => (
-                  <div
-                    key={role}
-                    className="flex items-center space-x-2"
-                  >
-                    <Checkbox
-                      id={`role-${role}`}
-                      checked={editRoles.includes(role)}
-                      onCheckedChange={() => toggleRole(role)}
-                      data-testid={`checkbox-role-${role}`}
-                    />
-                    <Label
-                      htmlFor={`role-${role}`}
-                      className="text-sm font-normal cursor-pointer"
-                    >
-                      {formatRole(role)}
-                    </Label>
-                  </div>
-                ))}
-              </div>
-            </div>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="roles" data-testid="tab-roles">
+                <Shield className="h-4 w-4 mr-2" />
+                Roles
+              </TabsTrigger>
+              <TabsTrigger value="compensation" data-testid="tab-compensation">
+                <DollarSign className="h-4 w-4 mr-2" />
+                Pay
+              </TabsTrigger>
+              <TabsTrigger value="contact" data-testid="tab-contact">
+                <Mail className="h-4 w-4 mr-2" />
+                Contact
+              </TabsTrigger>
+              <TabsTrigger value="hours" data-testid="tab-hours">
+                <Clock className="h-4 w-4 mr-2" />
+                Hours
+              </TabsTrigger>
+            </TabsList>
 
-            <div className="space-y-3">
-              <Label className="text-base font-semibold">Employment Type</Label>
-              <Select value={editEmploymentType} onValueChange={setEditEmploymentType}>
-                <SelectTrigger data-testid="select-edit-employment">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {employmentTypes.map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {type.charAt(0).toUpperCase() + type.slice(1)}
-                    </SelectItem>
+            <TabsContent value="roles" className="space-y-6 py-4">
+              <div className="space-y-3">
+                <Label className="text-base font-semibold">Roles</Label>
+                <p className="text-sm text-muted-foreground">
+                  Select one or more roles for this team member
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  {userRoles.map((role) => (
+                    <div key={role} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`role-${role}`}
+                        checked={editRoles.includes(role)}
+                        onCheckedChange={() => toggleRole(role)}
+                        data-testid={`checkbox-role-${role}`}
+                      />
+                      <Label htmlFor={`role-${role}`} className="text-sm font-normal cursor-pointer">
+                        {formatRole(role)}
+                      </Label>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
+                </div>
+              </div>
 
-            <div className="space-y-3">
-              <Label className="text-base font-semibold">Custom Permissions</Label>
-              <p className="text-sm text-muted-foreground">
-                Grant specific permissions independent of roles
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                {userPermissions.map((permission) => (
-                  <div
-                    key={permission}
-                    className="flex items-center space-x-2"
-                  >
-                    <Checkbox
-                      id={`perm-${permission}`}
-                      checked={editPermissions.includes(permission)}
-                      onCheckedChange={() => togglePermission(permission)}
-                      data-testid={`checkbox-perm-${permission}`}
+              <div className="space-y-3">
+                <Label className="text-base font-semibold">Employment Type</Label>
+                <Select value={editEmploymentType} onValueChange={setEditEmploymentType}>
+                  <SelectTrigger data-testid="select-edit-employment">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employmentTypes.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type.charAt(0).toUpperCase() + type.slice(1)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-3">
+                <Label className="text-base font-semibold">Custom Permissions</Label>
+                <p className="text-sm text-muted-foreground">
+                  Grant specific permissions independent of roles
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  {userPermissions.map((permission) => (
+                    <div key={permission} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`perm-${permission}`}
+                        checked={editPermissions.includes(permission)}
+                        onCheckedChange={() => togglePermission(permission)}
+                        data-testid={`checkbox-perm-${permission}`}
+                      />
+                      <Label htmlFor={`perm-${permission}`} className="text-sm font-normal cursor-pointer">
+                        {formatPermission(permission)}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="compensation" className="space-y-6 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Salary Type</Label>
+                  <Select value={editSalaryType} onValueChange={setEditSalaryType}>
+                    <SelectTrigger data-testid="select-salary-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="hourly">Hourly</SelectItem>
+                      <SelectItem value="annual">Annual</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">
+                    {editSalaryType === "hourly" ? "Hourly Rate ($)" : "Annual Salary ($)"}
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editSalaryAmount}
+                    onChange={(e) => setEditSalaryAmount(e.target.value)}
+                    placeholder={editSalaryType === "hourly" ? "45.00" : "85000"}
+                    data-testid="input-salary-amount"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Overtime Multiplier</Label>
+                  <Select value={editOvertimeMultiplier} onValueChange={setEditOvertimeMultiplier}>
+                    <SelectTrigger data-testid="select-overtime-multiplier">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1.25">1.25x</SelectItem>
+                      <SelectItem value="1.5">1.5x</SelectItem>
+                      <SelectItem value="1.75">1.75x</SelectItem>
+                      <SelectItem value="2">2x</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Rate multiplier for overtime hours</p>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Overtime Threshold (hrs/week)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="60"
+                    value={editOvertimeThreshold}
+                    onChange={(e) => setEditOvertimeThreshold(e.target.value)}
+                    data-testid="input-overtime-threshold"
+                  />
+                  <p className="text-xs text-muted-foreground">Weekly hours before overtime applies</p>
+                </div>
+              </div>
+
+              <div className="rounded-md bg-muted/50 p-4">
+                <p className="text-sm text-muted-foreground">
+                  {editSalaryType === "hourly" && editSalaryAmount ? (
+                    <>
+                      Effective rate: <span className="font-medium">${parseFloat(editSalaryAmount).toFixed(2)}/hr</span>
+                      {" | "}
+                      Overtime rate: <span className="font-medium">
+                        ${(parseFloat(editSalaryAmount) * parseFloat(editOvertimeMultiplier)).toFixed(2)}/hr
+                      </span>
+                    </>
+                  ) : editSalaryType === "annual" && editSalaryAmount ? (
+                    <>
+                      Annual salary: <span className="font-medium">${parseInt(editSalaryAmount).toLocaleString()}</span>
+                      {" | "}
+                      Approx hourly: <span className="font-medium">
+                        ${(parseFloat(editSalaryAmount) / 2080).toFixed(2)}/hr
+                      </span>
+                    </>
+                  ) : (
+                    "Enter salary amount to see calculations"
+                  )}
+                </p>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="contact" className="space-y-6 py-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Timezone</Label>
+                <Select value={editTimezone} onValueChange={setEditTimezone}>
+                  <SelectTrigger data-testid="select-timezone">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</SelectItem>
+                    <SelectItem value="Australia/Melbourne">Australia/Melbourne (AEST/AEDT)</SelectItem>
+                    <SelectItem value="Australia/Brisbane">Australia/Brisbane (AEST)</SelectItem>
+                    <SelectItem value="Australia/Perth">Australia/Perth (AWST)</SelectItem>
+                    <SelectItem value="Australia/Adelaide">Australia/Adelaide (ACST/ACDT)</SelectItem>
+                    <SelectItem value="Pacific/Auckland">New Zealand (NZST/NZDT)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Email Signature</Label>
+                <Input
+                  value={editEmailSignature}
+                  onChange={(e) => setEditEmailSignature(e.target.value)}
+                  placeholder="e.g., Best regards, John"
+                  data-testid="input-email-signature"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Used when sending emails to clients
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Lunch Break Duration</Label>
+                  <Select value={editLunchBreakMinutes} onValueChange={setEditLunchBreakMinutes}>
+                    <SelectTrigger data-testid="select-lunch-duration">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">No lunch break</SelectItem>
+                      <SelectItem value="15">15 minutes</SelectItem>
+                      <SelectItem value="30">30 minutes</SelectItem>
+                      <SelectItem value="45">45 minutes</SelectItem>
+                      <SelectItem value="60">60 minutes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Lunch Break Paid</Label>
+                  <div className="flex items-center space-x-2 pt-2">
+                    <Switch
+                      checked={editLunchBreakPaid}
+                      onCheckedChange={setEditLunchBreakPaid}
+                      data-testid="switch-lunch-paid"
                     />
-                    <Label
-                      htmlFor={`perm-${permission}`}
-                      className="text-sm font-normal cursor-pointer"
-                    >
-                      {formatPermission(permission)}
+                    <Label className="text-sm font-normal">
+                      {editLunchBreakPaid ? "Paid break" : "Unpaid break"}
                     </Label>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="hours" className="space-y-4 py-4">
+              <p className="text-sm text-muted-foreground">
+                Configure working hours for each day of the week
+              </p>
+              <div className="space-y-3">
+                {editWorkingHours.map((day) => (
+                  <div
+                    key={day.dayOfWeek}
+                    className={`flex items-center gap-4 p-3 rounded-md border ${
+                      day.isWorkingDay ? "" : "bg-muted/50 opacity-70"
+                    }`}
+                  >
+                    <div className="w-28">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          checked={day.isWorkingDay}
+                          onCheckedChange={(checked) =>
+                            updateWorkingDay(day.dayOfWeek, "isWorkingDay", checked as boolean)
+                          }
+                          data-testid={`checkbox-workday-${day.dayOfWeek}`}
+                        />
+                        <Label className="text-sm font-medium">
+                          {DAYS_OF_WEEK[day.dayOfWeek]}
+                        </Label>
+                      </div>
+                    </div>
+                    {day.isWorkingDay && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs text-muted-foreground">Start</Label>
+                          <Input
+                            type="time"
+                            value={day.startTime}
+                            onChange={(e) =>
+                              updateWorkingDay(day.dayOfWeek, "startTime", e.target.value)
+                            }
+                            className="w-32"
+                            data-testid={`input-start-${day.dayOfWeek}`}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs text-muted-foreground">End</Label>
+                          <Input
+                            type="time"
+                            value={day.endTime}
+                            onChange={(e) =>
+                              updateWorkingDay(day.dayOfWeek, "endTime", e.target.value)
+                            }
+                            className="w-32"
+                            data-testid={`input-end-${day.dayOfWeek}`}
+                          />
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {(() => {
+                            const [sh, sm] = day.startTime.split(":").map(Number);
+                            const [eh, em] = day.endTime.split(":").map(Number);
+                            const hours = (eh * 60 + em - (sh * 60 + sm)) / 60;
+                            return hours > 0 ? `${hours.toFixed(1)}h` : "--";
+                          })()}
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
+              <div className="rounded-md bg-muted/50 p-4">
+                <p className="text-sm text-muted-foreground">
+                  Weekly hours:{" "}
+                  <span className="font-medium">
+                    {editWorkingHours
+                      .filter((d) => d.isWorkingDay)
+                      .reduce((sum, day) => {
+                        const [sh, sm] = day.startTime.split(":").map(Number);
+                        const [eh, em] = day.endTime.split(":").map(Number);
+                        return sum + (eh * 60 + em - (sh * 60 + sm)) / 60;
+                      }, 0)
+                      .toFixed(1)}
+                    h
+                  </span>
+                  {" | "}
+                  Working days:{" "}
+                  <span className="font-medium">
+                    {editWorkingHours.filter((d) => d.isWorkingDay).length}
+                  </span>
+                </p>
+              </div>
+            </TabsContent>
+          </Tabs>
 
           <DialogFooter>
             <Button

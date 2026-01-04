@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -24,22 +25,40 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ChevronLeft,
   ChevronRight,
   Calendar as CalendarIcon,
   Plus,
   Briefcase,
+  Trash2,
+  User,
+  Clock,
+  CheckCircle,
+  XCircle,
 } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Job, ScheduleEntry } from "@shared/schema";
+import type { Job, ScheduleEntry, StaffProfile } from "@shared/schema";
+
+type ScheduleDayEntry = {
+  date: string;
+  staffId: string;
+  durationHours: string;
+  notes: string;
+};
+
+type CalendarDaySchedule = {
+  entry: ScheduleEntry;
+  job: Job;
+};
 
 type CalendarDay = {
   date: Date;
   isCurrentMonth: boolean;
   isToday: boolean;
-  jobs: Job[];
+  schedules: CalendarDaySchedule[];
 };
 
 function getStatusColor(status: string): string {
@@ -65,8 +84,8 @@ export default function Schedule() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<string>("");
-  const [selectedDate, setSelectedDate] = useState<string>("");
-  const [notes, setNotes] = useState<string>("");
+  const [scheduleDays, setScheduleDays] = useState<ScheduleDayEntry[]>([]);
+  const [globalNotes, setGlobalNotes] = useState<string>("");
   const { toast } = useToast();
 
   const { data: jobs, isLoading: jobsLoading } = useQuery<Job[]>({
@@ -77,20 +96,25 @@ export default function Schedule() {
     queryKey: ["/api/schedule"],
   });
 
-  const createScheduleMutation = useMutation({
-    mutationFn: async (data: { jobId: string; scheduledDate: string; notes?: string }) => {
-      const res = await apiRequest("POST", "/api/schedule", data);
+  const { data: staffProfiles } = useQuery<StaffProfile[]>({
+    queryKey: ["/api/staff"],
+  });
+
+  const createBulkScheduleMutation = useMutation({
+    mutationFn: async (entries: { jobId: string; scheduledDate: string; staffId?: string; durationHours?: string; notes?: string }[]) => {
+      const res = await apiRequest("POST", "/api/schedule/bulk", { entries });
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
       setIsAddDialogOpen(false);
       setSelectedJob("");
-      setSelectedDate("");
-      setNotes("");
+      setScheduleDays([]);
+      setGlobalNotes("");
       toast({
-        title: "Schedule Entry Created",
-        description: "The job has been scheduled successfully.",
+        title: "Schedule Created",
+        description: `Job scheduled for ${scheduleDays.length} day(s) successfully.`,
       });
     },
     onError: (error: Error) => {
@@ -123,19 +147,67 @@ export default function Schedule() {
   });
 
   const handleCreateSchedule = () => {
-    if (!selectedJob || !selectedDate) {
+    if (!selectedJob || scheduleDays.length === 0) {
       toast({
         title: "Error",
-        description: "Please select a job and date.",
+        description: "Please select a job and at least one date.",
         variant: "destructive",
       });
       return;
     }
-    createScheduleMutation.mutate({
+
+    const entries = scheduleDays.map((day) => ({
       jobId: selectedJob,
-      scheduledDate: selectedDate,
-      notes: notes || undefined,
-    });
+      scheduledDate: day.date,
+      staffId: day.staffId || undefined,
+      durationHours: day.durationHours || "7.5",
+      notes: day.notes || globalNotes || undefined,
+    }));
+
+    createBulkScheduleMutation.mutate(entries);
+  };
+
+  const addScheduleDay = () => {
+    const newDate = new Date();
+    if (scheduleDays.length > 0) {
+      const lastDate = new Date(scheduleDays[scheduleDays.length - 1].date);
+      lastDate.setDate(lastDate.getDate() + 1);
+      while (lastDate.getDay() === 0 || lastDate.getDay() === 6) {
+        lastDate.setDate(lastDate.getDate() + 1);
+      }
+      newDate.setTime(lastDate.getTime());
+    }
+
+    setScheduleDays([
+      ...scheduleDays,
+      {
+        date: newDate.toISOString().split("T")[0],
+        staffId: "",
+        durationHours: "7.5",
+        notes: "",
+      },
+    ]);
+  };
+
+  const updateScheduleDay = (index: number, updates: Partial<ScheduleDayEntry>) => {
+    const updated = [...scheduleDays];
+    updated[index] = { ...updated[index], ...updates };
+    setScheduleDays(updated);
+  };
+
+  const removeScheduleDay = (index: number) => {
+    setScheduleDays(scheduleDays.filter((_, i) => i !== index));
+  };
+
+  const formatDayName = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  };
+
+  const getStaffName = (staffId: string) => {
+    if (!staffProfiles) return "Unassigned";
+    const staff = staffProfiles.find((s) => s.id === staffId);
+    return staff?.userId || "Unassigned";
   };
 
   const isLoading = jobsLoading || scheduleLoading;
@@ -160,42 +232,49 @@ export default function Schedule() {
 
     const days: CalendarDay[] = [];
 
+    const getSchedulesForDate = (dateStr: string): CalendarDaySchedule[] => {
+      return (scheduleEntries || [])
+        .filter((entry) => entry.scheduledDate === dateStr && entry.status !== "cancelled")
+        .map((entry) => {
+          const job = jobs?.find((j) => j.id === entry.jobId);
+          return job ? { entry, job } : null;
+        })
+        .filter((s): s is CalendarDaySchedule => s !== null);
+    };
+
     const prevMonthDays = new Date(currentDate.getFullYear(), currentDate.getMonth(), 0).getDate();
     for (let i = startDay - 1; i >= 0; i--) {
       const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, prevMonthDays - i);
+      const dateStr = date.toISOString().split("T")[0];
       days.push({
         date,
         isCurrentMonth: false,
         isToday: date.getTime() === today.getTime(),
-        jobs: [],
+        schedules: getSchedulesForDate(dateStr),
       });
     }
 
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
       const dateStr = date.toISOString().split("T")[0];
-      
-      const dayJobs = (scheduleEntries || [])
-        .filter((entry) => entry.scheduledDate === dateStr)
-        .map((entry) => jobs?.find((j) => j.id === entry.jobId))
-        .filter((j): j is Job => !!j);
 
       days.push({
         date,
         isCurrentMonth: true,
         isToday: date.getTime() === today.getTime(),
-        jobs: dayJobs,
+        schedules: getSchedulesForDate(dateStr),
       });
     }
 
     const remainingDays = 42 - days.length;
     for (let i = 1; i <= remainingDays; i++) {
       const date = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, i);
+      const dateStr = date.toISOString().split("T")[0];
       days.push({
         date,
         isCurrentMonth: false,
         isToday: date.getTime() === today.getTime(),
-        jobs: [],
+        schedules: getSchedulesForDate(dateStr),
       });
     }
 
@@ -238,18 +317,25 @@ export default function Schedule() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+          <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
+            setIsAddDialogOpen(open);
+            if (!open) {
+              setSelectedJob("");
+              setScheduleDays([]);
+              setGlobalNotes("");
+            }
+          }}>
             <DialogTrigger asChild>
               <Button data-testid="button-schedule-job">
                 <CalendarIcon className="mr-2 h-4 w-4" />
                 Schedule Job
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-[600px]">
               <DialogHeader>
                 <DialogTitle>Schedule a Job</DialogTitle>
                 <DialogDescription>
-                  Select a job and date to add it to the schedule.
+                  Select a job and add dates. You can schedule multiple days at once.
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
@@ -260,12 +346,12 @@ export default function Schedule() {
                       <SelectValue placeholder="Select a job" />
                     </SelectTrigger>
                     <SelectContent>
-                      {unscheduledJobs.length === 0 ? (
+                      {jobs?.filter((j) => j.status !== "completed" && j.status !== "cancelled").length === 0 ? (
                         <SelectItem value="none" disabled>
-                          No unscheduled jobs available
+                          No jobs available
                         </SelectItem>
                       ) : (
-                        unscheduledJobs.map((job) => (
+                        jobs?.filter((j) => j.status !== "completed" && j.status !== "cancelled").map((job) => (
                           <SelectItem key={job.id} value={job.id}>
                             {job.clientName} - {job.jobType}
                           </SelectItem>
@@ -274,28 +360,130 @@ export default function Schedule() {
                     </SelectContent>
                   </Select>
                 </div>
+
                 <div className="grid gap-2">
-                  <Label htmlFor="date">Date</Label>
-                  <Input
-                    id="date"
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    data-testid="input-schedule-date"
-                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <Label>Schedule Days</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addScheduleDay}
+                      data-testid="button-add-schedule-day"
+                    >
+                      <Plus className="mr-1 h-3 w-3" />
+                      Add Day
+                    </Button>
+                  </div>
+
+                  {scheduleDays.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center rounded-md border border-dashed p-6 text-center">
+                      <CalendarIcon className="h-8 w-8 text-muted-foreground/50 mb-2" />
+                      <p className="text-sm text-muted-foreground">
+                        No days scheduled yet. Click "Add Day" to start.
+                      </p>
+                    </div>
+                  ) : (
+                    <ScrollArea className="max-h-[280px]">
+                      <div className="space-y-3 pr-4">
+                        {scheduleDays.map((day, index) => (
+                          <div
+                            key={index}
+                            className="flex flex-col gap-2 rounded-md border p-3"
+                            data-testid={`schedule-day-${index}`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <Badge variant="secondary" className="text-xs">
+                                  Day {index + 1}
+                                </Badge>
+                                <span className="text-sm font-medium">
+                                  {formatDayName(day.date)}
+                                </span>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeScheduleDay(index)}
+                                data-testid={`button-remove-day-${index}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                              <div>
+                                <Label className="text-xs">Date</Label>
+                                <Input
+                                  type="date"
+                                  value={day.date}
+                                  onChange={(e) =>
+                                    updateScheduleDay(index, { date: e.target.value })
+                                  }
+                                  data-testid={`input-day-date-${index}`}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs">Staff</Label>
+                                <Select
+                                  value={day.staffId || "unassigned"}
+                                  onValueChange={(value) =>
+                                    updateScheduleDay(index, {
+                                      staffId: value === "unassigned" ? "" : value,
+                                    })
+                                  }
+                                >
+                                  <SelectTrigger data-testid={`select-staff-${index}`}>
+                                    <SelectValue placeholder="Staff" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                                    {staffProfiles?.filter((s) => s.isActive).map((staff) => (
+                                      <SelectItem key={staff.id} value={staff.id}>
+                                        {staff.userId?.split("@")[0] || staff.id.slice(0, 8)}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div>
+                                <Label className="text-xs">Hours</Label>
+                                <Input
+                                  type="number"
+                                  step="0.5"
+                                  min="0.5"
+                                  max="12"
+                                  value={day.durationHours}
+                                  onChange={(e) =>
+                                    updateScheduleDay(index, { durationHours: e.target.value })
+                                  }
+                                  data-testid={`input-hours-${index}`}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  )}
                 </div>
+
                 <div className="grid gap-2">
                   <Label htmlFor="notes">Notes (optional)</Label>
                   <Textarea
                     id="notes"
                     placeholder="Add any scheduling notes..."
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
+                    value={globalNotes}
+                    onChange={(e) => setGlobalNotes(e.target.value)}
                     data-testid="input-schedule-notes"
                   />
                 </div>
               </div>
-              <DialogFooter>
+              <DialogFooter className="flex-wrap gap-2">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground mr-auto">
+                  <Clock className="h-4 w-4" />
+                  <span>Total: {scheduleDays.reduce((sum, d) => sum + parseFloat(d.durationHours || "0"), 0).toFixed(1)} hours</span>
+                </div>
                 <Button
                   variant="outline"
                   onClick={() => setIsAddDialogOpen(false)}
@@ -305,10 +493,10 @@ export default function Schedule() {
                 </Button>
                 <Button
                   onClick={handleCreateSchedule}
-                  disabled={createScheduleMutation.isPending || !selectedJob || !selectedDate}
+                  disabled={createBulkScheduleMutation.isPending || !selectedJob || scheduleDays.length === 0}
                   data-testid="button-confirm-schedule"
                 >
-                  {createScheduleMutation.isPending ? "Scheduling..." : "Schedule"}
+                  {createBulkScheduleMutation.isPending ? "Scheduling..." : `Schedule ${scheduleDays.length} Day(s)`}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -402,24 +590,29 @@ export default function Schedule() {
                         {day.date.getDate()}
                       </div>
                       <div className="space-y-1">
-                        {day.jobs.slice(0, 3).map((job) => (
+                        {day.schedules.slice(0, 3).map(({ entry, job }) => (
                           <Link
-                            key={job.id}
+                            key={entry.id}
                             href={`/jobs/${job.id}`}
                             className="block"
                           >
                             <div
-                              className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-white truncate ${getStatusColor(
-                                job.status
-                              )}`}
+                              className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-white truncate ${
+                                entry.status === "completed"
+                                  ? "bg-emerald-500"
+                                  : getStatusColor(job.status)
+                              }`}
                             >
+                              {entry.status === "completed" && (
+                                <CheckCircle className="h-3 w-3 flex-shrink-0" />
+                              )}
                               <span className="truncate">{job.clientName}</span>
                             </div>
                           </Link>
                         ))}
-                        {day.jobs.length > 3 && (
+                        {day.schedules.length > 3 && (
                           <div className="text-xs text-muted-foreground px-1.5">
-                            +{day.jobs.length - 3} more
+                            +{day.schedules.length - 3} more
                           </div>
                         )}
                       </div>

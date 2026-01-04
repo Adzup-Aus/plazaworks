@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   ArrowLeft, 
   Save, 
@@ -52,9 +53,14 @@ import {
   Camera,
   ImageIcon,
   Upload,
-  X
+  X,
+  Calendar,
+  Clock,
+  CheckCircle,
+  XCircle,
+  User
 } from "lucide-react";
-import { jobTypes, jobStatuses, pcItemStatuses, type Job, type PCItem, type ClientAccessToken, type JobPhoto } from "@shared/schema";
+import { jobTypes, jobStatuses, pcItemStatuses, type Job, type PCItem, type ClientAccessToken, type JobPhoto, type ScheduleEntry, type StaffProfile } from "@shared/schema";
 
 const formSchema = z.object({
   clientName: z.string().min(1, "Client name is required"),
@@ -621,6 +627,315 @@ function ShareLinkSection({ jobId }: { jobId: string }) {
   );
 }
 
+function JobScheduleSection({ jobId }: { jobId: string }) {
+  const { toast } = useToast();
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [newDate, setNewDate] = useState("");
+  const [newStaffId, setNewStaffId] = useState("");
+  const [newDurationHours, setNewDurationHours] = useState("7.5");
+  const [newNotes, setNewNotes] = useState("");
+
+  const { data: scheduleEntries, isLoading } = useQuery<ScheduleEntry[]>({
+    queryKey: ["/api/schedule"],
+  });
+
+  const { data: staffProfiles } = useQuery<StaffProfile[]>({
+    queryKey: ["/api/staff"],
+  });
+
+  const jobSchedules = scheduleEntries?.filter((e) => e.jobId === jobId) || [];
+
+  const addScheduleMutation = useMutation({
+    mutationFn: async (data: { jobId: string; scheduledDate: string; staffId?: string; durationHours?: string; notes?: string }) => {
+      return apiRequest("POST", "/api/schedule", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule"] });
+      toast({ title: "Schedule added", description: "The job has been scheduled." });
+      setIsAddDialogOpen(false);
+      setNewDate("");
+      setNewStaffId("");
+      setNewDurationHours("7.5");
+      setNewNotes("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const completeScheduleMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("POST", `/api/schedule/${id}/complete`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule"] });
+      toast({ title: "Schedule completed", description: "The scheduled day has been marked complete." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const cancelScheduleMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("POST", `/api/schedule/${id}/cancel`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule"] });
+      toast({ title: "Schedule cancelled", description: "The scheduled day has been cancelled." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteScheduleMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("DELETE", `/api/schedule/${id}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule"] });
+      toast({ title: "Schedule deleted", description: "The schedule entry has been removed." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleAddSchedule = () => {
+    if (!newDate) {
+      toast({ title: "Date required", description: "Please select a date.", variant: "destructive" });
+      return;
+    }
+    addScheduleMutation.mutate({
+      jobId,
+      scheduledDate: newDate,
+      staffId: newStaffId || undefined,
+      durationHours: newDurationHours,
+      notes: newNotes || undefined,
+    });
+  };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  };
+
+  const getStaffName = (staffId: string) => {
+    if (!staffProfiles) return "Unassigned";
+    const staff = staffProfiles.find((s) => s.id === staffId);
+    if (!staff) return "Unassigned";
+    return staff.userId?.split("@")[0] || staff.id.slice(0, 8);
+  };
+
+  const totalHours = jobSchedules
+    .filter((s) => s.status !== "cancelled")
+    .reduce((sum, s) => sum + parseFloat(s.durationHours || "0"), 0);
+
+  const completedDays = jobSchedules.filter((s) => s.status === "completed").length;
+  const scheduledDays = jobSchedules.filter((s) => s.status === "scheduled").length;
+
+  return (
+    <Card className="overflow-visible">
+      <CardHeader className="flex flex-row items-center justify-between gap-4">
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5" />
+            Job Schedule
+          </CardTitle>
+          <CardDescription>
+            {jobSchedules.length > 0
+              ? `${completedDays} completed, ${scheduledDays} scheduled | ${totalHours.toFixed(1)} total hours`
+              : "Schedule work days for this job"}
+          </CardDescription>
+        </div>
+        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="outline" data-testid="button-add-schedule">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Day
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Schedule Work Day</DialogTitle>
+              <DialogDescription>Add a new scheduled day for this job.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Date</label>
+                <Input
+                  type="date"
+                  value={newDate}
+                  onChange={(e) => setNewDate(e.target.value)}
+                  data-testid="input-schedule-date"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Staff Member</label>
+                <Select value={newStaffId || "unassigned"} onValueChange={(v) => setNewStaffId(v === "unassigned" ? "" : v)}>
+                  <SelectTrigger data-testid="select-schedule-staff">
+                    <SelectValue placeholder="Select staff" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                    {staffProfiles?.filter((s) => s.isActive).map((staff) => (
+                      <SelectItem key={staff.id} value={staff.id}>
+                        {staff.userId?.split("@")[0] || staff.id.slice(0, 8)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Duration (hours)</label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  min="0.5"
+                  max="12"
+                  value={newDurationHours}
+                  onChange={(e) => setNewDurationHours(e.target.value)}
+                  data-testid="input-schedule-duration"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Notes (optional)</label>
+                <Input
+                  value={newNotes}
+                  onChange={(e) => setNewNotes(e.target.value)}
+                  placeholder="Any notes for this day..."
+                  data-testid="input-schedule-notes"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAddSchedule}
+                disabled={addScheduleMutation.isPending}
+                data-testid="button-confirm-add-schedule"
+              >
+                {addScheduleMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+                Add Schedule
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">
+            {[...Array(3)].map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        ) : jobSchedules.length > 0 ? (
+          <ScrollArea className="max-h-[300px]">
+            <div className="space-y-2">
+              {jobSchedules
+                .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate))
+                .map((entry) => (
+                  <div
+                    key={entry.id}
+                    className={`flex items-center justify-between gap-2 rounded-md border p-3 ${
+                      entry.status === "completed"
+                        ? "bg-emerald-50 dark:bg-emerald-950/30"
+                        : entry.status === "cancelled"
+                        ? "bg-muted/50 opacity-60"
+                        : ""
+                    }`}
+                    data-testid={`schedule-entry-${entry.id}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex flex-col items-center justify-center w-12 h-12 rounded-md bg-primary/10">
+                        <span className="text-sm font-bold text-primary">
+                          {new Date(entry.scheduledDate).getDate()}
+                        </span>
+                        <span className="text-[10px] uppercase text-primary">
+                          {new Date(entry.scheduledDate).toLocaleString("default", { month: "short" })}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">{formatDate(entry.scheduledDate)}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <User className="h-3 w-3" />
+                          <span>{getStaffName(entry.staffId)}</span>
+                          <Clock className="h-3 w-3 ml-2" />
+                          <span>{entry.durationHours || "7.5"}h</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {entry.status === "scheduled" && (
+                        <>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => completeScheduleMutation.mutate(entry.id)}
+                            disabled={completeScheduleMutation.isPending}
+                            title="Mark complete"
+                            data-testid={`button-complete-schedule-${entry.id}`}
+                          >
+                            <CheckCircle className="h-4 w-4 text-emerald-500" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => cancelScheduleMutation.mutate(entry.id)}
+                            disabled={cancelScheduleMutation.isPending}
+                            title="Cancel"
+                            data-testid={`button-cancel-schedule-${entry.id}`}
+                          >
+                            <XCircle className="h-4 w-4 text-amber-500" />
+                          </Button>
+                        </>
+                      )}
+                      {entry.status === "completed" && (
+                        <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Done
+                        </Badge>
+                      )}
+                      {entry.status === "cancelled" && (
+                        <Badge variant="secondary" className="bg-muted text-muted-foreground">
+                          <XCircle className="h-3 w-3 mr-1" />
+                          Cancelled
+                        </Badge>
+                      )}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => {
+                          if (confirm("Delete this schedule entry?")) {
+                            deleteScheduleMutation.mutate(entry.id);
+                          }
+                        }}
+                        disabled={deleteScheduleMutation.isPending}
+                        title="Delete"
+                        data-testid={`button-delete-schedule-${entry.id}`}
+                      >
+                        <Trash2 className="h-4 w-4 text-muted-foreground" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </ScrollArea>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            <Calendar className="mx-auto h-8 w-8 mb-2 opacity-50" />
+            <p>No schedule entries yet</p>
+            <p className="text-sm">Add days to schedule work for this job</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function JobForm() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
@@ -1035,6 +1350,7 @@ export default function JobForm() {
 
       {isEditing && id && (
         <>
+          <JobScheduleSection jobId={id} />
           <PCItemsSection jobId={id} />
           <JobPhotosSection jobId={id} />
           <ShareLinkSection jobId={id} />
