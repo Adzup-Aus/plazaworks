@@ -1,7 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { z } from "zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Form,
   FormControl,
@@ -25,10 +27,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { ArrowLeft, Save, Loader2 } from "lucide-react";
-import { jobTypes, jobStatuses, type Job } from "@shared/schema";
+import { 
+  ArrowLeft, 
+  Save, 
+  Loader2, 
+  Plus, 
+  Check, 
+  ClipboardCopy, 
+  Share2, 
+  Trash2,
+  ListChecks,
+  Link as LinkIcon
+} from "lucide-react";
+import { jobTypes, jobStatuses, pcItemStatuses, type Job, type PCItem, type ClientAccessToken } from "@shared/schema";
 
 const formSchema = z.object({
   clientName: z.string().min(1, "Client name is required"),
@@ -50,6 +72,325 @@ function formatLabel(str: string): string {
     .split("_")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+function getPCStatusColor(status: string): string {
+  const colors: Record<string, string> = {
+    pending: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    in_progress: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+    completed: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    not_applicable: "bg-gray-500/10 text-gray-600 dark:text-gray-400",
+  };
+  return colors[status] || "bg-muted text-muted-foreground";
+}
+
+function PCItemsSection({ jobId }: { jobId: string }) {
+  const { toast } = useToast();
+  const [newItemTitle, setNewItemTitle] = useState("");
+  const [isAddingItem, setIsAddingItem] = useState(false);
+
+  const { data: pcItems, isLoading } = useQuery<PCItem[]>({
+    queryKey: ["/api/jobs", jobId, "pc-items"],
+  });
+
+  const addItemMutation = useMutation({
+    mutationFn: async (title: string) => {
+      return apiRequest("POST", `/api/jobs/${jobId}/pc-items`, { title, status: "pending" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs", jobId, "pc-items"] });
+      setNewItemTitle("");
+      setIsAddingItem(false);
+      toast({ title: "Item added", description: "PC item has been added to the checklist." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const completeItemMutation = useMutation({
+    mutationFn: async (itemId: string) => {
+      return apiRequest("POST", `/api/pc-items/${itemId}/complete`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs", jobId, "pc-items"] });
+      toast({ title: "Item completed", description: "PC item marked as complete." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteItemMutation = useMutation({
+    mutationFn: async (itemId: string) => {
+      return apiRequest("DELETE", `/api/pc-items/${itemId}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs", jobId, "pc-items"] });
+      toast({ title: "Item deleted", description: "PC item has been removed." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleAddItem = () => {
+    if (newItemTitle.trim()) {
+      addItemMutation.mutate(newItemTitle.trim());
+    }
+  };
+
+  const completedCount = pcItems?.filter((item) => item.status === "completed").length || 0;
+  const totalCount = pcItems?.length || 0;
+
+  return (
+    <Card className="overflow-visible">
+      <CardHeader className="flex flex-row items-center justify-between gap-4">
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <ListChecks className="h-5 w-5" />
+            Practical Completion Checklist
+          </CardTitle>
+          <CardDescription>
+            {totalCount > 0 
+              ? `${completedCount} of ${totalCount} items completed`
+              : "Track completion items for this job"}
+          </CardDescription>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setIsAddingItem(true)}
+          data-testid="button-add-pc-item"
+        >
+          <Plus className="mr-2 h-4 w-4" />
+          Add Item
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isAddingItem && (
+          <div className="flex items-center gap-2 p-3 rounded-md border bg-muted/50">
+            <Input
+              placeholder="Enter checklist item..."
+              value={newItemTitle}
+              onChange={(e) => setNewItemTitle(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAddItem()}
+              className="flex-1"
+              autoFocus
+              data-testid="input-new-pc-item"
+            />
+            <Button 
+              size="sm" 
+              onClick={handleAddItem}
+              disabled={addItemMutation.isPending || !newItemTitle.trim()}
+              data-testid="button-save-pc-item"
+            >
+              {addItemMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add"}
+            </Button>
+            <Button 
+              size="sm" 
+              variant="ghost" 
+              onClick={() => { setIsAddingItem(false); setNewItemTitle(""); }}
+              data-testid="button-cancel-pc-item"
+            >
+              Cancel
+            </Button>
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="space-y-2">
+            {[...Array(3)].map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        ) : pcItems && pcItems.length > 0 ? (
+          <div className="space-y-2">
+            {pcItems.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center gap-3 p-3 rounded-md border hover-elevate"
+                data-testid={`pc-item-${item.id}`}
+              >
+                <Checkbox
+                  checked={item.status === "completed"}
+                  disabled={item.status === "completed" || completeItemMutation.isPending}
+                  onCheckedChange={() => completeItemMutation.mutate(item.id)}
+                  data-testid={`checkbox-pc-item-${item.id}`}
+                />
+                <span className={`flex-1 ${item.status === "completed" ? "line-through text-muted-foreground" : ""}`}>
+                  {item.title}
+                </span>
+                <Badge variant="secondary" className={getPCStatusColor(item.status)}>
+                  {formatLabel(item.status)}
+                </Badge>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => deleteItemMutation.mutate(item.id)}
+                  disabled={deleteItemMutation.isPending}
+                  data-testid={`button-delete-pc-item-${item.id}`}
+                >
+                  <Trash2 className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : !isAddingItem ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <ListChecks className="mx-auto h-8 w-8 mb-2 opacity-50" />
+            <p>No checklist items yet</p>
+            <p className="text-sm">Add items to track job completion</p>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ShareLinkSection({ jobId }: { jobId: string }) {
+  const { toast } = useToast();
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+
+  const { data: shareLinks, isLoading } = useQuery<ClientAccessToken[]>({
+    queryKey: ["/api/jobs", jobId, "share"],
+  });
+
+  const createShareLinkMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", `/api/jobs/${jobId}/share`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs", jobId, "share"] });
+      toast({ title: "Link created", description: "Share link has been generated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const revokeShareLinkMutation = useMutation({
+    mutationFn: async (linkId: string) => {
+      return apiRequest("DELETE", `/api/share/${linkId}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs", jobId, "share"] });
+      toast({ title: "Link revoked", description: "Share link has been deactivated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const copyLink = (token: string) => {
+    const url = `${window.location.origin}/portal/${token}`;
+    navigator.clipboard.writeText(url);
+    toast({ title: "Copied", description: "Link copied to clipboard." });
+  };
+
+  const activeLinks = shareLinks?.filter((link) => link.isActive) || [];
+
+  return (
+    <Card className="overflow-visible">
+      <CardHeader className="flex flex-row items-center justify-between gap-4">
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <Share2 className="h-5 w-5" />
+            Client Portal Access
+          </CardTitle>
+          <CardDescription>
+            Share a link with clients to view job status
+          </CardDescription>
+        </div>
+        <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="outline" data-testid="button-manage-share-links">
+              <LinkIcon className="mr-2 h-4 w-4" />
+              {activeLinks.length > 0 ? "Manage Links" : "Create Link"}
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Share Links</DialogTitle>
+              <DialogDescription>
+                Create and manage shareable links for this job. Clients can view job status without logging in.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              {isLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-12 w-full" />
+                  <Skeleton className="h-12 w-full" />
+                </div>
+              ) : activeLinks.length > 0 ? (
+                <div className="space-y-2">
+                  {activeLinks.map((link) => (
+                    <div
+                      key={link.id}
+                      className="flex items-center gap-2 p-3 rounded-md border"
+                      data-testid={`share-link-${link.id}`}
+                    >
+                      <div className="flex-1 truncate text-sm font-mono">
+                        {window.location.origin}/portal/{link.token.slice(0, 8)}...
+                      </div>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => copyLink(link.token)}
+                        data-testid={`button-copy-link-${link.id}`}
+                      >
+                        <ClipboardCopy className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => revokeShareLinkMutation.mutate(link.id)}
+                        disabled={revokeShareLinkMutation.isPending}
+                        data-testid={`button-revoke-link-${link.id}`}
+                      >
+                        <Trash2 className="h-4 w-4 text-muted-foreground" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-muted-foreground">
+                  <Share2 className="mx-auto h-8 w-8 mb-2 opacity-50" />
+                  <p>No active share links</p>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                onClick={() => createShareLinkMutation.mutate()}
+                disabled={createShareLinkMutation.isPending}
+                data-testid="button-create-share-link"
+              >
+                {createShareLinkMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="mr-2 h-4 w-4" />
+                )}
+                Create New Link
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </CardHeader>
+      <CardContent>
+        {activeLinks.length > 0 ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Check className="h-4 w-4 text-emerald-500" />
+            <span>{activeLinks.length} active link{activeLinks.length !== 1 ? "s" : ""}</span>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No share links created. Click "Create Link" to generate a shareable link.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function JobForm() {
@@ -463,6 +804,13 @@ export default function JobForm() {
           </div>
         </form>
       </Form>
+
+      {isEditing && id && (
+        <>
+          <PCItemsSection jobId={id} />
+          <ShareLinkSection jobId={id} />
+        </>
+      )}
     </div>
   );
 }
