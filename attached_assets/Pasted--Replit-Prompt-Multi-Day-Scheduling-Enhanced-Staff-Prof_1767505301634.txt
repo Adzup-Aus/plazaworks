@@ -1,0 +1,214 @@
+# Replit Prompt: Multi-Day Scheduling + Enhanced Staff Profiles
+
+## Copy and paste this prompt into Replit:
+
+---
+
+I need to make two major enhancements to the Plaza Works app:
+
+## ENHANCEMENT 1: Multi-Day Job Scheduling
+
+Currently, job scheduling only allows one date per job. I need to support:
+
+### Requirements:
+1. **Multiple scheduled dates per job** - A job can be scheduled across many dates
+2. **Non-consecutive days** - Jobs can have gaps (e.g., Monday, Wednesday, Friday)
+3. **Different durations per day** - Some days might be full day, others half day
+
+### Database Changes:
+Create a new `job_schedule_entries` table (or modify existing schedule table):
+```
+job_schedule_entries:
+  id: primary key
+  job_id: foreign key to jobs
+  scheduled_date: date
+  start_time: time (optional)
+  end_time: time (optional)
+  duration_hours: decimal (default 7.5)
+  assigned_user_id: foreign key to users
+  notes: text
+  status: enum (scheduled, completed, cancelled)
+  created_at: timestamp
+  updated_at: timestamp
+```
+
+### UI Changes:
+
+**Schedule Job Modal - Update to:**
+- Change from single date picker to multi-date selection
+- Allow adding multiple date entries
+- For each date entry, allow:
+  - Date
+  - Assigned staff member (can differ per day)
+  - Duration (full day / half day / custom hours)
+  - Notes for that specific day
+- Show summary of all scheduled dates before confirming
+
+**Calendar View - Update to:**
+- Show jobs spanning multiple days correctly
+- Different visual if job has gaps vs consecutive days
+- Click on any day of a multi-day job to see full schedule
+
+**Job Detail Page - Add:**
+- "Schedule" section showing all scheduled dates
+- Ability to add/remove individual dates
+- Ability to mark individual dates as complete
+
+### Example UI Flow:
+1. Click "Schedule Job"
+2. Select job from dropdown
+3. Click "Add Date" button
+4. Pick date, assign staff, set duration
+5. Click "Add Date" again for next date
+6. Repeat as needed
+7. See summary: "This job is scheduled for 3 days: Jan 5, Jan 7, Jan 8"
+8. Click "Schedule" to confirm all dates
+
+---
+
+## ENHANCEMENT 2: Enhanced Staff Profiles
+
+Add comprehensive staff information for better management and integrations.
+
+### Database Changes:
+Add these fields to the `users` table:
+
+```
+Compensation:
+  salary_type: enum ('annual', 'hourly')
+  salary_amount: decimal
+  overtime_rate_multiplier: decimal (e.g., 1.5 for time-and-a-half)
+  overtime_threshold_hours: decimal (e.g., 38 hours/week before overtime kicks in)
+
+Contact:
+  phone_number: string
+  email_signature: text (store as HTML for rich text)
+
+Working Hours:
+  timezone: string (e.g., 'Australia/Brisbane', 'Pacific/Auckland')
+  lunch_break_minutes: integer
+  lunch_break_paid: boolean
+
+Create new table for working hours schedule:
+  user_working_hours:
+    id: primary key
+    user_id: foreign key to users
+    day_of_week: integer (0=Sunday, 1=Monday, etc.)
+    is_working_day: boolean
+    start_time: time
+    end_time: time
+    created_at: timestamp
+    updated_at: timestamp
+
+Create new table for calendar integrations:
+  user_calendar_integrations:
+    id: primary key
+    user_id: foreign key to users
+    provider: enum ('google', 'outlook', 'apple')
+    calendar_id: string
+    calendar_email: string
+    access_token: text (encrypted)
+    refresh_token: text (encrypted)
+    token_expires_at: timestamp
+    sync_enabled: boolean
+    last_synced_at: timestamp
+    created_at: timestamp
+    updated_at: timestamp
+```
+
+### UI Changes:
+
+**Staff Profile Page - Add new sections:**
+
+**1. Compensation Section:**
+- Salary type toggle: Annual / Hourly
+- Salary amount input with currency
+- Overtime rate multiplier (e.g., 1.5x)
+- Overtime threshold (hours per week before overtime applies)
+
+**2. Contact Section:**
+- Phone number input with validation
+- Email (may already exist)
+- Email signature editor with rich text formatting:
+  - Bold, italic, underline
+  - Font size
+  - Links
+  - Image upload (for logo)
+  - Preview of signature
+
+**3. Working Hours Section:**
+- Timezone dropdown (Australia/Brisbane as default)
+- For each day of week (Mon-Sun):
+  - Checkbox: Working day yes/no
+  - If yes: Start time picker, End time picker
+  - Option to copy hours to all weekdays
+- Lunch break duration (dropdown: 30 min, 45 min, 1 hour, custom)
+- Lunch break paid/unpaid toggle
+
+**4. Calendar Integration Section:**
+- "Connect Calendar" button
+- Supported providers: Google Calendar, Outlook
+- Show connected calendars with:
+  - Provider icon
+  - Email/account name
+  - Green checkmark if connected
+  - Disconnect button
+- Toggle for "Sync job schedules to calendar"
+
+### Google Calendar Integration Flow:
+1. User clicks "Connect Google Calendar"
+2. OAuth popup opens for Google sign-in
+3. User grants calendar permissions
+4. On success, store tokens in user_calendar_integrations
+5. Show calendar as connected
+6. When jobs are scheduled for this user, create Google Calendar events
+7. Sync updates both ways (optional, can be one-way initially)
+
+### Working Hours Display:
+Show a visual summary like:
+```
+Mon: 7:00 AM - 3:30 PM
+Tue: 7:00 AM - 3:30 PM
+Wed: 7:00 AM - 3:30 PM
+Thu: 7:00 AM - 3:30 PM
+Fri: 7:00 AM - 3:30 PM
+Sat: Unavailable
+Sun: Unavailable
+
+Lunch: 30 minutes (unpaid)
+Timezone: Australia/Brisbane (GMT+10)
+```
+
+---
+
+## INTEGRATION POINTS
+
+### Working Hours + Scheduling:
+- When scheduling a job, check if the assigned staff member is available on that day
+- Warn if scheduling outside their working hours
+- Use working hours for capacity calculations
+
+### Calendar Integration + Scheduling:
+- When a job is scheduled, create calendar event for assigned staff
+- Include: Job name, client name, address, notes
+- If job is rescheduled, update calendar event
+- If job is cancelled, delete calendar event
+
+### Salary Data + KPI Module:
+- Use salary_type and salary_amount to calculate hourly_cost_loaded
+- If annual: hourly = (annual + super + workers comp) / (52 weeks x weekly_hours)
+- If hourly: hourly_loaded = hourly x (1 + super_rate + workers_comp_rate)
+
+---
+
+## PRIORITY ORDER
+
+Build in this order:
+1. Multi-day scheduling database changes
+2. Multi-day scheduling UI
+3. Staff profile - compensation fields
+4. Staff profile - contact fields
+5. Staff profile - working hours
+6. Calendar integration (can be Phase 2 if complex)
+
+Please implement these changes now.
