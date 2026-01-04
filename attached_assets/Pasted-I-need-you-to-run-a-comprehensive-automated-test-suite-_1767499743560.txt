@@ -1,0 +1,74 @@
+I need you to run a comprehensive automated test suite for the Plaza Works Job Management App.
+
+SETUP FIRST:
+1. Install testing dependencies if not present (Jest, Playwright, or your preferred test framework)
+2. Create a test database or use test mode
+3. Create these test users in the database:
+   - owner@test.plazaworks.com (Business Owner, Permanent)
+   - plumber1@test.plazaworks.com (Plumber, Permanent)
+   - plumber2@test.plazaworks.com (Plumber, Contractor)
+   - apprentice@test.plazaworks.com (Apprentice, Permanent)
+   - tiler@test.plazaworks.com (Tiler, Contractor)
+   All with password: Test123!
+4. Create a test client: Test Client Pty Ltd, client@test.plazaworks.com
+
+TEST SUITES TO RUN:
+
+PHASE 1 - Foundation:
+- Authentication (signup, login, logout, invalid login, password reset)
+- User Management (create, assign role, set employment type, custom permissions, list users)
+- Role-Based Access (owner full access, plumber limited, apprentice minimal, contractor restricted)
+- Job Management (create, list, filter, edit, change status, assign tradesman, assign apprentice, view details)
+- Scheduling (view calendar, schedule job, multi-day job, filter by tradesman, reschedule, tradesman own view)
+
+PHASE 2 - Client Experience:
+- Client Portal (login, see own jobs only, cannot access other clients, view status, view dates)
+- PC Items (add to job, client views, client selects, client revises, submit approval, staff sees, staff approves)
+- Notifications (status change, visit reminder, assignment, in-app display)
+
+PHASE 3 - Financial:
+- Quotes (create, line items, total calculates, link to job, send, client view, accept, decline)
+- Invoices (create, from quote, deposit, progress, final, total correct)
+- Payments (generate link, link works, record payment, partial payment, deposit unlocks scheduling)
+
+PHASE 4 - Operations:
+- Vehicles (add, assign driver, list, log usage, service schedule, overdue alert, service complete)
+- Checklists (view, complete item, progress, all complete)
+- Photos (upload single, upload multiple, gallery, caption, client sees, delete)
+
+PHASE 5 - Intelligence:
+- Time Tracking (log hours, log with date, daily total, weekly total, edit hours, hours on job)
+- Profitability (job cost calc, profit display, duration variance)
+- Capacity (view dashboard, calculation accuracy, per tradesman view)
+
+INTEGRATION TESTS:
+- Full job lifecycle from creation to final payment
+- Complete client portal flow
+- Quote to job connection
+- Time affects profitability
+- Schedule affects capacity
+- Permissions respected throughout
+
+API TESTS:
+- GET endpoints return correct data
+- POST endpoints create records
+- Unauthorized requests rejected
+- Invalid data rejected with proper errors
+
+FOR EACH TEST:
+1. Run the test
+2. Record PASS or FAIL
+3. If FAIL, capture the error message
+4. Continue to next test
+
+AFTER ALL TESTS:
+1. Generate a test report showing:
+   - Total tests run
+   - Tests passed
+   - Tests failed
+   - Pass rate percentage
+   - List of all failures with error details
+2. For any failures, suggest fixes
+3. Show me the complete test report
+
+Please run all tests now and show me the results.
