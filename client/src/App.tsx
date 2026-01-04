@@ -17,6 +17,10 @@ import Jobs from "@/pages/jobs";
 import JobForm from "@/pages/job-form";
 import Schedule from "@/pages/schedule";
 import Team from "@/pages/team";
+import Quotes from "@/pages/quotes";
+import QuoteForm from "@/pages/quote-form";
+import Invoices from "@/pages/invoices";
+import InvoiceDetail from "@/pages/invoice-detail";
 import ClientPortal from "@/pages/client-portal";
 import NotFound from "@/pages/not-found";
 
@@ -27,6 +31,12 @@ function AuthenticatedRouter() {
       <Route path="/jobs" component={Jobs} />
       <Route path="/jobs/new" component={JobForm} />
       <Route path="/jobs/:id" component={JobForm} />
+      <Route path="/quotes" component={Quotes} />
+      <Route path="/quotes/new" component={QuoteForm} />
+      <Route path="/quotes/:id" component={QuoteForm} />
+      <Route path="/invoices" component={Invoices} />
+      <Route path="/invoices/new" component={InvoiceDetail} />
+      <Route path="/invoices/:id" component={InvoiceDetail} />
       <Route path="/schedule" component={Schedule} />
       <Route path="/team" component={Team} />
       <Route component={NotFound} />
