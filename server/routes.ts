@@ -533,6 +533,9 @@ export async function registerRoutes(
       // Get PC items for the job
       const pcItemsList = await storage.getPCItems(accessToken.jobId);
 
+      // Get invoices for the job
+      const jobInvoices = await storage.getInvoicesByJob(accessToken.jobId);
+
       // Return limited job info for client view
       res.json({
         job: {
@@ -549,6 +552,17 @@ export async function registerRoutes(
           status: item.status,
           dueDate: item.dueDate,
         })),
+        invoices: jobInvoices
+          .filter((inv) => inv.status !== "draft")
+          .map((inv) => ({
+            id: inv.id,
+            invoiceNumber: inv.invoiceNumber,
+            status: inv.status,
+            total: inv.total,
+            amountPaid: inv.amountPaid,
+            amountDue: inv.amountDue,
+            dueDate: inv.dueDate,
+          })),
       });
     } catch (err: any) {
       console.error("Error fetching portal data:", err);

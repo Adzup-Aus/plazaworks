@@ -7,19 +7,40 @@ import { Progress } from "@/components/ui/progress";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   Briefcase,
   MapPin,
   CheckCircle2,
   Circle,
   Clock,
   AlertCircle,
-  Building2
+  Building2,
+  Receipt,
+  DollarSign
 } from "lucide-react";
+import { format } from "date-fns";
 
 interface PortalPCItem {
   id: string;
   title: string;
   status: string;
+  dueDate: string | null;
+}
+
+interface PortalInvoice {
+  id: string;
+  invoiceNumber: string;
+  status: string;
+  total: string | null;
+  amountPaid: string | null;
+  amountDue: string | null;
   dueDate: string | null;
 }
 
@@ -35,6 +56,7 @@ interface PortalJob {
 interface PortalData {
   job: PortalJob;
   pcItems: PortalPCItem[];
+  invoices: PortalInvoice[];
 }
 
 function getStatusColor(status: string): string {
@@ -45,6 +67,17 @@ function getStatusColor(status: string): string {
     on_hold: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
     completed: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
     cancelled: "bg-red-500/10 text-red-600 dark:text-red-400",
+  };
+  return colors[status] || "bg-muted text-muted-foreground";
+}
+
+function getInvoiceStatusColor(status: string): string {
+  const colors: Record<string, string> = {
+    sent: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+    paid: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    partially_paid: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    overdue: "bg-red-500/10 text-red-600 dark:text-red-400",
+    cancelled: "bg-muted text-muted-foreground",
   };
   return colors[status] || "bg-muted text-muted-foreground";
 }
@@ -69,8 +102,13 @@ function formatLabel(str: string): string {
     .join(" ");
 }
 
+function formatCurrency(value: string | null): string {
+  if (!value) return "$0.00";
+  return `$${parseFloat(value).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 function PortalContent({ token }: { token: string }) {
-  const { data, isLoading, isError, error } = useQuery<PortalData>({
+  const { data, isLoading, isError } = useQuery<PortalData>({
     queryKey: [`/api/portal/${token}`],
     retry: false,
   });
@@ -114,7 +152,7 @@ function PortalContent({ token }: { token: string }) {
     return null;
   }
 
-  const { job, pcItems } = data;
+  const { job, pcItems, invoices } = data;
   const completedItems = pcItems.filter((item) => item.status === "completed").length;
   const totalItems = pcItems.length;
   const progressPercent = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
@@ -202,6 +240,70 @@ function PortalContent({ token }: { token: string }) {
           )}
         </CardContent>
       </Card>
+
+      {invoices && invoices.length > 0 && (
+        <Card className="overflow-visible">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Receipt className="h-5 w-5" />
+              Invoices
+            </CardTitle>
+            <CardDescription>
+              View and track your invoices
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Invoice</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Paid</TableHead>
+                  <TableHead className="text-right">Due</TableHead>
+                  <TableHead>Due Date</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {invoices.map((invoice) => (
+                  <TableRow key={invoice.id} data-testid={`portal-invoice-${invoice.id}`}>
+                    <TableCell className="font-medium">{invoice.invoiceNumber}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className={getInvoiceStatusColor(invoice.status)}>
+                        {formatLabel(invoice.status)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">{formatCurrency(invoice.total)}</TableCell>
+                    <TableCell className="text-right text-green-600 dark:text-green-400">
+                      {formatCurrency(invoice.amountPaid)}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {formatCurrency(invoice.amountDue)}
+                    </TableCell>
+                    <TableCell>
+                      {invoice.dueDate 
+                        ? format(new Date(invoice.dueDate), "dd MMM yyyy")
+                        : "-"
+                      }
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <div className="mt-4 p-4 rounded-md bg-muted/50 text-sm text-muted-foreground">
+              <div className="flex items-start gap-2">
+                <DollarSign className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium text-foreground">Payment Methods</p>
+                  <p className="mt-1">
+                    To make a payment, please contact us directly. We accept bank transfer, cash, and cheque.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
