@@ -27,6 +27,7 @@ import {
   Clock,
   DollarSign,
   BarChart3,
+  Target,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -80,6 +81,11 @@ const mainNavItems = [
     title: "Capacity",
     url: "/capacity",
     icon: BarChart3,
+  },
+  {
+    title: "KPI Dashboard",
+    url: "/kpi",
+    icon: Target,
   },
   {
     title: "Team",

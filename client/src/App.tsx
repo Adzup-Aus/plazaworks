@@ -27,6 +27,7 @@ import Checklists from "@/pages/checklists";
 import Productivity from "@/pages/productivity";
 import Backcosting from "@/pages/backcosting";
 import Capacity from "@/pages/capacity";
+import KpiDashboard from "@/pages/kpi-dashboard";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -48,6 +49,7 @@ function AuthenticatedRouter() {
       <Route path="/productivity" component={Productivity} />
       <Route path="/backcosting" component={Backcosting} />
       <Route path="/capacity" component={Capacity} />
+      <Route path="/kpi" component={KpiDashboard} />
       <Route path="/team" component={Team} />
       <Route component={NotFound} />
     </Switch>

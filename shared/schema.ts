@@ -1210,3 +1210,359 @@ export type StaffCapacityView = {
   availableHours: number;
   utilizationPercent: number;
 };
+
+// =====================
+// KPI MODULE TABLES
+// =====================
+
+// Alert types and severities
+export const kpiAlertTypes = [
+  "daily_target_warning",
+  "free_site_visit",
+  "cash_critical",
+  "job_over_duration",
+  "invoice_overdue",
+  "weekly_target_missed",
+  "close_rate_low",
+  "lead_cost_high",
+  "pipeline_low",
+  "monthly_target_missed",
+  "phase_stuck"
+] as const;
+export type KpiAlertType = typeof kpiAlertTypes[number];
+
+export const kpiAlertSeverities = ["info", "warning", "critical"] as const;
+export type KpiAlertSeverity = typeof kpiAlertSeverities[number];
+
+// Team configurations for targets
+export const teamConfigs = ["1P+1A", "2P+2A", "3P+2A"] as const;
+export type TeamConfig = typeof teamConfigs[number];
+
+// KPI Daily Snapshots - per tradesman per day
+export const kpiDailySnapshots = pgTable("kpi_daily_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  staffId: varchar("staff_id").notNull().references(() => staffProfiles.id),
+  snapshotDate: date("snapshot_date").notNull(),
+  laborRevenue: decimal("labor_revenue", { precision: 12, scale: 2 }).default("0"),
+  hoursLogged: decimal("hours_logged", { precision: 6, scale: 2 }).default("0"),
+  jobsCompleted: integer("jobs_completed").default(0),
+  quotesAndSentValue: decimal("quotes_sent_value", { precision: 12, scale: 2 }).default("0"),
+  quotesSentCount: integer("quotes_sent_count").default(0),
+  quotesAcceptedValue: decimal("quotes_accepted_value", { precision: 12, scale: 2 }).default("0"),
+  quotesAcceptedCount: integer("quotes_accepted_count").default(0),
+  targetLabor: decimal("target_labor", { precision: 10, scale: 2 }).default("2000"),
+  targetMet: boolean("target_met").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_kpi_daily_staff").on(table.staffId),
+  index("idx_kpi_daily_date").on(table.snapshotDate),
+]);
+
+// KPI Weekly Snapshots - per tradesman per week
+export const kpiWeeklySnapshots = pgTable("kpi_weekly_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  staffId: varchar("staff_id").notNull().references(() => staffProfiles.id),
+  weekStart: date("week_start").notNull(),
+  weekEnd: date("week_end").notNull(),
+  laborRevenue: decimal("labor_revenue", { precision: 12, scale: 2 }).default("0"),
+  hoursLogged: decimal("hours_logged", { precision: 8, scale: 2 }).default("0"),
+  jobsCompleted: integer("jobs_completed").default(0),
+  quotesSentValue: decimal("quotes_sent_value", { precision: 12, scale: 2 }).default("0"),
+  closeRate: decimal("close_rate", { precision: 5, scale: 2 }).default("0"),
+  targetLabor: decimal("target_labor", { precision: 10, scale: 2 }).default("10000"),
+  targetMet: boolean("target_met").default(false),
+  daysTargetMet: integer("days_target_met").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_kpi_weekly_staff").on(table.staffId),
+  index("idx_kpi_weekly_dates").on(table.weekStart, table.weekEnd),
+]);
+
+// KPI Monthly Snapshots - company-wide or per staff
+export const kpiMonthlySnapshots = pgTable("kpi_monthly_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  staffId: varchar("staff_id").references(() => staffProfiles.id), // nullable for company-wide
+  month: varchar("month", { length: 7 }).notNull(), // YYYY-MM format
+  laborRevenue: decimal("labor_revenue", { precision: 14, scale: 2 }).default("0"),
+  materialsRevenue: decimal("materials_revenue", { precision: 14, scale: 2 }).default("0"),
+  totalRevenue: decimal("total_revenue", { precision: 14, scale: 2 }).default("0"),
+  totalCosts: decimal("total_costs", { precision: 14, scale: 2 }).default("0"),
+  netProfit: decimal("net_profit", { precision: 14, scale: 2 }).default("0"),
+  targetRevenue: decimal("target_revenue", { precision: 14, scale: 2 }),
+  targetProfit: decimal("target_profit", { precision: 14, scale: 2 }),
+  varianceRevenue: decimal("variance_revenue", { precision: 14, scale: 2 }).default("0"),
+  varianceProfit: decimal("variance_profit", { precision: 14, scale: 2 }).default("0"),
+  jobsCompleted: integer("jobs_completed").default(0),
+  jobsStarted: integer("jobs_started").default(0),
+  averageCloseRate: decimal("average_close_rate", { precision: 5, scale: 2 }).default("0"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_kpi_monthly_staff").on(table.staffId),
+  index("idx_kpi_monthly_month").on(table.month),
+]);
+
+// KPI Targets - team configuration targets
+export const kpiTargets = pgTable("kpi_targets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  teamConfig: varchar("team_config", { length: 20 }).notNull(),
+  dailyLaborTarget: decimal("daily_labor_target", { precision: 10, scale: 2 }).default("2000"),
+  weeklyLaborTarget: decimal("weekly_labor_target", { precision: 10, scale: 2 }).default("10000"),
+  monthlyRevenueTarget: decimal("monthly_revenue_target", { precision: 14, scale: 2 }),
+  monthlyProfitTarget: decimal("monthly_profit_target", { precision: 14, scale: 2 }),
+  closeRateTarget: decimal("close_rate_target", { precision: 5, scale: 2 }).default("70"),
+  isActive: boolean("is_active").default(true),
+  effectiveFrom: date("effective_from").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_kpi_targets_config").on(table.teamConfig),
+  index("idx_kpi_targets_active").on(table.isActive),
+]);
+
+// KPI Alerts Log
+export const kpiAlertsLog = pgTable("kpi_alerts_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  alertType: varchar("alert_type", { length: 50 }).notNull(),
+  severity: varchar("severity", { length: 20 }).notNull().default("warning"),
+  staffId: varchar("staff_id").references(() => staffProfiles.id),
+  triggeredAt: timestamp("triggered_at").defaultNow(),
+  message: text("message").notNull(),
+  data: json("data"),
+  acknowledged: boolean("acknowledged").default(false),
+  acknowledgedById: varchar("acknowledged_by_id").references(() => staffProfiles.id),
+  acknowledgedAt: timestamp("acknowledged_at"),
+}, (table) => [
+  index("idx_kpi_alerts_type").on(table.alertType),
+  index("idx_kpi_alerts_staff").on(table.staffId),
+  index("idx_kpi_alerts_ack").on(table.acknowledged),
+]);
+
+// Tradesman Bonus Periods
+export const tradesmanBonusPeriods = pgTable("tradesman_bonus_periods", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  staffId: varchar("staff_id").notNull().references(() => staffProfiles.id),
+  periodStart: date("period_start").notNull(),
+  periodEnd: date("period_end").notNull(),
+  closedSalesLaborValue: decimal("closed_sales_labor_value", { precision: 12, scale: 2 }).default("0"),
+  salesPhase: integer("sales_phase").default(1),
+  bonusTier: varchar("bonus_tier", { length: 50 }),
+  bonusAmount: decimal("bonus_amount", { precision: 10, scale: 2 }).default("0"),
+  approvedById: varchar("approved_by_id").references(() => staffProfiles.id),
+  approvedAt: timestamp("approved_at"),
+  paid: boolean("paid").default(false),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_bonus_staff").on(table.staffId),
+  index("idx_bonus_period").on(table.periodStart, table.periodEnd),
+]);
+
+// Phase Progression Checklist
+export const phaseProgressionChecklist = pgTable("phase_progression_checklist", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  staffId: varchar("staff_id").notNull().references(() => staffProfiles.id),
+  fromPhase: integer("from_phase").notNull(),
+  toPhase: integer("to_phase").notNull(),
+  checklistItem: varchar("checklist_item", { length: 255 }).notNull(),
+  completed: boolean("completed").default(false),
+  completedAt: timestamp("completed_at"),
+  verifiedById: varchar("verified_by_id").references(() => staffProfiles.id),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_phase_checklist_staff").on(table.staffId),
+  index("idx_phase_checklist_phases").on(table.fromPhase, table.toPhase),
+]);
+
+// User Phase Log - history of phase changes
+export const userPhaseLog = pgTable("user_phase_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  staffId: varchar("staff_id").notNull().references(() => staffProfiles.id),
+  previousPhase: integer("previous_phase").notNull(),
+  newPhase: integer("new_phase").notNull(),
+  changedById: varchar("changed_by_id").references(() => staffProfiles.id),
+  changedAt: timestamp("changed_at").defaultNow(),
+  notes: text("notes"),
+}, (table) => [
+  index("idx_phase_log_staff").on(table.staffId),
+]);
+
+// KPI Module Relations
+export const kpiDailySnapshotsRelations = relations(kpiDailySnapshots, ({ one }) => ({
+  staff: one(staffProfiles, {
+    fields: [kpiDailySnapshots.staffId],
+    references: [staffProfiles.id],
+  }),
+}));
+
+export const kpiWeeklySnapshotsRelations = relations(kpiWeeklySnapshots, ({ one }) => ({
+  staff: one(staffProfiles, {
+    fields: [kpiWeeklySnapshots.staffId],
+    references: [staffProfiles.id],
+  }),
+}));
+
+export const kpiMonthlySnapshotsRelations = relations(kpiMonthlySnapshots, ({ one }) => ({
+  staff: one(staffProfiles, {
+    fields: [kpiMonthlySnapshots.staffId],
+    references: [staffProfiles.id],
+  }),
+}));
+
+export const kpiAlertsLogRelations = relations(kpiAlertsLog, ({ one }) => ({
+  staff: one(staffProfiles, {
+    fields: [kpiAlertsLog.staffId],
+    references: [staffProfiles.id],
+  }),
+  acknowledgedBy: one(staffProfiles, {
+    fields: [kpiAlertsLog.acknowledgedById],
+    references: [staffProfiles.id],
+  }),
+}));
+
+export const tradesmanBonusPeriodsRelations = relations(tradesmanBonusPeriods, ({ one }) => ({
+  staff: one(staffProfiles, {
+    fields: [tradesmanBonusPeriods.staffId],
+    references: [staffProfiles.id],
+  }),
+  approvedBy: one(staffProfiles, {
+    fields: [tradesmanBonusPeriods.approvedById],
+    references: [staffProfiles.id],
+  }),
+}));
+
+export const phaseProgressionChecklistRelations = relations(phaseProgressionChecklist, ({ one }) => ({
+  staff: one(staffProfiles, {
+    fields: [phaseProgressionChecklist.staffId],
+    references: [staffProfiles.id],
+  }),
+  verifiedBy: one(staffProfiles, {
+    fields: [phaseProgressionChecklist.verifiedById],
+    references: [staffProfiles.id],
+  }),
+}));
+
+export const userPhaseLogRelations = relations(userPhaseLog, ({ one }) => ({
+  staff: one(staffProfiles, {
+    fields: [userPhaseLog.staffId],
+    references: [staffProfiles.id],
+  }),
+  changedBy: one(staffProfiles, {
+    fields: [userPhaseLog.changedById],
+    references: [staffProfiles.id],
+  }),
+}));
+
+// KPI Module Insert Schemas
+export const insertKpiDailySnapshotSchema = createInsertSchema(kpiDailySnapshots).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertKpiWeeklySnapshotSchema = createInsertSchema(kpiWeeklySnapshots).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertKpiMonthlySnapshotSchema = createInsertSchema(kpiMonthlySnapshots).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertKpiTargetSchema = createInsertSchema(kpiTargets).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertKpiAlertSchema = createInsertSchema(kpiAlertsLog).omit({
+  id: true,
+});
+
+export const insertBonusPeriodSchema = createInsertSchema(tradesmanBonusPeriods).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertPhaseChecklistSchema = createInsertSchema(phaseProgressionChecklist).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertPhaseLogSchema = createInsertSchema(userPhaseLog).omit({
+  id: true,
+});
+
+// KPI Module Types
+export type KpiDailySnapshot = typeof kpiDailySnapshots.$inferSelect;
+export type InsertKpiDailySnapshot = z.infer<typeof insertKpiDailySnapshotSchema>;
+
+export type KpiWeeklySnapshot = typeof kpiWeeklySnapshots.$inferSelect;
+export type InsertKpiWeeklySnapshot = z.infer<typeof insertKpiWeeklySnapshotSchema>;
+
+export type KpiMonthlySnapshot = typeof kpiMonthlySnapshots.$inferSelect;
+export type InsertKpiMonthlySnapshot = z.infer<typeof insertKpiMonthlySnapshotSchema>;
+
+export type KpiTarget = typeof kpiTargets.$inferSelect;
+export type InsertKpiTarget = z.infer<typeof insertKpiTargetSchema>;
+
+export type KpiAlert = typeof kpiAlertsLog.$inferSelect;
+export type InsertKpiAlert = z.infer<typeof insertKpiAlertSchema>;
+
+export type TradesmanBonusPeriod = typeof tradesmanBonusPeriods.$inferSelect;
+export type InsertBonusPeriod = z.infer<typeof insertBonusPeriodSchema>;
+
+export type PhaseProgressionChecklistItem = typeof phaseProgressionChecklist.$inferSelect;
+export type InsertPhaseChecklistItem = z.infer<typeof insertPhaseChecklistSchema>;
+
+export type UserPhaseLogEntry = typeof userPhaseLog.$inferSelect;
+export type InsertPhaseLogEntry = z.infer<typeof insertPhaseLogSchema>;
+
+// KPI Dashboard Types
+export type KpiDashboardDaily = {
+  staffId: string;
+  staffName: string;
+  laborRevenue: number;
+  hoursLogged: number;
+  jobsCompleted: number;
+  quotesSentValue: number;
+  targetLabor: number;
+  targetMet: boolean;
+  status: "green" | "amber" | "red";
+};
+
+export type KpiDashboardWeekly = {
+  staffId: string;
+  staffName: string;
+  laborRevenue: number;
+  quotesSentValue: number;
+  closeRate: number;
+  daysTargetMet: number;
+  targetLabor: number;
+  targetMet: boolean;
+};
+
+export type KpiDashboardMonthly = {
+  totalRevenue: number;
+  laborRevenue: number;
+  netProfit: number;
+  targetRevenue: number;
+  targetProfit: number;
+  varianceRevenue: number;
+  varianceProfit: number;
+  jobsCompleted: number;
+  staffHittingKpis: number;
+  totalStaff: number;
+};
+
+export type TradesmanKpiSummary = {
+  staffId: string;
+  staffName: string;
+  salesPhase: number;
+  weeksAtPhase: number;
+  dailyLabor: number;
+  dailyTarget: number;
+  weeklyLabor: number;
+  weeklyTarget: number;
+  closeRate: number;
+  streakDays: number;
+  projectedBonus: number;
+};

@@ -4,7 +4,7 @@
 A job management system for Plaza Works, a plumbing/renovation company. Building all 5 phases to replace their existing Fergus system.
 
 ## Current State
-**Phase 5 Complete** - All 5 phases now implemented!
+**Phase 6 (KPI Module) Complete** - All 6 phases now implemented!
 
 ### Phase 1 Complete - Foundation:
 - User authentication via Replit Auth (Google, GitHub, email/password)
@@ -49,6 +49,18 @@ A job management system for Plaza Works, a plumbing/renovation company. Building
 - **Capacity Planning**: View staff weekly capacity and scheduled hours
 - **Time Off Management**: Request, approve, and reject leave requests
 - **Staff Availability**: Configure weekly working hours per staff member
+
+### Phase 6 Complete - KPI Module:
+- **KPI Dashboard**: Real-time performance tracking with daily/weekly/monthly views
+- **Traffic Light Status**: Green/Amber/Red indicators for target achievement
+- **Daily Snapshots**: Track labor revenue, hours logged, jobs completed per staff
+- **Weekly Snapshots**: Labor revenue, close rates, days target met
+- **Monthly Snapshots**: Team-level revenue and profit tracking
+- **KPI Targets**: Configurable targets by team configuration (1P+1A, 2P+2A, 3P+2A)
+- **KPI Alerts**: Automated alerts for underperformance with acknowledgment workflow
+- **Bonus Tracking**: Calculate bonuses based on sales phase and labor value
+- **Sales Phase Progression**: 3-phase system (Learning, Growing, Full Performer)
+- **Phase Checklist**: Track requirements for phase advancement
 
 ## Tech Stack
 - **Frontend**: React + TypeScript + Tailwind CSS + shadcn/ui
@@ -111,6 +123,14 @@ A job management system for Plaza Works, a plumbing/renovation company. Building
 - **job_cost_entries** - Material and expense costs for jobs
 - **staff_capacity_rules** - Weekly working hours per staff member
 - **staff_time_off** - Leave requests with approval workflow
+- **kpi_daily_snapshots** - Daily KPI metrics per staff
+- **kpi_weekly_snapshots** - Weekly KPI metrics per staff
+- **kpi_monthly_snapshots** - Monthly team-level KPI metrics
+- **kpi_targets** - Target configurations by team size
+- **kpi_alerts_log** - Underperformance alerts
+- **tradesman_bonus_periods** - Bonus tracking and approval
+- **phase_progression_checklist** - Phase advancement requirements
+- **user_phase_log** - Sales phase change history
 
 ## API Endpoints
 All endpoints require authentication except login/logout.

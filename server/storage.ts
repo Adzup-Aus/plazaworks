@@ -51,6 +51,27 @@ import {
   type StaffProductivityMetrics,
   type JobBackcostingSummary,
   type StaffCapacityView,
+  // KPI Module types
+  type KpiDailySnapshot,
+  type InsertKpiDailySnapshot,
+  type KpiWeeklySnapshot,
+  type InsertKpiWeeklySnapshot,
+  type KpiMonthlySnapshot,
+  type InsertKpiMonthlySnapshot,
+  type KpiTarget,
+  type InsertKpiTarget,
+  type KpiAlert,
+  type InsertKpiAlert,
+  type TradesmanBonusPeriod,
+  type InsertBonusPeriod,
+  type PhaseProgressionChecklistItem,
+  type InsertPhaseChecklistItem,
+  type UserPhaseLogEntry,
+  type InsertPhaseLogEntry,
+  type KpiDashboardDaily,
+  type KpiDashboardWeekly,
+  type KpiDashboardMonthly,
+  type TradesmanKpiSummary,
   staffProfiles,
   jobs,
   scheduleEntries,
@@ -73,6 +94,15 @@ import {
   jobCostEntries,
   staffCapacityRules,
   staffTimeOff,
+  // KPI Module tables
+  kpiDailySnapshots,
+  kpiWeeklySnapshots,
+  kpiMonthlySnapshots,
+  kpiTargets,
+  kpiAlertsLog,
+  tradesmanBonusPeriods,
+  phaseProgressionChecklist,
+  userPhaseLog,
   users,
   type User,
 } from "@shared/schema";
@@ -1544,6 +1574,425 @@ export class DatabaseStorage implements IStorage {
     }
 
     return views;
+  }
+
+  // =====================
+  // KPI MODULE OPERATIONS
+  // =====================
+
+  // KPI Daily Snapshots
+  async getKpiDailySnapshots(staffId?: string, dateFrom?: string, dateTo?: string): Promise<KpiDailySnapshot[]> {
+    let query = db.select().from(kpiDailySnapshots);
+    const conditions = [];
+    if (staffId) conditions.push(eq(kpiDailySnapshots.staffId, staffId));
+    if (dateFrom) conditions.push(gte(kpiDailySnapshots.snapshotDate, dateFrom));
+    if (dateTo) conditions.push(lte(kpiDailySnapshots.snapshotDate, dateTo));
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+    return query.orderBy(desc(kpiDailySnapshots.snapshotDate));
+  }
+
+  async createKpiDailySnapshot(snapshot: InsertKpiDailySnapshot): Promise<KpiDailySnapshot> {
+    const [created] = await db.insert(kpiDailySnapshots).values(snapshot).returning();
+    return created;
+  }
+
+  async upsertKpiDailySnapshot(snapshot: InsertKpiDailySnapshot): Promise<KpiDailySnapshot> {
+    const existing = await db.select().from(kpiDailySnapshots)
+      .where(and(
+        eq(kpiDailySnapshots.staffId, snapshot.staffId),
+        eq(kpiDailySnapshots.snapshotDate, snapshot.snapshotDate)
+      ))
+      .limit(1);
+    
+    if (existing.length > 0) {
+      const [updated] = await db.update(kpiDailySnapshots)
+        .set(snapshot)
+        .where(eq(kpiDailySnapshots.id, existing[0].id))
+        .returning();
+      return updated;
+    }
+    return this.createKpiDailySnapshot(snapshot);
+  }
+
+  // KPI Weekly Snapshots
+  async getKpiWeeklySnapshots(staffId?: string, weekStart?: string): Promise<KpiWeeklySnapshot[]> {
+    let query = db.select().from(kpiWeeklySnapshots);
+    const conditions = [];
+    if (staffId) conditions.push(eq(kpiWeeklySnapshots.staffId, staffId));
+    if (weekStart) conditions.push(eq(kpiWeeklySnapshots.weekStart, weekStart));
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+    return query.orderBy(desc(kpiWeeklySnapshots.weekStart));
+  }
+
+  async createKpiWeeklySnapshot(snapshot: InsertKpiWeeklySnapshot): Promise<KpiWeeklySnapshot> {
+    const [created] = await db.insert(kpiWeeklySnapshots).values(snapshot).returning();
+    return created;
+  }
+
+  // KPI Monthly Snapshots
+  async getKpiMonthlySnapshots(month?: string): Promise<KpiMonthlySnapshot[]> {
+    let query = db.select().from(kpiMonthlySnapshots);
+    if (month) {
+      query = query.where(eq(kpiMonthlySnapshots.month, month)) as any;
+    }
+    return query.orderBy(desc(kpiMonthlySnapshots.month));
+  }
+
+  async createKpiMonthlySnapshot(snapshot: InsertKpiMonthlySnapshot): Promise<KpiMonthlySnapshot> {
+    const [created] = await db.insert(kpiMonthlySnapshots).values(snapshot).returning();
+    return created;
+  }
+
+  // KPI Targets
+  async getKpiTargets(): Promise<KpiTarget[]> {
+    return db.select().from(kpiTargets).where(eq(kpiTargets.isActive, true));
+  }
+
+  async getKpiTargetByConfig(teamConfig: string): Promise<KpiTarget | undefined> {
+    const [target] = await db.select().from(kpiTargets)
+      .where(and(eq(kpiTargets.teamConfig, teamConfig), eq(kpiTargets.isActive, true)))
+      .limit(1);
+    return target;
+  }
+
+  async createKpiTarget(target: InsertKpiTarget): Promise<KpiTarget> {
+    const [created] = await db.insert(kpiTargets).values(target).returning();
+    return created;
+  }
+
+  async updateKpiTarget(id: string, target: Partial<InsertKpiTarget>): Promise<KpiTarget | undefined> {
+    const [updated] = await db.update(kpiTargets)
+      .set(target)
+      .where(eq(kpiTargets.id, id))
+      .returning();
+    return updated;
+  }
+
+  // KPI Alerts
+  async getKpiAlerts(acknowledged?: boolean): Promise<KpiAlert[]> {
+    let query = db.select().from(kpiAlertsLog);
+    if (acknowledged !== undefined) {
+      query = query.where(eq(kpiAlertsLog.acknowledged, acknowledged)) as any;
+    }
+    return query.orderBy(desc(kpiAlertsLog.triggeredAt));
+  }
+
+  async getKpiAlertsByStaff(staffId: string): Promise<KpiAlert[]> {
+    return db.select().from(kpiAlertsLog)
+      .where(eq(kpiAlertsLog.staffId, staffId))
+      .orderBy(desc(kpiAlertsLog.triggeredAt));
+  }
+
+  async createKpiAlert(alert: InsertKpiAlert): Promise<KpiAlert> {
+    const [created] = await db.insert(kpiAlertsLog).values(alert).returning();
+    return created;
+  }
+
+  async acknowledgeKpiAlert(id: string, acknowledgedById: string): Promise<KpiAlert | undefined> {
+    const [updated] = await db.update(kpiAlertsLog)
+      .set({ 
+        acknowledged: true, 
+        acknowledgedById, 
+        acknowledgedAt: new Date() 
+      })
+      .where(eq(kpiAlertsLog.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Tradesman Bonus Periods
+  async getBonusPeriods(staffId?: string): Promise<TradesmanBonusPeriod[]> {
+    let query = db.select().from(tradesmanBonusPeriods);
+    if (staffId) {
+      query = query.where(eq(tradesmanBonusPeriods.staffId, staffId)) as any;
+    }
+    return query.orderBy(desc(tradesmanBonusPeriods.periodEnd));
+  }
+
+  async getCurrentBonusPeriod(staffId: string): Promise<TradesmanBonusPeriod | undefined> {
+    const today = new Date().toISOString().split("T")[0];
+    const [period] = await db.select().from(tradesmanBonusPeriods)
+      .where(and(
+        eq(tradesmanBonusPeriods.staffId, staffId),
+        lte(tradesmanBonusPeriods.periodStart, today),
+        gte(tradesmanBonusPeriods.periodEnd, today)
+      ))
+      .limit(1);
+    return period;
+  }
+
+  async createBonusPeriod(period: InsertBonusPeriod): Promise<TradesmanBonusPeriod> {
+    const [created] = await db.insert(tradesmanBonusPeriods).values(period).returning();
+    return created;
+  }
+
+  async approveBonusPeriod(id: string, approvedById: string): Promise<TradesmanBonusPeriod | undefined> {
+    const [updated] = await db.update(tradesmanBonusPeriods)
+      .set({ approvedById, approvedAt: new Date() })
+      .where(eq(tradesmanBonusPeriods.id, id))
+      .returning();
+    return updated;
+  }
+
+  async markBonusPeriodPaid(id: string): Promise<TradesmanBonusPeriod | undefined> {
+    const [updated] = await db.update(tradesmanBonusPeriods)
+      .set({ paid: true, paidAt: new Date() })
+      .where(eq(tradesmanBonusPeriods.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Phase Progression Checklist
+  async getPhaseChecklist(staffId: string, fromPhase: number, toPhase: number): Promise<PhaseProgressionChecklistItem[]> {
+    return db.select().from(phaseProgressionChecklist)
+      .where(and(
+        eq(phaseProgressionChecklist.staffId, staffId),
+        eq(phaseProgressionChecklist.fromPhase, fromPhase),
+        eq(phaseProgressionChecklist.toPhase, toPhase)
+      ));
+  }
+
+  async createPhaseChecklistItem(item: InsertPhaseChecklistItem): Promise<PhaseProgressionChecklistItem> {
+    const [created] = await db.insert(phaseProgressionChecklist).values(item).returning();
+    return created;
+  }
+
+  async togglePhaseChecklistItem(id: string, verifiedById?: string): Promise<PhaseProgressionChecklistItem | undefined> {
+    const [existing] = await db.select().from(phaseProgressionChecklist)
+      .where(eq(phaseProgressionChecklist.id, id))
+      .limit(1);
+    
+    if (!existing) return undefined;
+    
+    const [updated] = await db.update(phaseProgressionChecklist)
+      .set({
+        completed: !existing.completed,
+        completedAt: !existing.completed ? new Date() : null,
+        verifiedById: !existing.completed ? verifiedById : null,
+      })
+      .where(eq(phaseProgressionChecklist.id, id))
+      .returning();
+    return updated;
+  }
+
+  // User Phase Log
+  async getPhaseLog(staffId: string): Promise<UserPhaseLogEntry[]> {
+    return db.select().from(userPhaseLog)
+      .where(eq(userPhaseLog.staffId, staffId))
+      .orderBy(desc(userPhaseLog.changedAt));
+  }
+
+  async createPhaseLogEntry(entry: InsertPhaseLogEntry): Promise<UserPhaseLogEntry> {
+    const [created] = await db.insert(userPhaseLog).values(entry).returning();
+    return created;
+  }
+
+  // KPI Dashboard Calculations
+  async getKpiDashboardDaily(date?: string): Promise<KpiDashboardDaily[]> {
+    const targetDate = date || new Date().toISOString().split("T")[0];
+    const allStaff = await this.getStaffProfiles();
+    const snapshots = await this.getKpiDailySnapshots(undefined, targetDate, targetDate);
+    
+    const results: KpiDashboardDaily[] = [];
+    
+    for (const staff of allStaff) {
+      const snapshot = snapshots.find(s => s.staffId === staff.id);
+      const laborRevenue = snapshot ? this.safeParseFloat(snapshot.laborRevenue, 0) : 0;
+      const targetLabor = staff.dailyLaborTarget ? this.safeParseFloat(staff.dailyLaborTarget, 2000) : 2000;
+      const ratio = targetLabor > 0 ? laborRevenue / targetLabor : 0;
+      
+      let status: "green" | "amber" | "red" = "red";
+      if (ratio >= 1) status = "green";
+      else if (ratio >= 0.75) status = "amber";
+      
+      results.push({
+        staffId: staff.id,
+        staffName: staff.user?.firstName 
+          ? `${staff.user.firstName} ${staff.user.lastName || ""}`.trim()
+          : staff.user?.email || "Unknown",
+        laborRevenue,
+        hoursLogged: snapshot ? this.safeParseFloat(snapshot.hoursLogged, 0) : 0,
+        jobsCompleted: snapshot?.jobsCompleted || 0,
+        quotesSentValue: snapshot ? this.safeParseFloat(snapshot.quotesAndSentValue, 0) : 0,
+        targetLabor,
+        targetMet: ratio >= 1,
+        status,
+      });
+    }
+    
+    return results;
+  }
+
+  async getKpiDashboardWeekly(weekStart?: string): Promise<KpiDashboardWeekly[]> {
+    const startDate = weekStart || this.getWeekStart(new Date());
+    const allStaff = await this.getStaffProfiles();
+    const snapshots = await this.getKpiWeeklySnapshots(undefined, startDate);
+    
+    const results: KpiDashboardWeekly[] = [];
+    
+    for (const staff of allStaff) {
+      const snapshot = snapshots.find(s => s.staffId === staff.id);
+      const laborRevenue = snapshot ? this.safeParseFloat(snapshot.laborRevenue, 0) : 0;
+      const targetLabor = staff.weeklyLaborTarget ? this.safeParseFloat(staff.weeklyLaborTarget, 10000) : 10000;
+      
+      results.push({
+        staffId: staff.id,
+        staffName: staff.user?.firstName 
+          ? `${staff.user.firstName} ${staff.user.lastName || ""}`.trim()
+          : staff.user?.email || "Unknown",
+        laborRevenue,
+        quotesSentValue: snapshot ? this.safeParseFloat(snapshot.quotesSentValue, 0) : 0,
+        closeRate: snapshot ? this.safeParseFloat(snapshot.closeRate, 0) : 0,
+        daysTargetMet: snapshot?.daysTargetMet || 0,
+        targetLabor,
+        targetMet: laborRevenue >= targetLabor,
+      });
+    }
+    
+    return results;
+  }
+
+  private getWeekStart(date: Date): string {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    d.setDate(diff);
+    return d.toISOString().split("T")[0];
+  }
+
+  async getTradesmanKpiSummary(staffId: string): Promise<TradesmanKpiSummary | undefined> {
+    const staff = await this.getStaffProfile(staffId);
+    if (!staff) return undefined;
+    
+    const today = new Date().toISOString().split("T")[0];
+    const weekStart = this.getWeekStart(new Date());
+    
+    const dailySnapshots = await this.getKpiDailySnapshots(staffId, today, today);
+    const weeklySnapshots = await this.getKpiWeeklySnapshots(staffId, weekStart);
+    
+    const dailySnapshot = dailySnapshots[0];
+    const weeklySnapshot = weeklySnapshots[0];
+    
+    // Calculate weeks at current phase
+    let weeksAtPhase = 0;
+    if (staff.phaseStartDate) {
+      const phaseStart = new Date(staff.phaseStartDate);
+      const now = new Date();
+      weeksAtPhase = Math.floor((now.getTime() - phaseStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
+    }
+    
+    // Calculate streak days
+    let streakDays = 0;
+    const recentSnapshots = await this.getKpiDailySnapshots(staffId);
+    for (const snap of recentSnapshots.slice(0, 30)) {
+      if (snap.targetMet) streakDays++;
+      else break;
+    }
+    
+    // Get current bonus period for projected bonus
+    const bonusPeriod = await this.getCurrentBonusPeriod(staffId);
+    const projectedBonus = bonusPeriod ? this.safeParseFloat(bonusPeriod.bonusAmount, 0) : 0;
+    
+    return {
+      staffId: staff.id,
+      staffName: staff.user?.firstName 
+        ? `${staff.user.firstName} ${staff.user.lastName || ""}`.trim()
+        : staff.user?.email || "Unknown",
+      salesPhase: staff.salesPhase || 1,
+      weeksAtPhase,
+      dailyLabor: dailySnapshot ? this.safeParseFloat(dailySnapshot.laborRevenue, 0) : 0,
+      dailyTarget: staff.dailyLaborTarget ? this.safeParseFloat(staff.dailyLaborTarget, 2000) : 2000,
+      weeklyLabor: weeklySnapshot ? this.safeParseFloat(weeklySnapshot.laborRevenue, 0) : 0,
+      weeklyTarget: staff.weeklyLaborTarget ? this.safeParseFloat(staff.weeklyLaborTarget, 10000) : 10000,
+      closeRate: weeklySnapshot ? this.safeParseFloat(weeklySnapshot.closeRate, 0) : 0,
+      streakDays,
+      projectedBonus,
+    };
+  }
+
+  // Calculate and save daily KPI snapshot for a staff member
+  async calculateDailyKpiSnapshot(staffId: string, date: string): Promise<KpiDailySnapshot> {
+    const staff = await this.getStaffProfile(staffId);
+    if (!staff) throw new Error("Staff not found");
+    
+    // Get time entries for the day
+    const timeEntries = await this.getTimeEntries(staffId, date, date);
+    const hoursLogged = timeEntries.reduce((sum, e) => sum + this.safeParseFloat(e.hoursWorked, 0), 0);
+    
+    // Calculate labor revenue (hours * hourly rate or estimate from job completions)
+    const hourlyRate = staff.hourlyCostLoaded ? this.safeParseFloat(staff.hourlyCostLoaded, 0) : 266; // $2000/7.5hrs
+    const laborRevenue = hoursLogged * hourlyRate;
+    
+    // Count completed jobs
+    const allJobs = await this.getJobs();
+    const completedJobs = allJobs.filter(j => 
+      j.status === "completed" && 
+      j.updatedAt && 
+      j.updatedAt.toISOString().split("T")[0] === date
+    ).length;
+    
+    const targetLabor = staff.dailyLaborTarget ? this.safeParseFloat(staff.dailyLaborTarget, 2000) : 2000;
+    
+    return this.upsertKpiDailySnapshot({
+      staffId,
+      snapshotDate: date,
+      laborRevenue: String(laborRevenue),
+      hoursLogged: String(hoursLogged),
+      jobsCompleted: completedJobs,
+      targetLabor: String(targetLabor),
+      targetMet: laborRevenue >= targetLabor,
+    });
+  }
+
+  // Advance tradesman to next sales phase
+  async advanceSalesPhase(staffId: string, changedById: string, notes?: string): Promise<void> {
+    const staff = await this.getStaffProfile(staffId);
+    if (!staff) throw new Error("Staff not found");
+    
+    const currentPhase = staff.salesPhase || 1;
+    if (currentPhase >= 3) throw new Error("Already at maximum phase");
+    
+    const newPhase = currentPhase + 1;
+    const today = new Date().toISOString().split("T")[0];
+    
+    // Update staff profile
+    await this.updateStaffProfile(staffId, {
+      salesPhase: newPhase,
+      phaseStartDate: today,
+    });
+    
+    // Log the phase change
+    await this.createPhaseLogEntry({
+      staffId,
+      previousPhase: currentPhase,
+      newPhase,
+      changedById,
+      notes,
+    });
+  }
+
+  // Calculate bonus amount based on sales phase and labor value
+  calculateBonusAmount(salesPhase: number, laborValue: number): { tier: string; amount: number } {
+    if (salesPhase === 2) {
+      if (laborValue <= 12000) return { tier: "base", amount: 0 };
+      if (laborValue <= 14000) return { tier: "tier1", amount: 300 };
+      if (laborValue <= 16000) return { tier: "tier2", amount: 500 };
+      if (laborValue <= 18000) return { tier: "tier3", amount: 750 };
+      return { tier: "tier4", amount: 1000 };
+    } else if (salesPhase === 3) {
+      if (laborValue <= 12000) return { tier: "base", amount: 0 };
+      if (laborValue <= 15000) return { tier: "tier1", amount: 400 };
+      if (laborValue <= 18000) return { tier: "tier2", amount: 700 };
+      if (laborValue <= 22000) return { tier: "tier3", amount: 1000 };
+      return { tier: "tier4", amount: 1500 };
+    }
+    return { tier: "phase1", amount: 0 }; // Phase 1 has no bonus
   }
 }
 
