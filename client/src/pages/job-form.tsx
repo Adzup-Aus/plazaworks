@@ -90,7 +90,7 @@ function PCItemsSection({ jobId }: { jobId: string }) {
   const [isAddingItem, setIsAddingItem] = useState(false);
 
   const { data: pcItems, isLoading } = useQuery<PCItem[]>({
-    queryKey: ["/api/jobs", jobId, "pc-items"],
+    queryKey: [`/api/jobs/${jobId}/pc-items`],
   });
 
   const addItemMutation = useMutation({
@@ -98,7 +98,7 @@ function PCItemsSection({ jobId }: { jobId: string }) {
       return apiRequest("POST", `/api/jobs/${jobId}/pc-items`, { title, status: "pending" });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs", jobId, "pc-items"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/pc-items`] });
       setNewItemTitle("");
       setIsAddingItem(false);
       toast({ title: "Item added", description: "PC item has been added to the checklist." });
@@ -113,7 +113,7 @@ function PCItemsSection({ jobId }: { jobId: string }) {
       return apiRequest("POST", `/api/pc-items/${itemId}/complete`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs", jobId, "pc-items"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/pc-items`] });
       toast({ title: "Item completed", description: "PC item marked as complete." });
     },
     onError: (error: Error) => {
@@ -126,7 +126,7 @@ function PCItemsSection({ jobId }: { jobId: string }) {
       return apiRequest("DELETE", `/api/pc-items/${itemId}`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs", jobId, "pc-items"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/pc-items`] });
       toast({ title: "Item deleted", description: "PC item has been removed." });
     },
     onError: (error: Error) => {
@@ -253,7 +253,7 @@ function ShareLinkSection({ jobId }: { jobId: string }) {
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
 
   const { data: shareLinks, isLoading } = useQuery<ClientAccessToken[]>({
-    queryKey: ["/api/jobs", jobId, "share"],
+    queryKey: [`/api/jobs/${jobId}/share`],
   });
 
   const createShareLinkMutation = useMutation({
@@ -261,7 +261,7 @@ function ShareLinkSection({ jobId }: { jobId: string }) {
       return apiRequest("POST", `/api/jobs/${jobId}/share`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs", jobId, "share"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/share`] });
       toast({ title: "Link created", description: "Share link has been generated." });
     },
     onError: (error: Error) => {
@@ -274,7 +274,7 @@ function ShareLinkSection({ jobId }: { jobId: string }) {
       return apiRequest("DELETE", `/api/share/${linkId}`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs", jobId, "share"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/share`] });
       toast({ title: "Link revoked", description: "Share link has been deactivated." });
     },
     onError: (error: Error) => {

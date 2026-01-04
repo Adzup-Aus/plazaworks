@@ -71,7 +71,7 @@ function formatLabel(str: string): string {
 
 function PortalContent({ token }: { token: string }) {
   const { data, isLoading, isError, error } = useQuery<PortalData>({
-    queryKey: ["/api/portal", token],
+    queryKey: [`/api/portal/${token}`],
     retry: false,
   });
 
