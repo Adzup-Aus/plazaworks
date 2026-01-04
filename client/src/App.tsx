@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { NotificationCenter } from "@/components/notification-center";
 import { useAuth } from "@/hooks/use-auth";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -16,6 +17,7 @@ import Jobs from "@/pages/jobs";
 import JobForm from "@/pages/job-form";
 import Schedule from "@/pages/schedule";
 import Team from "@/pages/team";
+import ClientPortal from "@/pages/client-portal";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -45,7 +47,10 @@ function AuthenticatedLayout() {
         <div className="flex flex-1 flex-col">
           <header className="sticky top-0 z-50 flex h-16 items-center justify-between gap-4 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <SidebarTrigger data-testid="button-sidebar-toggle" />
-            <ThemeToggle />
+            <div className="flex items-center gap-2">
+              <NotificationCenter />
+              <ThemeToggle />
+            </div>
           </header>
           <main className="flex-1 overflow-auto p-6">
             <div className="mx-auto max-w-7xl">
@@ -72,8 +77,20 @@ function LoadingScreen() {
   );
 }
 
+function PublicRouter() {
+  return (
+    <Switch>
+      <Route path="/portal/:token" component={ClientPortal} />
+    </Switch>
+  );
+}
+
 function AppContent() {
   const { user, isLoading, isAuthenticated } = useAuth();
+
+  if (typeof window !== "undefined" && window.location.pathname.startsWith("/portal/")) {
+    return <PublicRouter />;
+  }
 
   if (isLoading) {
     return <LoadingScreen />;
