@@ -1,16 +1,31 @@
 # Plaza Works Job Management App
 
 ## Overview
-A job management system for Plaza Works, a plumbing/renovation company. This is Phase 1 (Foundation) of a 5-phase build covering the full customer journey from quote to completion.
+A job management system for Plaza Works, a plumbing/renovation company. Building all 5 phases to replace their existing Fergus system.
 
 ## Current State
-**Phase 1 Complete** - Foundation layer with:
+**Phase 3 In Progress** - Quotes, Invoices & Payments:
+
+### Phase 1 Complete - Foundation:
 - User authentication via Replit Auth (Google, GitHub, email/password)
 - User management with roles (Plumber, Plumbing Manager, Project Manager, Carpenter, Waterproofer, Tiler, Electrician, Admin)
 - Employment type tracking (Permanent/Contractor)
 - Custom permissions per user (independent of role)
 - Job CRUD with status tracking
 - Basic scheduling calendar showing jobs by date
+
+### Phase 2 Complete - Client Portal & Notifications:
+- Client portal with secure token-based access
+- PC items tracking for jobs
+- Notification center for system alerts
+
+### Phase 3 In Progress - Quotes, Invoices & Payments:
+- Quote management with line items, numbering (Q2024-0001), and status tracking
+- Invoice management with numbering (INV2024-0001), tax calculations, and payment tracking
+- Quote-to-job conversion workflow
+- Invoice generation from jobs/quotes
+- Payment recording (bank transfer, cash, cheque) with automatic invoice status updates
+- **Note: Stripe integration dismissed by user** - can be added later if needed
 
 ## Tech Stack
 - **Frontend**: React + TypeScript + Tailwind CSS + shadcn/ui
