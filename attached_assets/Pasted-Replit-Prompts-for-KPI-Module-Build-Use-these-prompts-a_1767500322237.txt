@@ -1,0 +1,328 @@
+Replit Prompts for KPI Module Build
+Use these prompts after completing Phases 1-5 of the main feature specification.
+
+Before You Start
+Make sure all previous phases are working and tested
+Attach the KPI Module document to each prompt
+Build in order (Phase A → B → C → D → E)
+Test each phase before moving to the next
+
+Phase A: Database and Data Layer
+Copy and paste this prompt:
+Continue building the Plaza Works job management app. Previous phases (1-5) are complete.
+
+Now build Phase A of the KPI Module: Database and Data Layer
+
+TABLES TO CREATE:
+- kpi_daily_snapshots (user_id, snapshot_date, labor_revenue, hours_logged, jobs_completed, quotes_sent_value, quotes_sent_count, quotes_accepted_value, quotes_accepted_count, target_labor, target_met)
+- kpi_weekly_snapshots (user_id, week_start, week_end, labor_revenue, hours_logged, jobs_completed, quotes_sent_value, close_rate, target_labor, target_met, days_target_met)
+- kpi_monthly_snapshots (user_id nullable, month, labor_revenue, materials_revenue, total_revenue, total_costs, net_profit, target_revenue, target_profit, variance_revenue, variance_profit, jobs_completed, jobs_started, average_close_rate)
+- kpi_targets (team_config, daily_labor_target, weekly_labor_target, monthly_revenue_target, monthly_profit_target, close_rate_target, is_active, effective_from)
+- kpi_alerts_log (alert_type, severity, user_id, triggered_at, message, data as JSON, acknowledged, acknowledged_by, acknowledged_at)
+- tradesman_bonus_periods (user_id, period_start, period_end, closed_sales_labor_value, sales_phase, bonus_tier, bonus_amount, approved_by, approved_at, paid, paid_at)
+- phase_progression_checklist (user_id, from_phase, to_phase, checklist_item, completed, completed_at, verified_by, notes)
+- user_phase_log (user_id, previous_phase, new_phase, changed_by, changed_at, notes)
+
+NEW FIELDS TO ADD TO EXISTING USERS TABLE:
+- hourly_cost_loaded (decimal)
+- daily_cost_loaded (decimal)
+- sales_phase (integer, default 1)
+- phase_start_date (date)
+- weekly_labor_target (decimal, default 10000)
+- daily_labor_target (decimal, default 2000)
+
+SEED DATA FOR kpi_targets:
+- 1P+1A: daily $2000, weekly $10000, monthly revenue $64950, monthly profit $3001, close rate 70%
+- 2P+2A: daily $2000, weekly $10000, monthly revenue $129900, monthly profit $22328, close rate 70%
+- 3P+2A: daily $2000, weekly $10000, monthly revenue $194850, monthly profit $51120, close rate 70%
+
+See attached KPI Module document for full schema details and relationships.
+
+
+Phase B: Core KPI Calculations and API
+Copy and paste this prompt:
+Continue building the KPI Module. Phase A (database) is complete.
+
+Now build Phase B: Core KPI Calculations and API Endpoints
+
+CALCULATIONS TO IMPLEMENT:
+
+1. Daily Labor Revenue (per tradesman):
+   - Sum labor amounts from completed tasks/jobs for the day
+   - Compare against daily_labor_target from user record
+
+2. Weekly Labor Revenue (per tradesman):
+   - Sum of daily labor revenues for the week
+   - Compare against weekly_labor_target
+
+3. Close Rate (per tradesman, per period):
+   - quotes_accepted / quotes_sent x 100
+   - Pull from existing quotes table
+
+4. Job Profitability:
+   - job_profit = labor_revenue - (hours_logged x user.hourly_cost_loaded)
+   - daily_profit_rate = job_profit / actual_duration_days
+
+5. Duration Variance:
+   - actual_duration = completed_at - start_date
+   - variance = actual_duration - quoted_duration
+
+6. Schedule Capacity:
+   - For each period (this week, +1, +2, +3, +4 weeks)
+   - booked_days / available_days (5) x 100
+
+API ENDPOINTS TO CREATE:
+
+GET /api/v1/kpi/dashboard/daily
+GET /api/v1/kpi/dashboard/weekly  
+GET /api/v1/kpi/dashboard/monthly
+GET /api/v1/kpi/dashboard/owner (requires owner role)
+GET /api/v1/kpi/tradesman/{user_id}/summary
+GET /api/v1/kpi/pipeline
+GET /api/v1/kpi/capacity
+
+All endpoints return standard response format with success/data/error structure.
+
+See attached KPI Module document for full calculation formulas and response formats.
+
+
+Phase C: Dashboards UI
+Copy and paste this prompt:
+Continue building the KPI Module. Phases A-B are complete.
+
+Now build Phase C: Dashboard User Interfaces
+
+DASHBOARDS TO CREATE:
+
+1. BUSINESS OWNER DASHBOARD (/dashboard/owner)
+   - Daily view (default): Per-tradesman cards showing labor revenue, hours, jobs, quotes
+   - Status indicators: Green (at/above target), Amber (75-99%), Red (below 75%)
+   - Quick summary cards: Total team revenue, total quotes, jobs completed, red flags count
+   - Toggle between Daily / Weekly / Monthly views
+   - Weekly adds: close rate, days hitting target, cash position, pipeline health
+   - Monthly adds: P&L vs target, profit variance, team performance table
+
+2. TRADESMAN DASHBOARD (/dashboard/tradesman)
+   - My daily numbers: labor revenue, hours logged, jobs progressed
+   - My weekly numbers with trend indicators (up/down arrows)
+   - Progress bar showing weekly labor target progress
+   - Calendar heat map (last 4 weeks, color per day)
+   - Current sales phase display
+   - Streak counter for consecutive days hitting target
+
+3. APPRENTICE DASHBOARD (/dashboard/apprentice)
+   - Daily hours logged vs 7.5 target
+   - Weekly hours logged vs 37.5 target
+   - Assigned tradesman status
+   - Simple progress indicators
+
+4. MARKETING DASHBOARD (/dashboard/marketing)
+   - Lead counts by type (drainage/bathroom)
+   - Lead cost metrics with thresholds
+   - Response time average
+   - Pipeline volume vs team capacity
+
+DESIGN NOTES:
+- Use existing app styling and components
+- Mobile responsive (tradesmen use phones in field)
+- Real-time updates where possible
+- Clear visual hierarchy - most important numbers largest
+
+See attached KPI Module document for full dashboard specifications.
+
+
+Phase D: Alerts and Automated Reports
+Copy and paste this prompt:
+Continue building the KPI Module. Phases A-C are complete.
+
+Now build Phase D: Alert System and Automated Reports
+
+ALERTS TO IMPLEMENT:
+
+Immediate (Push + In-app):
+- daily_target_warning: Labor < $1,500 → notify tradesman + owner
+- free_site_visit: Site visit logged with $0 → notify owner
+- cash_critical: Balance < 1 week wages → SMS + email to owner
+- job_over_duration: Actual > Quoted + 1 day → notify owner
+
+Weekly (Dashboard + Email):
+- weekly_target_missed: Labor < $8,000 for 2 weeks → owner + tradesman
+- close_rate_low: < 50% for 2 weeks → owner + tradesman
+- lead_cost_high: Drainage > $80 or Bathroom > $150 → marketing
+- pipeline_low: < 1 week coverage → owner + marketing
+
+ALERT ENDPOINTS:
+GET /api/v1/kpi/alerts (list active alerts)
+POST /api/v1/kpi/alerts/{id}/acknowledge
+
+SCHEDULED JOBS TO CREATE:
+
+1. daily_snapshot_finalize - 6:00 PM daily
+   - Calculate and save daily KPIs to kpi_daily_snapshots
+   
+2. daily_report_generate - 6:05 PM daily
+   - Generate daily summary, send to owner
+   
+3. hours_reminder - 6:00 PM daily
+   - Check for staff with < 6 hours logged, send reminder
+   
+4. weekly_snapshot_generate - Friday 5:00 PM
+   - Roll up daily snapshots into weekly
+   
+5. weekly_report_generate - Friday 5:05 PM
+   - Generate weekly report, send to owner and sales coach
+   
+6. monthly_snapshot_generate - 1st of month, midnight
+   - Generate monthly rollup
+   
+7. monthly_report_generate - 1st of month, 6:00 AM
+   - Generate monthly P&L report
+
+REPORT FORMATS:
+- Daily: In-app notification + email summary
+- Weekly: PDF attachment + email
+- Monthly: PDF attachment + email
+
+See attached KPI Module document for alert conditions and report contents.
+
+
+Phase E: Sales Phase and Bonus Tracking
+Copy and paste this prompt:
+Continue building the KPI Module. Phases A-D are complete.
+
+Now build Phase E: Sales Phase Progression and Bonus Tracking
+
+PHASE PROGRESSION SYSTEM:
+
+Phase Definitions:
+- Phase 1: Quoting only (default for new tradesmen)
+- Phase 2: Quoting + Closing drainage sales
+- Phase 3: Full sales (drainage + bathroom)
+
+Phase 1 → 2 Checklist Items:
+- 4+ weeks hitting $10k weekly labor
+- Completed sales coaching sessions
+- Demonstrated phone qualification skills
+- Business Owner sign-off
+
+Phase 2 → 3 Checklist Items:
+- 8+ weeks at Phase 2
+- $50k+ drainage jobs closed independently
+- Shadowed 3+ bathroom sales
+- Business Owner sign-off
+
+UI COMPONENTS:
+- Phase progression screen per tradesman
+- Visual timeline showing phase history
+- Interactive checklist (owner can check items)
+- "Advance Phase" button (active only when all items complete)
+
+API ENDPOINTS:
+GET /api/v1/kpi/tradesman/{user_id}/phase
+POST /api/v1/kpi/tradesman/{user_id}/phase/advance (owner only)
+POST /api/v1/kpi/tradesman/{user_id}/phase/checklist/{item_id} (toggle item)
+
+BONUS CALCULATION:
+
+Phase 2 Tiers (labor value of closed sales per week):
+- $10,000 - $12,000: $0 (base KPI)
+- $12,001 - $14,000: $300
+- $14,001 - $16,000: $500
+- $16,001 - $18,000: $750
+- $18,001+: $1,000
+
+Phase 3 Tiers:
+- $10,000 - $12,000: $0 (base KPI)
+- $12,001 - $15,000: $400
+- $15,001 - $18,000: $700
+- $18,001 - $22,000: $1,000
+- $22,001+: $1,500
+
+BONUS FEATURES:
+- Real-time bonus projection on tradesman dashboard
+- Fortnightly bonus period calculation (runs 2 days before payday)
+- Owner approval workflow before marking as paid
+- Bonus history view
+
+API ENDPOINTS:
+GET /api/v1/kpi/bonus/current (tradesman's current period)
+GET /api/v1/kpi/bonus/history
+POST /api/v1/kpi/bonus/{period_id}/approve (owner only)
+POST /api/v1/kpi/bonus/{period_id}/mark-paid (owner only)
+
+SCHEDULED JOB:
+- bonus_period_close: Fortnightly, 2 days before payday
+- Calculates closed sales labor value for period
+- Determines bonus tier based on phase
+- Creates record in tradesman_bonus_periods
+- Notifies owner of pending approvals
+
+See attached KPI Module document for full specifications.
+
+
+After Each Phase
+Ask Replit to verify the build:
+Please verify Phase [X] is complete:
+1. Are all database tables/fields created?
+2. Are all API endpoints working?
+3. Are all UI components rendering?
+4. Run a quick test of [specific feature]
+
+Show me any errors or incomplete items.
+
+
+Final Integration Check
+After all phases are complete:
+The KPI Module (Phases A-E) is now complete. Please verify full integration:
+
+1. Test daily labor tracking:
+   - Create a test job with logged hours
+   - Verify it appears in tradesman's daily dashboard
+   - Verify it rolls up to owner dashboard
+
+2. Test alert system:
+   - Simulate a tradesman with $1,400 labor (should trigger warning)
+   - Verify alert appears in dashboard and notification sent
+
+3. Test phase progression:
+   - View a tradesman's phase checklist
+   - Check off all items
+   - Advance to next phase
+   - Verify phase change is logged
+
+4. Test bonus calculation:
+   - Create closed sales totaling $13,000 labor value
+   - Verify correct bonus tier is calculated
+   - Test approval workflow
+
+5. Test scheduled jobs:
+   - Manually trigger daily_snapshot_finalize
+   - Verify snapshot is created correctly
+
+Report any issues found.
+
+
+Troubleshooting Prompts
+If something isn't working:
+Data not showing in dashboard:
+The [daily/weekly] dashboard is not showing data. Please check:
+1. Is data being saved to kpi_daily_snapshots table?
+2. Is the API endpoint returning data?
+3. Is the frontend calling the correct endpoint?
+4. Are there any console errors?
+
+Alerts not triggering:
+Alerts are not triggering when they should. Please check:
+1. Is the alert condition being evaluated correctly?
+2. Is the alert being saved to kpi_alerts_log?
+3. Is the notification integration working?
+4. Show me the alert trigger logic.
+
+Calculations seem wrong:
+The [specific calculation] seems incorrect. 
+Expected: [what you expected]
+Actual: [what you're seeing]
+
+Please show me the calculation logic and trace through with test data.
+
+

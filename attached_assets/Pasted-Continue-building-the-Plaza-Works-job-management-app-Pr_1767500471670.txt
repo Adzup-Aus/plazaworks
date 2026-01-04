@@ -1,0 +1,28 @@
+Continue building the Plaza Works job management app. Previous phases (1-5) are complete.
+
+Now build Phase A of the KPI Module: Database and Data Layer
+
+TABLES TO CREATE:
+- kpi_daily_snapshots (user_id, snapshot_date, labor_revenue, hours_logged, jobs_completed, quotes_sent_value, quotes_sent_count, quotes_accepted_value, quotes_accepted_count, target_labor, target_met)
+- kpi_weekly_snapshots (user_id, week_start, week_end, labor_revenue, hours_logged, jobs_completed, quotes_sent_value, close_rate, target_labor, target_met, days_target_met)
+- kpi_monthly_snapshots (user_id nullable, month, labor_revenue, materials_revenue, total_revenue, total_costs, net_profit, target_revenue, target_profit, variance_revenue, variance_profit, jobs_completed, jobs_started, average_close_rate)
+- kpi_targets (team_config, daily_labor_target, weekly_labor_target, monthly_revenue_target, monthly_profit_target, close_rate_target, is_active, effective_from)
+- kpi_alerts_log (alert_type, severity, user_id, triggered_at, message, data as JSON, acknowledged, acknowledged_by, acknowledged_at)
+- tradesman_bonus_periods (user_id, period_start, period_end, closed_sales_labor_value, sales_phase, bonus_tier, bonus_amount, approved_by, approved_at, paid, paid_at)
+- phase_progression_checklist (user_id, from_phase, to_phase, checklist_item, completed, completed_at, verified_by, notes)
+- user_phase_log (user_id, previous_phase, new_phase, changed_by, changed_at, notes)
+
+NEW FIELDS TO ADD TO EXISTING USERS TABLE:
+- hourly_cost_loaded (decimal)
+- daily_cost_loaded (decimal)
+- sales_phase (integer, default 1)
+- phase_start_date (date)
+- weekly_labor_target (decimal, default 10000)
+- daily_labor_target (decimal, default 2000)
+
+SEED DATA FOR kpi_targets:
+- 1P+1A: daily $2000, weekly $10000, monthly revenue $64950, monthly profit $3001, close rate 70%
+- 2P+2A: daily $2000, weekly $10000, monthly revenue $129900, monthly profit $22328, close rate 70%
+- 3P+2A: daily $2000, weekly $10000, monthly revenue $194850, monthly profit $51120, close rate 70%
+
+See attached KPI Module document for full schema details and relationships.

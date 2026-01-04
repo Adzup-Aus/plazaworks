@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, boolean, date, index, integer, decimal } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, boolean, date, index, integer, decimal, json } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -77,6 +77,13 @@ export const staffProfiles = pgTable("staff_profiles", {
   phone: varchar("phone", { length: 20 }),
   skills: text("skills").array().default(sql`ARRAY[]::text[]`),
   isActive: boolean("is_active").notNull().default(true),
+  // KPI Module fields
+  hourlyCostLoaded: decimal("hourly_cost_loaded", { precision: 10, scale: 2 }),
+  dailyCostLoaded: decimal("daily_cost_loaded", { precision: 10, scale: 2 }),
+  salesPhase: integer("sales_phase").default(1),
+  phaseStartDate: date("phase_start_date"),
+  weeklyLaborTarget: decimal("weekly_labor_target", { precision: 10, scale: 2 }).default("10000"),
+  dailyLaborTarget: decimal("daily_labor_target", { precision: 10, scale: 2 }).default("2000"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
