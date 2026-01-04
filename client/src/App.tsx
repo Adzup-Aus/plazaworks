@@ -24,6 +24,9 @@ import InvoiceDetail from "@/pages/invoice-detail";
 import ClientPortal from "@/pages/client-portal";
 import Fleet from "@/pages/fleet";
 import Checklists from "@/pages/checklists";
+import Productivity from "@/pages/productivity";
+import Backcosting from "@/pages/backcosting";
+import Capacity from "@/pages/capacity";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -42,6 +45,9 @@ function AuthenticatedRouter() {
       <Route path="/schedule" component={Schedule} />
       <Route path="/fleet" component={Fleet} />
       <Route path="/checklists" component={Checklists} />
+      <Route path="/productivity" component={Productivity} />
+      <Route path="/backcosting" component={Backcosting} />
+      <Route path="/capacity" component={Capacity} />
       <Route path="/team" component={Team} />
       <Route component={NotFound} />
     </Switch>

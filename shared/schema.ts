@@ -938,3 +938,252 @@ export type ChecklistRunWithItems = ChecklistRun & {
   items: ChecklistRunItem[];
   template?: ChecklistTemplate;
 };
+
+// ==========================================
+// PHASE 5: PRODUCTIVITY, BACKCOSTING & CAPACITY
+// ==========================================
+
+// Time entry categories for productivity tracking
+export const timeEntryCategories = ["labor", "travel", "admin", "break", "training"] as const;
+
+// Cost entry categories for backcosting
+export const costCategories = ["labor", "material", "subcontractor", "equipment", "misc"] as const;
+
+// Cost source types
+export const costSourceTypes = ["time_entry", "purchase_order", "invoice", "manual"] as const;
+
+// Time off status
+export const timeOffStatuses = ["pending", "approved", "rejected"] as const;
+
+// Job time entries - time tracking per job/staff
+export const jobTimeEntries = pgTable("job_time_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobId: varchar("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
+  staffId: varchar("staff_id").notNull().references(() => staffProfiles.id),
+  scheduleEntryId: varchar("schedule_entry_id").references(() => scheduleEntries.id, { onDelete: "set null" }),
+  workDate: date("work_date").notNull(),
+  startTime: timestamp("start_time"),
+  endTime: timestamp("end_time"),
+  hoursWorked: decimal("hours_worked", { precision: 5, scale: 2 }).notNull(),
+  category: varchar("category", { length: 50 }).default("labor"),
+  isBillable: boolean("is_billable").default(true),
+  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_time_entries_job").on(table.jobId),
+  index("idx_time_entries_staff").on(table.staffId),
+  index("idx_time_entries_date").on(table.workDate),
+]);
+
+// Job cost entries - backcosting tracking
+export const jobCostEntries = pgTable("job_cost_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobId: varchar("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
+  category: varchar("category", { length: 50 }).notNull(),
+  sourceType: varchar("source_type", { length: 50 }).default("manual"),
+  sourceRef: varchar("source_ref", { length: 255 }),
+  description: varchar("description", { length: 500 }).notNull(),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }).default("1"),
+  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }).notNull(),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
+  vendor: varchar("vendor", { length: 255 }),
+  receiptUrl: varchar("receipt_url", { length: 1000 }),
+  recordedById: varchar("recorded_by_id").references(() => staffProfiles.id),
+  recordedAt: timestamp("recorded_at").defaultNow(),
+  notes: text("notes"),
+}, (table) => [
+  index("idx_cost_entries_job").on(table.jobId),
+  index("idx_cost_entries_category").on(table.category),
+]);
+
+// Staff capacity rules - default weekly availability
+export const staffCapacityRules = pgTable("staff_capacity_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  staffId: varchar("staff_id").notNull().references(() => staffProfiles.id, { onDelete: "cascade" }).unique(),
+  mondayHours: decimal("monday_hours", { precision: 4, scale: 2 }).default("8"),
+  tuesdayHours: decimal("tuesday_hours", { precision: 4, scale: 2 }).default("8"),
+  wednesdayHours: decimal("wednesday_hours", { precision: 4, scale: 2 }).default("8"),
+  thursdayHours: decimal("thursday_hours", { precision: 4, scale: 2 }).default("8"),
+  fridayHours: decimal("friday_hours", { precision: 4, scale: 2 }).default("8"),
+  saturdayHours: decimal("saturday_hours", { precision: 4, scale: 2 }).default("0"),
+  sundayHours: decimal("sunday_hours", { precision: 4, scale: 2 }).default("0"),
+  effectiveFrom: date("effective_from"),
+  effectiveTo: date("effective_to"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Staff time off - leave/vacation tracking
+export const staffTimeOff = pgTable("staff_time_off", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  staffId: varchar("staff_id").notNull().references(() => staffProfiles.id, { onDelete: "cascade" }),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  reason: varchar("reason", { length: 255 }),
+  status: varchar("status", { length: 50 }).default("pending"),
+  approvedById: varchar("approved_by_id").references(() => staffProfiles.id),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_time_off_staff").on(table.staffId),
+  index("idx_time_off_dates").on(table.startDate, table.endDate),
+]);
+
+// Phase 5 Relations
+export const jobTimeEntriesRelations = relations(jobTimeEntries, ({ one }) => ({
+  job: one(jobs, {
+    fields: [jobTimeEntries.jobId],
+    references: [jobs.id],
+  }),
+  staff: one(staffProfiles, {
+    fields: [jobTimeEntries.staffId],
+    references: [staffProfiles.id],
+  }),
+  scheduleEntry: one(scheduleEntries, {
+    fields: [jobTimeEntries.scheduleEntryId],
+    references: [scheduleEntries.id],
+  }),
+}));
+
+export const jobCostEntriesRelations = relations(jobCostEntries, ({ one }) => ({
+  job: one(jobs, {
+    fields: [jobCostEntries.jobId],
+    references: [jobs.id],
+  }),
+  recordedBy: one(staffProfiles, {
+    fields: [jobCostEntries.recordedById],
+    references: [staffProfiles.id],
+  }),
+}));
+
+export const staffCapacityRulesRelations = relations(staffCapacityRules, ({ one }) => ({
+  staff: one(staffProfiles, {
+    fields: [staffCapacityRules.staffId],
+    references: [staffProfiles.id],
+  }),
+}));
+
+export const staffTimeOffRelations = relations(staffTimeOff, ({ one }) => ({
+  staff: one(staffProfiles, {
+    fields: [staffTimeOff.staffId],
+    references: [staffProfiles.id],
+  }),
+  approvedBy: one(staffProfiles, {
+    fields: [staffTimeOff.approvedById],
+    references: [staffProfiles.id],
+  }),
+}));
+
+// Phase 5 Validation Schemas
+
+// Helper for numeric string validation with coercion
+const numericString = (fieldName: string, min = 0) => 
+  z.string()
+    .min(1, `${fieldName} is required`)
+    .refine((val) => !isNaN(parseFloat(val)), `${fieldName} must be a valid number`)
+    .refine((val) => parseFloat(val) >= min, `${fieldName} must be at least ${min}`);
+
+const optionalNumericString = (min = 0) =>
+  z.string()
+    .optional()
+    .refine((val) => !val || !isNaN(parseFloat(val)), "Must be a valid number")
+    .refine((val) => !val || parseFloat(val) >= min, `Must be at least ${min}`);
+
+export const insertJobTimeEntrySchema = createInsertSchema(jobTimeEntries).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  jobId: z.string().min(1, "Job is required"),
+  staffId: z.string().min(1, "Staff member is required"),
+  workDate: z.string().min(1, "Work date is required"),
+  hoursWorked: numericString("Hours worked", 0.01),
+  hourlyRate: optionalNumericString(0),
+  category: z.enum(timeEntryCategories).optional().default("labor"),
+});
+
+export const insertJobCostEntrySchema = createInsertSchema(jobCostEntries).omit({
+  id: true,
+  recordedAt: true,
+}).extend({
+  jobId: z.string().min(1, "Job is required"),
+  category: z.enum(costCategories, { required_error: "Category is required" }),
+  description: z.string().min(1, "Description is required"),
+  quantity: numericString("Quantity", 0.01).optional().default("1"),
+  unitCost: numericString("Unit cost", 0),
+  totalCost: numericString("Total cost", 0),
+});
+
+const hoursRuleSchema = optionalNumericString(0).transform((val) => val || "8");
+
+export const insertStaffCapacityRuleSchema = createInsertSchema(staffCapacityRules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  staffId: z.string().min(1, "Staff member is required"),
+  mondayHours: hoursRuleSchema,
+  tuesdayHours: hoursRuleSchema,
+  wednesdayHours: hoursRuleSchema,
+  thursdayHours: hoursRuleSchema,
+  fridayHours: hoursRuleSchema,
+  saturdayHours: hoursRuleSchema,
+  sundayHours: hoursRuleSchema,
+});
+
+export const insertStaffTimeOffSchema = createInsertSchema(staffTimeOff).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  staffId: z.string().min(1, "Staff member is required"),
+  startDate: z.string().min(1, "Start date is required"),
+  endDate: z.string().min(1, "End date is required"),
+});
+
+// Phase 5 Types
+export type JobTimeEntry = typeof jobTimeEntries.$inferSelect;
+export type InsertJobTimeEntry = z.infer<typeof insertJobTimeEntrySchema>;
+
+export type JobCostEntry = typeof jobCostEntries.$inferSelect;
+export type InsertJobCostEntry = z.infer<typeof insertJobCostEntrySchema>;
+
+export type StaffCapacityRule = typeof staffCapacityRules.$inferSelect;
+export type InsertStaffCapacityRule = z.infer<typeof insertStaffCapacityRuleSchema>;
+
+export type StaffTimeOff = typeof staffTimeOff.$inferSelect;
+export type InsertStaffTimeOff = z.infer<typeof insertStaffTimeOffSchema>;
+
+// Phase 5 Helper types
+export type StaffProductivityMetrics = {
+  staffId: string;
+  staffName: string;
+  totalHours: number;
+  billableHours: number;
+  utilizationRate: number;
+  jobsWorked: number;
+};
+
+export type JobBackcostingSummary = {
+  jobId: string;
+  jobTitle: string;
+  quotedAmount: number;
+  actualLaborCost: number;
+  actualMaterialCost: number;
+  actualOtherCosts: number;
+  totalActualCost: number;
+  grossProfit: number;
+  profitMargin: number;
+  variance: number;
+};
+
+export type StaffCapacityView = {
+  staffId: string;
+  staffName: string;
+  role: string;
+  weeklyCapacity: number;
+  scheduledHours: number;
+  loggedHours: number;
+  availableHours: number;
+  utilizationPercent: number;
+};

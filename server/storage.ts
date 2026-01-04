@@ -40,6 +40,17 @@ import {
   type InsertJobPhoto,
   type VehicleMaintenance,
   type InsertVehicleMaintenance,
+  type JobTimeEntry,
+  type InsertJobTimeEntry,
+  type JobCostEntry,
+  type InsertJobCostEntry,
+  type StaffCapacityRule,
+  type InsertStaffCapacityRule,
+  type StaffTimeOff,
+  type InsertStaffTimeOff,
+  type StaffProductivityMetrics,
+  type JobBackcostingSummary,
+  type StaffCapacityView,
   staffProfiles,
   jobs,
   scheduleEntries,
@@ -58,6 +69,10 @@ import {
   checklistRunItems,
   jobPhotos,
   vehicleMaintenance,
+  jobTimeEntries,
+  jobCostEntries,
+  staffCapacityRules,
+  staffTimeOff,
   users,
   type User,
 } from "@shared/schema";
@@ -213,6 +228,43 @@ export interface IStorage {
   updateVehicleMaintenance(id: string, maintenance: Partial<InsertVehicleMaintenance>): Promise<VehicleMaintenance | undefined>;
   completeVehicleMaintenance(id: string, completedDate: string): Promise<VehicleMaintenance | undefined>;
   deleteVehicleMaintenance(id: string): Promise<boolean>;
+
+  // Phase 5: Time entry operations
+  getJobTimeEntries(jobId: string): Promise<JobTimeEntry[]>;
+  getTimeEntriesByStaff(staffId: string, dateFrom?: string, dateTo?: string): Promise<JobTimeEntry[]>;
+  getTimeEntriesByDateRange(dateFrom: string, dateTo: string): Promise<JobTimeEntry[]>;
+  getTimeEntry(id: string): Promise<JobTimeEntry | undefined>;
+  createTimeEntry(entry: InsertJobTimeEntry): Promise<JobTimeEntry>;
+  updateTimeEntry(id: string, entry: Partial<InsertJobTimeEntry>): Promise<JobTimeEntry | undefined>;
+  deleteTimeEntry(id: string): Promise<boolean>;
+
+  // Phase 5: Cost entry operations
+  getJobCostEntries(jobId: string): Promise<JobCostEntry[]>;
+  getCostEntry(id: string): Promise<JobCostEntry | undefined>;
+  createCostEntry(entry: InsertJobCostEntry): Promise<JobCostEntry>;
+  updateCostEntry(id: string, entry: Partial<InsertJobCostEntry>): Promise<JobCostEntry | undefined>;
+  deleteCostEntry(id: string): Promise<boolean>;
+
+  // Phase 5: Staff capacity operations
+  getStaffCapacityRules(): Promise<StaffCapacityRule[]>;
+  getStaffCapacityRule(staffId: string): Promise<StaffCapacityRule | undefined>;
+  createOrUpdateCapacityRule(rule: InsertStaffCapacityRule): Promise<StaffCapacityRule>;
+  deleteCapacityRule(id: string): Promise<boolean>;
+
+  // Phase 5: Time off operations
+  getStaffTimeOff(staffId: string): Promise<StaffTimeOff[]>;
+  getTimeOffByDateRange(dateFrom: string, dateTo: string): Promise<StaffTimeOff[]>;
+  getTimeOffRequest(id: string): Promise<StaffTimeOff | undefined>;
+  createTimeOffRequest(request: InsertStaffTimeOff): Promise<StaffTimeOff>;
+  approveTimeOff(id: string, approvedById: string): Promise<StaffTimeOff | undefined>;
+  rejectTimeOff(id: string, approvedById: string): Promise<StaffTimeOff | undefined>;
+  deleteTimeOff(id: string): Promise<boolean>;
+
+  // Phase 5: Analytics & reporting
+  getStaffProductivityMetrics(dateFrom?: string, dateTo?: string): Promise<StaffProductivityMetrics[]>;
+  getJobBackcostingSummary(jobId: string): Promise<JobBackcostingSummary | undefined>;
+  getAllJobBackcosting(): Promise<JobBackcostingSummary[]>;
+  getStaffCapacityView(weekStartDate: string): Promise<StaffCapacityView[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1134,6 +1186,356 @@ export class DatabaseStorage implements IStorage {
   async deleteVehicleMaintenance(id: string): Promise<boolean> {
     await db.delete(vehicleMaintenance).where(eq(vehicleMaintenance.id, id));
     return true;
+  }
+
+  // ==========================================
+  // PHASE 5: PRODUCTIVITY, BACKCOSTING & CAPACITY
+  // ==========================================
+
+  // Time Entry Operations
+  async getJobTimeEntries(jobId: string): Promise<JobTimeEntry[]> {
+    return await db.select().from(jobTimeEntries)
+      .where(eq(jobTimeEntries.jobId, jobId))
+      .orderBy(desc(jobTimeEntries.workDate));
+  }
+
+  async getTimeEntriesByStaff(staffId: string, dateFrom?: string, dateTo?: string): Promise<JobTimeEntry[]> {
+    let query = db.select().from(jobTimeEntries).where(eq(jobTimeEntries.staffId, staffId));
+    
+    if (dateFrom && dateTo) {
+      return await db.select().from(jobTimeEntries)
+        .where(and(
+          eq(jobTimeEntries.staffId, staffId),
+          gte(jobTimeEntries.workDate, dateFrom),
+          lte(jobTimeEntries.workDate, dateTo)
+        ))
+        .orderBy(desc(jobTimeEntries.workDate));
+    }
+    
+    return await db.select().from(jobTimeEntries)
+      .where(eq(jobTimeEntries.staffId, staffId))
+      .orderBy(desc(jobTimeEntries.workDate));
+  }
+
+  async getTimeEntriesByDateRange(dateFrom: string, dateTo: string): Promise<JobTimeEntry[]> {
+    return await db.select().from(jobTimeEntries)
+      .where(and(
+        gte(jobTimeEntries.workDate, dateFrom),
+        lte(jobTimeEntries.workDate, dateTo)
+      ))
+      .orderBy(desc(jobTimeEntries.workDate));
+  }
+
+  async getTimeEntry(id: string): Promise<JobTimeEntry | undefined> {
+    const [entry] = await db.select().from(jobTimeEntries).where(eq(jobTimeEntries.id, id));
+    return entry;
+  }
+
+  async createTimeEntry(entry: InsertJobTimeEntry): Promise<JobTimeEntry> {
+    const [created] = await db.insert(jobTimeEntries).values(entry).returning();
+    return created;
+  }
+
+  async updateTimeEntry(id: string, entry: Partial<InsertJobTimeEntry>): Promise<JobTimeEntry | undefined> {
+    const [updated] = await db
+      .update(jobTimeEntries)
+      .set({ ...entry, updatedAt: new Date() })
+      .where(eq(jobTimeEntries.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteTimeEntry(id: string): Promise<boolean> {
+    await db.delete(jobTimeEntries).where(eq(jobTimeEntries.id, id));
+    return true;
+  }
+
+  // Cost Entry Operations
+  async getJobCostEntries(jobId: string): Promise<JobCostEntry[]> {
+    return await db.select().from(jobCostEntries)
+      .where(eq(jobCostEntries.jobId, jobId))
+      .orderBy(desc(jobCostEntries.recordedAt));
+  }
+
+  async getCostEntry(id: string): Promise<JobCostEntry | undefined> {
+    const [entry] = await db.select().from(jobCostEntries).where(eq(jobCostEntries.id, id));
+    return entry;
+  }
+
+  async createCostEntry(entry: InsertJobCostEntry): Promise<JobCostEntry> {
+    const [created] = await db.insert(jobCostEntries).values(entry).returning();
+    return created;
+  }
+
+  async updateCostEntry(id: string, entry: Partial<InsertJobCostEntry>): Promise<JobCostEntry | undefined> {
+    const [updated] = await db
+      .update(jobCostEntries)
+      .set(entry)
+      .where(eq(jobCostEntries.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteCostEntry(id: string): Promise<boolean> {
+    await db.delete(jobCostEntries).where(eq(jobCostEntries.id, id));
+    return true;
+  }
+
+  // Staff Capacity Operations
+  async getStaffCapacityRules(): Promise<StaffCapacityRule[]> {
+    return await db.select().from(staffCapacityRules);
+  }
+
+  async getStaffCapacityRule(staffId: string): Promise<StaffCapacityRule | undefined> {
+    const [rule] = await db.select().from(staffCapacityRules).where(eq(staffCapacityRules.staffId, staffId));
+    return rule;
+  }
+
+  async createOrUpdateCapacityRule(rule: InsertStaffCapacityRule): Promise<StaffCapacityRule> {
+    const existing = await this.getStaffCapacityRule(rule.staffId);
+    
+    if (existing) {
+      const [updated] = await db
+        .update(staffCapacityRules)
+        .set({ ...rule, updatedAt: new Date() })
+        .where(eq(staffCapacityRules.staffId, rule.staffId))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db.insert(staffCapacityRules).values(rule).returning();
+      return created;
+    }
+  }
+
+  async deleteCapacityRule(id: string): Promise<boolean> {
+    await db.delete(staffCapacityRules).where(eq(staffCapacityRules.id, id));
+    return true;
+  }
+
+  // Time Off Operations
+  async getStaffTimeOff(staffId: string): Promise<StaffTimeOff[]> {
+    return await db.select().from(staffTimeOff)
+      .where(eq(staffTimeOff.staffId, staffId))
+      .orderBy(desc(staffTimeOff.startDate));
+  }
+
+  async getTimeOffByDateRange(dateFrom: string, dateTo: string): Promise<StaffTimeOff[]> {
+    return await db.select().from(staffTimeOff)
+      .where(and(
+        lte(staffTimeOff.startDate, dateTo),
+        gte(staffTimeOff.endDate, dateFrom)
+      ))
+      .orderBy(staffTimeOff.startDate);
+  }
+
+  async getTimeOffRequest(id: string): Promise<StaffTimeOff | undefined> {
+    const [request] = await db.select().from(staffTimeOff).where(eq(staffTimeOff.id, id));
+    return request;
+  }
+
+  async createTimeOffRequest(request: InsertStaffTimeOff): Promise<StaffTimeOff> {
+    const [created] = await db.insert(staffTimeOff).values(request).returning();
+    return created;
+  }
+
+  async approveTimeOff(id: string, approvedById: string): Promise<StaffTimeOff | undefined> {
+    const [updated] = await db
+      .update(staffTimeOff)
+      .set({ status: "approved", approvedById })
+      .where(eq(staffTimeOff.id, id))
+      .returning();
+    return updated;
+  }
+
+  async rejectTimeOff(id: string, approvedById: string): Promise<StaffTimeOff | undefined> {
+    const [updated] = await db
+      .update(staffTimeOff)
+      .set({ status: "rejected", approvedById })
+      .where(eq(staffTimeOff.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteTimeOff(id: string): Promise<boolean> {
+    await db.delete(staffTimeOff).where(eq(staffTimeOff.id, id));
+    return true;
+  }
+
+  // Analytics & Reporting
+  // Safe numeric parser that returns 0 for NaN/invalid values
+  private safeParseFloat(value: string | null | undefined, defaultValue: number = 0): number {
+    const parsed = parseFloat(value || String(defaultValue));
+    return isNaN(parsed) ? defaultValue : parsed;
+  }
+
+  async getStaffProductivityMetrics(dateFrom?: string, dateTo?: string): Promise<StaffProductivityMetrics[]> {
+    const allStaff = await this.getStaffProfiles();
+    const metrics: StaffProductivityMetrics[] = [];
+
+    for (const staff of allStaff) {
+      const entries = await this.getTimeEntriesByStaff(staff.id, dateFrom, dateTo);
+      
+      const totalHours = entries.reduce((sum, e) => sum + this.safeParseFloat(e.hoursWorked, 0), 0);
+      const billableHours = entries
+        .filter(e => e.isBillable)
+        .reduce((sum, e) => sum + this.safeParseFloat(e.hoursWorked, 0), 0);
+      
+      const jobIds = new Set(entries.map(e => e.jobId));
+      
+      metrics.push({
+        staffId: staff.id,
+        staffName: `${staff.firstName || ""} ${staff.lastName || ""}`.trim() || staff.email || "Unknown",
+        totalHours,
+        billableHours,
+        utilizationRate: totalHours > 0 ? (billableHours / totalHours) * 100 : 0,
+        jobsWorked: jobIds.size,
+      });
+    }
+
+    return metrics;
+  }
+
+  async getJobBackcostingSummary(jobId: string): Promise<JobBackcostingSummary | undefined> {
+    const job = await this.getJob(jobId);
+    if (!job) return undefined;
+
+    const costEntries = await this.getJobCostEntries(jobId);
+    const timeEntries = await this.getJobTimeEntries(jobId);
+    
+    // Get quoted amount from associated quotes (safely handle missing/null values)
+    const quotesResult = await db.select().from(quotes).where(eq(quotes.jobId, jobId));
+    const quotedAmount = quotesResult.reduce((sum, q) => sum + this.safeParseFloat(q.totalAmount, 0), 0);
+    
+    // Calculate labor cost from time entries (default $50/hr if rate not set)
+    const DEFAULT_HOURLY_RATE = 50;
+    const actualLaborCost = timeEntries.reduce((sum, e) => {
+      const hours = this.safeParseFloat(e.hoursWorked, 0);
+      const rate = this.safeParseFloat(e.hourlyRate, DEFAULT_HOURLY_RATE);
+      return sum + (hours * rate);
+    }, 0);
+    
+    // Calculate costs by category
+    const actualMaterialCost = costEntries
+      .filter(e => e.category === "material")
+      .reduce((sum, e) => sum + this.safeParseFloat(e.totalCost, 0), 0);
+    
+    const actualOtherCosts = costEntries
+      .filter(e => e.category !== "material" && e.category !== "labor")
+      .reduce((sum, e) => sum + this.safeParseFloat(e.totalCost, 0), 0);
+    
+    // Add manual labor entries from cost entries
+    const manualLaborCost = costEntries
+      .filter(e => e.category === "labor")
+      .reduce((sum, e) => sum + this.safeParseFloat(e.totalCost, 0), 0);
+    
+    const totalActualCost = actualLaborCost + manualLaborCost + actualMaterialCost + actualOtherCosts;
+    const grossProfit = quotedAmount - totalActualCost;
+    const profitMargin = quotedAmount > 0 ? (grossProfit / quotedAmount) * 100 : 0;
+    const variance = totalActualCost - quotedAmount;
+
+    return {
+      jobId,
+      jobTitle: job.clientName,
+      quotedAmount,
+      actualLaborCost: actualLaborCost + manualLaborCost,
+      actualMaterialCost,
+      actualOtherCosts,
+      totalActualCost,
+      grossProfit,
+      profitMargin,
+      variance,
+    };
+  }
+
+  async getAllJobBackcosting(): Promise<JobBackcostingSummary[]> {
+    const allJobs = await this.getJobs();
+    const summaries: JobBackcostingSummary[] = [];
+
+    for (const job of allJobs) {
+      const summary = await this.getJobBackcostingSummary(job.id);
+      if (summary) {
+        summaries.push(summary);
+      }
+    }
+
+    return summaries;
+  }
+
+  async getStaffCapacityView(weekStartDate: string): Promise<StaffCapacityView[]> {
+    const allStaff = await this.getStaffProfiles();
+    const capacityRules = await this.getStaffCapacityRules();
+    
+    // Calculate week end date (7 days from start)
+    const startDate = new Date(weekStartDate);
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 6);
+    const weekEndDate = endDate.toISOString().split('T')[0];
+
+    // Get schedule entries and time entries for the week
+    const scheduleResults = await db.select().from(scheduleEntries)
+      .where(and(
+        gte(scheduleEntries.scheduledDate, weekStartDate),
+        lte(scheduleEntries.scheduledDate, weekEndDate)
+      ));
+    
+    const timeResults = await this.getTimeEntriesByDateRange(weekStartDate, weekEndDate);
+    
+    // Get time off for the week
+    const timeOffResults = await this.getTimeOffByDateRange(weekStartDate, weekEndDate);
+
+    const views: StaffCapacityView[] = [];
+
+    for (const staff of allStaff) {
+      const rule = capacityRules.find(r => r.staffId === staff.id);
+      
+      // Calculate weekly capacity (sum of daily hours) using safe parsing
+      const weeklyCapacity = rule ? (
+        this.safeParseFloat(rule.mondayHours, 0) +
+        this.safeParseFloat(rule.tuesdayHours, 0) +
+        this.safeParseFloat(rule.wednesdayHours, 0) +
+        this.safeParseFloat(rule.thursdayHours, 0) +
+        this.safeParseFloat(rule.fridayHours, 0) +
+        this.safeParseFloat(rule.saturdayHours, 0) +
+        this.safeParseFloat(rule.sundayHours, 0)
+      ) : 40; // Default 40 hours/week
+
+      // Count scheduled entries (assume 8 hours per scheduled day)
+      const staffSchedules = scheduleResults.filter(s => s.staffId === staff.id);
+      const scheduledHours = staffSchedules.length * 8;
+
+      // Sum logged hours using safe parsing
+      const staffTimeEntries = timeResults.filter(t => t.staffId === staff.id);
+      const loggedHours = staffTimeEntries.reduce((sum, e) => sum + this.safeParseFloat(e.hoursWorked, 0), 0);
+
+      // Subtract time off (if any approved)
+      const staffTimeOff = timeOffResults.filter(t => t.staffId === staff.id && t.status === "approved");
+      // Simple calculation: each day of time off reduces capacity by 8 hours
+      let timeOffDays = 0;
+      for (const to of staffTimeOff) {
+        const toStart = new Date(to.startDate);
+        const toEnd = new Date(to.endDate);
+        const overlapStart = toStart < startDate ? startDate : toStart;
+        const overlapEnd = toEnd > endDate ? endDate : toEnd;
+        timeOffDays += Math.max(0, (overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24) + 1);
+      }
+      
+      const adjustedCapacity = Math.max(0, weeklyCapacity - (timeOffDays * 8));
+      const availableHours = Math.max(0, adjustedCapacity - scheduledHours);
+      const utilizationPercent = adjustedCapacity > 0 ? (scheduledHours / adjustedCapacity) * 100 : 0;
+
+      views.push({
+        staffId: staff.id,
+        staffName: `${staff.firstName || ""} ${staff.lastName || ""}`.trim() || staff.email || "Unknown",
+        role: staff.role || "plumber",
+        weeklyCapacity: adjustedCapacity,
+        scheduledHours,
+        loggedHours,
+        availableHours,
+        utilizationPercent: Math.min(100, utilizationPercent),
+      });
+    }
+
+    return views;
   }
 }
 

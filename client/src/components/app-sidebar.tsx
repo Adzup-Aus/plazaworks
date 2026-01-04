@@ -24,6 +24,9 @@ import {
   Receipt,
   Truck,
   ClipboardCheck,
+  Clock,
+  DollarSign,
+  BarChart3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -62,6 +65,21 @@ const mainNavItems = [
     title: "Checklists",
     url: "/checklists",
     icon: ClipboardCheck,
+  },
+  {
+    title: "Time Tracking",
+    url: "/productivity",
+    icon: Clock,
+  },
+  {
+    title: "Backcosting",
+    url: "/backcosting",
+    icon: DollarSign,
+  },
+  {
+    title: "Capacity",
+    url: "/capacity",
+    icon: BarChart3,
   },
   {
     title: "Team",

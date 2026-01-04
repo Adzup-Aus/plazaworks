@@ -4,7 +4,7 @@
 A job management system for Plaza Works, a plumbing/renovation company. Building all 5 phases to replace their existing Fergus system.
 
 ## Current State
-**Phase 4 Complete** - Vehicle Management, Checklists & Photos
+**Phase 5 Complete** - All 5 phases now implemented!
 
 ### Phase 1 Complete - Foundation:
 - User authentication via Replit Auth (Google, GitHub, email/password)
@@ -38,6 +38,17 @@ A job management system for Plaza Works, a plumbing/renovation company. Building
 - Vehicle maintenance tracking with scheduling
 - Fleet management page with filtering and search
 - Checklists page with templates and run history tabs
+
+### Phase 5 Complete - Productivity, Backcosting & Capacity:
+- **Time Tracking**: Staff can log hours worked on jobs with categories (labor, travel, admin, break, training)
+- **Billable Hours**: Track billable vs non-billable time with hourly rates
+- **Productivity Metrics**: View staff utilization rates and hours worked
+- **Job Backcosting**: Compare quoted amounts vs actual costs (labor, materials, subcontractors)
+- **Cost Entries**: Record materials, equipment, and other expenses against jobs
+- **Profit Analysis**: Calculate gross profit and profit margins per job
+- **Capacity Planning**: View staff weekly capacity and scheduled hours
+- **Time Off Management**: Request, approve, and reject leave requests
+- **Staff Availability**: Configure weekly working hours per staff member
 
 ## Tech Stack
 - **Frontend**: React + TypeScript + Tailwind CSS + shadcn/ui
@@ -96,6 +107,10 @@ A job management system for Plaza Works, a plumbing/renovation company. Building
 - **checklist_run_items** - Individual run item responses
 - **job_photos** - Photos attached to jobs
 - **vehicle_maintenance** - Vehicle maintenance records
+- **job_time_entries** - Time logged by staff on jobs
+- **job_cost_entries** - Material and expense costs for jobs
+- **staff_capacity_rules** - Weekly working hours per staff member
+- **staff_time_off** - Leave requests with approval workflow
 
 ## API Endpoints
 All endpoints require authentication except login/logout.
@@ -186,5 +201,35 @@ All API mutations use Zod validation:
 - `insertScheduleEntrySchema` for schedule entries (with backend-injected staffId)
 - `updateStaffSchema` for staff profile updates
 
-## Future Phases
-- **Phase 5**: Productivity tracking, backcosting, capacity dashboard
+### Time Tracking (Phase 5)
+- `GET /api/time-entries` - List time entries (with filters for staffId, dateFrom, dateTo)
+- `GET /api/jobs/:jobId/time-entries` - Get time entries for a job
+- `POST /api/jobs/:jobId/time-entries` - Log time for a job
+- `PATCH /api/time-entries/:id` - Update time entry
+- `DELETE /api/time-entries/:id` - Delete time entry
+
+### Cost Entries (Phase 5)
+- `GET /api/jobs/:jobId/cost-entries` - Get cost entries for a job
+- `POST /api/jobs/:jobId/cost-entries` - Add cost entry to job
+- `PATCH /api/cost-entries/:id` - Update cost entry
+- `DELETE /api/cost-entries/:id` - Delete cost entry
+
+### Capacity & Time Off (Phase 5)
+- `GET /api/capacity-rules` - List all capacity rules
+- `GET /api/capacity-rules/:staffId` - Get capacity rule for staff
+- `POST /api/capacity-rules` - Create/update capacity rule
+- `DELETE /api/capacity-rules/:id` - Delete capacity rule
+- `GET /api/time-off` - List time off requests
+- `POST /api/time-off` - Create time off request
+- `POST /api/time-off/:id/approve` - Approve time off
+- `POST /api/time-off/:id/reject` - Reject time off
+- `DELETE /api/time-off/:id` - Delete time off request
+
+### Analytics (Phase 5)
+- `GET /api/productivity/metrics` - Staff productivity metrics
+- `GET /api/backcosting` - All job backcosting summaries
+- `GET /api/jobs/:jobId/backcosting` - Single job backcosting summary
+- `GET /api/capacity` - Staff capacity view for a week
+
+## All Phases Complete
+The job management system is now feature-complete with all 5 phases implemented.
