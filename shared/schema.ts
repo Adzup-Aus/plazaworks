@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, boolean, date, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, boolean, date, index, integer, decimal } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -310,3 +310,271 @@ export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 
 export type ClientAccessToken = typeof clientAccessTokens.$inferSelect;
 export type InsertClientAccessToken = z.infer<typeof insertClientAccessTokenSchema>;
+
+// =====================
+// PHASE 3: Quotes, Invoices, Payments
+// =====================
+
+// Quote statuses
+export const quoteStatuses = [
+  "draft",
+  "sent",
+  "accepted",
+  "rejected",
+  "expired"
+] as const;
+
+export type QuoteStatus = typeof quoteStatuses[number];
+
+// Invoice statuses
+export const invoiceStatuses = [
+  "draft",
+  "sent",
+  "paid",
+  "partially_paid",
+  "overdue",
+  "cancelled"
+] as const;
+
+export type InvoiceStatus = typeof invoiceStatuses[number];
+
+// Payment statuses
+export const paymentStatuses = [
+  "pending",
+  "processing",
+  "completed",
+  "failed",
+  "refunded"
+] as const;
+
+export type PaymentStatus = typeof paymentStatuses[number];
+
+// Payment methods
+export const paymentMethods = [
+  "stripe",
+  "bank_transfer",
+  "cash",
+  "cheque",
+  "other"
+] as const;
+
+export type PaymentMethod = typeof paymentMethods[number];
+
+// Quotes table
+export const quotes = pgTable("quotes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteNumber: varchar("quote_number", { length: 50 }).notNull().unique(),
+  clientName: varchar("client_name", { length: 255 }).notNull(),
+  clientEmail: varchar("client_email", { length: 255 }),
+  clientPhone: varchar("client_phone", { length: 50 }),
+  clientAddress: text("client_address").notNull(),
+  jobType: varchar("job_type", { length: 50 }).notNull(),
+  description: text("description"),
+  status: varchar("status", { length: 50 }).notNull().default("draft"),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull().default("0"),
+  taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default("10"),
+  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).notNull().default("0"),
+  total: decimal("total", { precision: 10, scale: 2 }).notNull().default("0"),
+  validUntil: date("valid_until"),
+  notes: text("notes"),
+  termsAndConditions: text("terms_and_conditions"),
+  convertedToJobId: varchar("converted_to_job_id"),
+  createdById: varchar("created_by_id"),
+  sentAt: timestamp("sent_at"),
+  acceptedAt: timestamp("accepted_at"),
+  rejectedAt: timestamp("rejected_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_quotes_status").on(table.status),
+  index("idx_quotes_number").on(table.quoteNumber),
+  index("idx_quotes_created").on(table.createdAt),
+]);
+
+// Invoices table
+export const invoices = pgTable("invoices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceNumber: varchar("invoice_number", { length: 50 }).notNull().unique(),
+  jobId: varchar("job_id").references(() => jobs.id, { onDelete: "set null" }),
+  quoteId: varchar("quote_id").references(() => quotes.id, { onDelete: "set null" }),
+  clientName: varchar("client_name", { length: 255 }).notNull(),
+  clientEmail: varchar("client_email", { length: 255 }),
+  clientPhone: varchar("client_phone", { length: 50 }),
+  clientAddress: text("client_address").notNull(),
+  status: varchar("status", { length: 50 }).notNull().default("draft"),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull().default("0"),
+  taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default("10"),
+  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).notNull().default("0"),
+  total: decimal("total", { precision: 10, scale: 2 }).notNull().default("0"),
+  amountPaid: decimal("amount_paid", { precision: 10, scale: 2 }).notNull().default("0"),
+  amountDue: decimal("amount_due", { precision: 10, scale: 2 }).notNull().default("0"),
+  dueDate: date("due_date"),
+  notes: text("notes"),
+  termsAndConditions: text("terms_and_conditions"),
+  stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
+  createdById: varchar("created_by_id"),
+  sentAt: timestamp("sent_at"),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_invoices_status").on(table.status),
+  index("idx_invoices_number").on(table.invoiceNumber),
+  index("idx_invoices_job").on(table.jobId),
+  index("idx_invoices_due").on(table.dueDate),
+]);
+
+// Line items - shared between quotes and invoices
+export const lineItems = pgTable("line_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").references(() => quotes.id, { onDelete: "cascade" }),
+  invoiceId: varchar("invoice_id").references(() => invoices.id, { onDelete: "cascade" }),
+  description: varchar("description", { length: 500 }).notNull(),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull().default("1"),
+  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_line_items_quote").on(table.quoteId),
+  index("idx_line_items_invoice").on(table.invoiceId),
+]);
+
+// Payments table
+export const payments = pgTable("payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  paymentMethod: varchar("payment_method", { length: 50 }).notNull(),
+  status: varchar("status", { length: 50 }).notNull().default("pending"),
+  stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
+  stripeChargeId: varchar("stripe_charge_id", { length: 255 }),
+  transactionReference: varchar("transaction_reference", { length: 255 }),
+  notes: text("notes"),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_payments_invoice").on(table.invoiceId),
+  index("idx_payments_status").on(table.status),
+  index("idx_payments_created").on(table.createdAt),
+]);
+
+// Phase 3 Relations
+export const quotesRelations = relations(quotes, ({ many, one }) => ({
+  lineItems: many(lineItems),
+  convertedJob: one(jobs, {
+    fields: [quotes.convertedToJobId],
+    references: [jobs.id],
+  }),
+}));
+
+export const invoicesRelations = relations(invoices, ({ many, one }) => ({
+  lineItems: many(lineItems),
+  payments: many(payments),
+  job: one(jobs, {
+    fields: [invoices.jobId],
+    references: [jobs.id],
+  }),
+  quote: one(quotes, {
+    fields: [invoices.quoteId],
+    references: [quotes.id],
+  }),
+}));
+
+export const lineItemsRelations = relations(lineItems, ({ one }) => ({
+  quote: one(quotes, {
+    fields: [lineItems.quoteId],
+    references: [quotes.id],
+  }),
+  invoice: one(invoices, {
+    fields: [lineItems.invoiceId],
+    references: [invoices.id],
+  }),
+}));
+
+export const paymentsRelations = relations(payments, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [payments.invoiceId],
+    references: [invoices.id],
+  }),
+}));
+
+// Phase 3 Insert Schemas
+export const insertQuoteSchema = createInsertSchema(quotes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  sentAt: true,
+  acceptedAt: true,
+  rejectedAt: true,
+}).extend({
+  clientName: z.string().min(1, "Client name is required"),
+  clientAddress: z.string().min(1, "Address is required"),
+  jobType: z.enum(jobTypes),
+  status: z.enum(quoteStatuses).optional(),
+  subtotal: z.string().optional(),
+  taxRate: z.string().optional(),
+  taxAmount: z.string().optional(),
+  total: z.string().optional(),
+});
+
+export const insertInvoiceSchema = createInsertSchema(invoices).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  sentAt: true,
+  paidAt: true,
+}).extend({
+  clientName: z.string().min(1, "Client name is required"),
+  clientAddress: z.string().min(1, "Address is required"),
+  status: z.enum(invoiceStatuses).optional(),
+  subtotal: z.string().optional(),
+  taxRate: z.string().optional(),
+  taxAmount: z.string().optional(),
+  total: z.string().optional(),
+  amountPaid: z.string().optional(),
+  amountDue: z.string().optional(),
+});
+
+export const insertLineItemSchema = createInsertSchema(lineItems).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  description: z.string().min(1, "Description is required"),
+  quantity: z.string().optional(),
+  unitPrice: z.string(),
+  amount: z.string(),
+});
+
+export const insertPaymentSchema = createInsertSchema(payments).omit({
+  id: true,
+  createdAt: true,
+  paidAt: true,
+}).extend({
+  amount: z.string(),
+  paymentMethod: z.enum(paymentMethods),
+  status: z.enum(paymentStatuses).optional(),
+});
+
+// Phase 3 Types
+export type Quote = typeof quotes.$inferSelect;
+export type InsertQuote = z.infer<typeof insertQuoteSchema>;
+
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
+
+export type LineItem = typeof lineItems.$inferSelect;
+export type InsertLineItem = z.infer<typeof insertLineItemSchema>;
+
+export type Payment = typeof payments.$inferSelect;
+export type InsertPayment = z.infer<typeof insertPaymentSchema>;
+
+// Helper types
+export type QuoteWithLineItems = Quote & {
+  lineItems: LineItem[];
+};
+
+export type InvoiceWithDetails = Invoice & {
+  lineItems: LineItem[];
+  payments: Payment[];
+};
