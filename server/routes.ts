@@ -8,11 +8,19 @@ import {
   insertPCItemSchema,
   insertNotificationSchema,
   insertClientAccessTokenSchema,
+  insertQuoteSchema,
+  insertInvoiceSchema,
+  insertLineItemSchema,
+  insertPaymentSchema,
   userRoles, 
   employmentTypes, 
   userPermissions,
   pcItemStatuses,
-  notificationTypes
+  notificationTypes,
+  quoteStatuses,
+  invoiceStatuses,
+  paymentStatuses,
+  paymentMethods
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -545,6 +553,452 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("Error fetching portal data:", err);
       res.status(500).json({ message: "Failed to fetch job details" });
+    }
+  });
+
+  // =====================
+  // QUOTE ROUTES
+  // =====================
+
+  // Get all quotes
+  app.get("/api/quotes", isAuthenticated, async (req, res) => {
+    try {
+      const { status } = req.query;
+      let quotesList;
+      if (status && typeof status === "string") {
+        quotesList = await storage.getQuotesByStatus(status);
+      } else {
+        quotesList = await storage.getQuotes();
+      }
+      res.json(quotesList);
+    } catch (err: any) {
+      console.error("Error fetching quotes:", err);
+      res.status(500).json({ message: "Failed to fetch quotes" });
+    }
+  });
+
+  // Get single quote with line items
+  app.get("/api/quotes/:id", isAuthenticated, async (req, res) => {
+    try {
+      const quote = await storage.getQuoteWithLineItems(req.params.id);
+      if (!quote) {
+        return res.status(404).json({ message: "Quote not found" });
+      }
+      res.json(quote);
+    } catch (err: any) {
+      console.error("Error fetching quote:", err);
+      res.status(500).json({ message: "Failed to fetch quote" });
+    }
+  });
+
+  // Create quote
+  app.post("/api/quotes", isAuthenticated, async (req: any, res) => {
+    try {
+      const validation = insertQuoteSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const userId = req.user?.claims?.sub;
+      const quote = await storage.createQuote({
+        ...validation.data,
+        createdById: userId,
+      });
+      res.status(201).json(quote);
+    } catch (err: any) {
+      console.error("Error creating quote:", err);
+      res.status(500).json({ message: "Failed to create quote" });
+    }
+  });
+
+  // Update quote
+  app.patch("/api/quotes/:id", isAuthenticated, async (req, res) => {
+    try {
+      const partialSchema = insertQuoteSchema.partial();
+      const validation = partialSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const updated = await storage.updateQuote(req.params.id, validation.data);
+      if (!updated) {
+        return res.status(404).json({ message: "Quote not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating quote:", err);
+      res.status(500).json({ message: "Failed to update quote" });
+    }
+  });
+
+  // Send quote to client
+  app.post("/api/quotes/:id/send", isAuthenticated, async (req, res) => {
+    try {
+      const quote = await storage.sendQuote(req.params.id);
+      if (!quote) {
+        return res.status(404).json({ message: "Quote not found" });
+      }
+      res.json(quote);
+    } catch (err: any) {
+      console.error("Error sending quote:", err);
+      res.status(500).json({ message: "Failed to send quote" });
+    }
+  });
+
+  // Accept quote
+  app.post("/api/quotes/:id/accept", isAuthenticated, async (req, res) => {
+    try {
+      const quote = await storage.acceptQuote(req.params.id);
+      if (!quote) {
+        return res.status(404).json({ message: "Quote not found" });
+      }
+      res.json(quote);
+    } catch (err: any) {
+      console.error("Error accepting quote:", err);
+      res.status(500).json({ message: "Failed to accept quote" });
+    }
+  });
+
+  // Reject quote
+  app.post("/api/quotes/:id/reject", isAuthenticated, async (req, res) => {
+    try {
+      const quote = await storage.rejectQuote(req.params.id);
+      if (!quote) {
+        return res.status(404).json({ message: "Quote not found" });
+      }
+      res.json(quote);
+    } catch (err: any) {
+      console.error("Error rejecting quote:", err);
+      res.status(500).json({ message: "Failed to reject quote" });
+    }
+  });
+
+  // Convert quote to job
+  app.post("/api/quotes/:id/convert-to-job", isAuthenticated, async (req, res) => {
+    try {
+      const result = await storage.convertQuoteToJob(req.params.id);
+      if (!result) {
+        return res.status(400).json({ message: "Quote must be accepted before converting to job" });
+      }
+      res.json(result);
+    } catch (err: any) {
+      console.error("Error converting quote to job:", err);
+      res.status(500).json({ message: "Failed to convert quote to job" });
+    }
+  });
+
+  // Delete quote
+  app.delete("/api/quotes/:id", isAuthenticated, async (req, res) => {
+    try {
+      const deleted = await storage.deleteQuote(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Quote not found" });
+      }
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting quote:", err);
+      res.status(500).json({ message: "Failed to delete quote" });
+    }
+  });
+
+  // =====================
+  // INVOICE ROUTES
+  // =====================
+
+  // Get all invoices
+  app.get("/api/invoices", isAuthenticated, async (req, res) => {
+    try {
+      const { status, jobId } = req.query;
+      let invoicesList;
+      if (jobId && typeof jobId === "string") {
+        invoicesList = await storage.getInvoicesByJob(jobId);
+      } else if (status && typeof status === "string") {
+        invoicesList = await storage.getInvoicesByStatus(status);
+      } else {
+        invoicesList = await storage.getInvoices();
+      }
+      res.json(invoicesList);
+    } catch (err: any) {
+      console.error("Error fetching invoices:", err);
+      res.status(500).json({ message: "Failed to fetch invoices" });
+    }
+  });
+
+  // Get single invoice with details
+  app.get("/api/invoices/:id", isAuthenticated, async (req, res) => {
+    try {
+      const invoice = await storage.getInvoiceWithDetails(req.params.id);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+      res.json(invoice);
+    } catch (err: any) {
+      console.error("Error fetching invoice:", err);
+      res.status(500).json({ message: "Failed to fetch invoice" });
+    }
+  });
+
+  // Create invoice
+  app.post("/api/invoices", isAuthenticated, async (req: any, res) => {
+    try {
+      const validation = insertInvoiceSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const userId = req.user?.claims?.sub;
+      const invoice = await storage.createInvoice({
+        ...validation.data,
+        createdById: userId,
+      });
+      res.status(201).json(invoice);
+    } catch (err: any) {
+      console.error("Error creating invoice:", err);
+      res.status(500).json({ message: "Failed to create invoice" });
+    }
+  });
+
+  // Create invoice from job
+  app.post("/api/jobs/:jobId/invoice", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const invoice = await storage.createInvoiceFromJob(req.params.jobId, userId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Job not found" });
+      }
+      res.status(201).json(invoice);
+    } catch (err: any) {
+      console.error("Error creating invoice from job:", err);
+      res.status(500).json({ message: "Failed to create invoice" });
+    }
+  });
+
+  // Create invoice from quote
+  app.post("/api/quotes/:quoteId/invoice", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const invoice = await storage.createInvoiceFromQuote(req.params.quoteId, userId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Quote not found" });
+      }
+      res.status(201).json(invoice);
+    } catch (err: any) {
+      console.error("Error creating invoice from quote:", err);
+      res.status(500).json({ message: "Failed to create invoice" });
+    }
+  });
+
+  // Update invoice
+  app.patch("/api/invoices/:id", isAuthenticated, async (req, res) => {
+    try {
+      const partialSchema = insertInvoiceSchema.partial();
+      const validation = partialSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const updated = await storage.updateInvoice(req.params.id, validation.data);
+      if (!updated) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating invoice:", err);
+      res.status(500).json({ message: "Failed to update invoice" });
+    }
+  });
+
+  // Send invoice
+  app.post("/api/invoices/:id/send", isAuthenticated, async (req, res) => {
+    try {
+      const invoice = await storage.sendInvoice(req.params.id);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+      res.json(invoice);
+    } catch (err: any) {
+      console.error("Error sending invoice:", err);
+      res.status(500).json({ message: "Failed to send invoice" });
+    }
+  });
+
+  // Delete invoice
+  app.delete("/api/invoices/:id", isAuthenticated, async (req, res) => {
+    try {
+      const deleted = await storage.deleteInvoice(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting invoice:", err);
+      res.status(500).json({ message: "Failed to delete invoice" });
+    }
+  });
+
+  // =====================
+  // LINE ITEM ROUTES
+  // =====================
+
+  // Get line items for quote
+  app.get("/api/quotes/:quoteId/line-items", isAuthenticated, async (req, res) => {
+    try {
+      const items = await storage.getLineItemsByQuote(req.params.quoteId);
+      res.json(items);
+    } catch (err: any) {
+      console.error("Error fetching line items:", err);
+      res.status(500).json({ message: "Failed to fetch line items" });
+    }
+  });
+
+  // Get line items for invoice
+  app.get("/api/invoices/:invoiceId/line-items", isAuthenticated, async (req, res) => {
+    try {
+      const items = await storage.getLineItemsByInvoice(req.params.invoiceId);
+      res.json(items);
+    } catch (err: any) {
+      console.error("Error fetching line items:", err);
+      res.status(500).json({ message: "Failed to fetch line items" });
+    }
+  });
+
+  // Create line item for quote
+  app.post("/api/quotes/:quoteId/line-items", isAuthenticated, async (req, res) => {
+    try {
+      const validation = insertLineItemSchema.safeParse({
+        ...req.body,
+        quoteId: req.params.quoteId,
+      });
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const item = await storage.createLineItem(validation.data);
+      res.status(201).json(item);
+    } catch (err: any) {
+      console.error("Error creating line item:", err);
+      res.status(500).json({ message: "Failed to create line item" });
+    }
+  });
+
+  // Create line item for invoice
+  app.post("/api/invoices/:invoiceId/line-items", isAuthenticated, async (req, res) => {
+    try {
+      const validation = insertLineItemSchema.safeParse({
+        ...req.body,
+        invoiceId: req.params.invoiceId,
+      });
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const item = await storage.createLineItem(validation.data);
+      res.status(201).json(item);
+    } catch (err: any) {
+      console.error("Error creating line item:", err);
+      res.status(500).json({ message: "Failed to create line item" });
+    }
+  });
+
+  // Update line item
+  app.patch("/api/line-items/:id", isAuthenticated, async (req, res) => {
+    try {
+      const partialSchema = insertLineItemSchema.partial();
+      const validation = partialSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const updated = await storage.updateLineItem(req.params.id, validation.data);
+      if (!updated) {
+        return res.status(404).json({ message: "Line item not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating line item:", err);
+      res.status(500).json({ message: "Failed to update line item" });
+    }
+  });
+
+  // Delete line item
+  app.delete("/api/line-items/:id", isAuthenticated, async (req, res) => {
+    try {
+      const deleted = await storage.deleteLineItem(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Line item not found" });
+      }
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting line item:", err);
+      res.status(500).json({ message: "Failed to delete line item" });
+    }
+  });
+
+  // =====================
+  // PAYMENT ROUTES
+  // =====================
+
+  // Get payments for invoice
+  app.get("/api/invoices/:invoiceId/payments", isAuthenticated, async (req, res) => {
+    try {
+      const paymentsList = await storage.getPaymentsByInvoice(req.params.invoiceId);
+      res.json(paymentsList);
+    } catch (err: any) {
+      console.error("Error fetching payments:", err);
+      res.status(500).json({ message: "Failed to fetch payments" });
+    }
+  });
+
+  // Create payment
+  app.post("/api/invoices/:invoiceId/payments", isAuthenticated, async (req, res) => {
+    try {
+      const validation = insertPaymentSchema.safeParse({
+        ...req.body,
+        invoiceId: req.params.invoiceId,
+      });
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const payment = await storage.createPayment(validation.data);
+      res.status(201).json(payment);
+    } catch (err: any) {
+      console.error("Error creating payment:", err);
+      res.status(500).json({ message: "Failed to create payment" });
+    }
+  });
+
+  // Complete payment
+  app.post("/api/payments/:id/complete", isAuthenticated, async (req, res) => {
+    try {
+      const payment = await storage.completePayment(req.params.id);
+      if (!payment) {
+        return res.status(404).json({ message: "Payment not found" });
+      }
+      res.json(payment);
+    } catch (err: any) {
+      console.error("Error completing payment:", err);
+      res.status(500).json({ message: "Failed to complete payment" });
+    }
+  });
+
+  // Update payment
+  app.patch("/api/payments/:id", isAuthenticated, async (req, res) => {
+    try {
+      const partialSchema = insertPaymentSchema.partial();
+      const validation = partialSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const updated = await storage.updatePayment(req.params.id, validation.data);
+      if (!updated) {
+        return res.status(404).json({ message: "Payment not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating payment:", err);
+      res.status(500).json({ message: "Failed to update payment" });
     }
   });
 
