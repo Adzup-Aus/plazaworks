@@ -1,0 +1,104 @@
+I need you to run the KPI Module test suite for the Plaza Works Job Management App.
+
+The KPI Module (Phases A-E) has been implemented. Please test all functionality.
+
+SETUP:
+1. Ensure test users exist with KPI fields populated:
+   - plumber1: hourly_cost_loaded=$84.59, daily_cost_loaded=$636.44, sales_phase=1
+   - plumber2: hourly_cost_loaded=$93.67, daily_cost_loaded=$702.50, sales_phase=2
+   - apprentice: hourly_cost_loaded=$53.97, daily_cost_loaded=$404.80
+2. Ensure kpi_targets has seed data for 1P+1A, 2P+2A, 3P+2A configurations
+3. Create test jobs, quotes, and invoices for calculation testing
+
+TEST SUITES TO RUN:
+
+PHASE A - Database:
+- Verify all 8 KPI tables exist with correct columns
+- Verify user table has new KPI fields
+- Verify seed data present
+
+PHASE B - Calculations:
+- Daily labor revenue calculation (per tradesman, aggregation, date filtering)
+- Weekly labor revenue calculation (sum of daily, target met)
+- Close rate calculation (formula, per tradesman, edge cases)
+- Job profitability calculation (revenue - costs, fully loaded rates, multiple staff)
+- Duration variance calculation (actual vs quoted)
+- Schedule capacity calculation (per period, per tradesman, team aggregate)
+- All API endpoints return correct data
+
+PHASE C - Dashboards:
+- Owner dashboard (daily/weekly/monthly views, per-tradesman cards, status indicators)
+- Tradesman dashboard (own data only, progress bar, heat map, streak counter)
+- Apprentice dashboard (hours tracking, simplified view)
+- Marketing dashboard (lead metrics, cost thresholds)
+- Mobile responsiveness
+
+PHASE D - Alerts and Reports:
+- All alert triggers fire at correct thresholds
+- Alert acknowledgment works
+- All scheduled jobs run correctly
+- Daily, weekly, monthly reports generate
+- Reports contain correct data
+- Export to PDF/CSV works
+
+PHASE E - Phase and Bonus:
+- Phase progression display
+- Checklist functionality
+- Phase advancement workflow
+- Phase 2 bonus calculations (verify all 5 tiers)
+- Phase 3 bonus calculations (verify all 5 tiers)
+- Bonus period management
+- Approval workflow
+
+INTEGRATION:
+- KPI updates when jobs/quotes/invoices change
+- Event flows work end-to-end
+- Full week and month lifecycles
+
+CRITICAL CALCULATIONS TO VERIFY:
+1. $13,000 labor closed at Phase 2 = $300 bonus
+2. $17,000 labor closed at Phase 3 = $700 bonus
+3. Daily labor < $1,500 triggers warning alert
+4. Close rate < 50% for 2 weeks triggers alert
+5. Job profit = labor revenue - (hours × hourly_cost_loaded)
+
+FOR EACH TEST:
+1. Run the test
+2. Record PASS or FAIL
+3. If FAIL, capture the error and actual vs expected values
+4. Continue to next test
+
+AFTER ALL TESTS:
+Generate a report showing:
+- Total tests: [count]
+- Passed: [count]
+- Failed: [count]
+- Pass rate: [percentage]
+- List of failures with details
+- Suggested fixes for failures
+
+Please run all tests now.
+
+
+Simpler Manual Testing Prompt
+If the full automated suite is too complex:
+Please manually test the KPI Module by verifying these critical features:
+
+1. DAILY DASHBOARD: Log in as owner, verify you see per-tradesman daily metrics
+2. CALCULATIONS: Create a job with $2,500 labor and 10 hours logged. Verify:
+   - Labor cost = 10 × hourly rate
+   - Profit = $2,500 - labor cost
+3. ALERTS: Create a tradesman with only $1,400 labor today. Verify warning alert triggers
+4. WEEKLY ROLLUP: Check that weekly totals sum daily values correctly
+5. CLOSE RATE: Create 10 quotes, accept 7. Verify close rate shows 70%
+6. CAPACITY: Schedule 3 days this week. Verify capacity shows 60% (3/5)
+7. PHASE CHECKLIST: View a tradesman's phase progression checklist
+8. BONUS CALC: Tradesman at Phase 2 closes $13,500 labor. Verify $300 bonus
+9. REPORTS: Trigger daily report generation. Verify it includes all tradesmen
+10. MOBILE: View tradesman dashboard on phone. Verify it's usable
+
+For each test, report:
+- What you tested
+- PASS or FAIL
+- Any errors or unexpected results
+
