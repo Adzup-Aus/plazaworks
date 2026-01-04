@@ -1362,10 +1362,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Analytics & Reporting
-  // Safe numeric parser that returns 0 for NaN/invalid values
+  // Safe numeric parser for reading from database - returns default for null/undefined/invalid
+  // Note: Data should already be validated on insert, this is a defensive fallback for edge cases
   private safeParseFloat(value: string | null | undefined, defaultValue: number = 0): number {
-    const parsed = parseFloat(value || String(defaultValue));
-    return isNaN(parsed) ? defaultValue : parsed;
+    if (value === null || value === undefined || value === "") {
+      return defaultValue;
+    }
+    const parsed = parseFloat(value);
+    if (isNaN(parsed) || !isFinite(parsed)) {
+      console.warn(`safeParseFloat: Invalid numeric value "${value}", using default ${defaultValue}`);
+      return defaultValue;
+    }
+    return parsed;
   }
 
   async getStaffProductivityMetrics(dateFrom?: string, dateTo?: string): Promise<StaffProductivityMetrics[]> {

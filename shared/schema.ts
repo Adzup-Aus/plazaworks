@@ -1077,18 +1077,34 @@ export const staffTimeOffRelations = relations(staffTimeOff, ({ one }) => ({
 
 // Phase 5 Validation Schemas
 
-// Helper for numeric string validation with coercion
+// Strict numeric regex that only accepts valid decimal numbers
+const STRICT_NUMERIC_REGEX = /^-?\d+(\.\d+)?$/;
+
+// Helper for strict numeric string validation - validates and normalizes
 const numericString = (fieldName: string, min = 0) => 
   z.string()
     .min(1, `${fieldName} is required`)
-    .refine((val) => !isNaN(parseFloat(val)), `${fieldName} must be a valid number`)
-    .refine((val) => parseFloat(val) >= min, `${fieldName} must be at least ${min}`);
+    .refine((val) => STRICT_NUMERIC_REGEX.test(val.trim()), {
+      message: `${fieldName} must be a valid number (digits only, optional decimal)`,
+    })
+    .refine((val) => Number(val) >= min, {
+      message: `${fieldName} must be at least ${min}`,
+    })
+    .transform((val) => String(Number(val.trim()))); // Normalize to clean numeric string
 
+// Optional numeric string - uses union to properly handle undefined
 const optionalNumericString = (min = 0) =>
-  z.string()
-    .optional()
-    .refine((val) => !val || !isNaN(parseFloat(val)), "Must be a valid number")
-    .refine((val) => !val || parseFloat(val) >= min, `Must be at least ${min}`);
+  z.union([
+    z.string()
+      .refine((val) => val === "" || STRICT_NUMERIC_REGEX.test(val.trim()), {
+        message: "Must be a valid number (digits only, optional decimal)",
+      })
+      .refine((val) => val === "" || Number(val) >= min, {
+        message: `Must be at least ${min}`,
+      })
+      .transform((val) => val === "" ? undefined : String(Number(val.trim()))),
+    z.undefined(),
+  ]);
 
 export const insertJobTimeEntrySchema = createInsertSchema(jobTimeEntries).omit({
   id: true,
