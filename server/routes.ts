@@ -12,6 +12,14 @@ import {
   insertInvoiceSchema,
   insertLineItemSchema,
   insertPaymentSchema,
+  insertVehicleSchema,
+  insertVehicleAssignmentSchema,
+  insertChecklistTemplateSchema,
+  insertChecklistTemplateItemSchema,
+  insertChecklistRunSchema,
+  insertChecklistRunItemSchema,
+  insertJobPhotoSchema,
+  insertVehicleMaintenanceSchema,
   userRoles, 
   employmentTypes, 
   userPermissions,
@@ -20,7 +28,11 @@ import {
   quoteStatuses,
   invoiceStatuses,
   paymentStatuses,
-  paymentMethods
+  paymentMethods,
+  vehicleStatuses,
+  checklistTargets,
+  checklistItemTypes,
+  maintenanceStatuses
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -1043,6 +1055,595 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("Error updating payment:", err);
       res.status(500).json({ message: "Failed to update payment" });
+    }
+  });
+
+  // =====================
+  // PHASE 4: VEHICLE ROUTES
+  // =====================
+
+  // List all vehicles
+  app.get("/api/vehicles", isAuthenticated, async (req, res) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const vehiclesList = status 
+        ? await storage.getVehiclesByStatus(status)
+        : await storage.getVehicles();
+      res.json(vehiclesList);
+    } catch (err: any) {
+      console.error("Error fetching vehicles:", err);
+      res.status(500).json({ message: "Failed to fetch vehicles" });
+    }
+  });
+
+  // Get single vehicle with current assignment
+  app.get("/api/vehicles/:id", isAuthenticated, async (req, res) => {
+    try {
+      const vehicle = await storage.getVehicleWithAssignment(req.params.id);
+      if (!vehicle) {
+        return res.status(404).json({ message: "Vehicle not found" });
+      }
+      res.json(vehicle);
+    } catch (err: any) {
+      console.error("Error fetching vehicle:", err);
+      res.status(500).json({ message: "Failed to fetch vehicle" });
+    }
+  });
+
+  // Create vehicle
+  app.post("/api/vehicles", isAuthenticated, async (req, res) => {
+    try {
+      const validation = insertVehicleSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const vehicle = await storage.createVehicle(validation.data);
+      res.status(201).json(vehicle);
+    } catch (err: any) {
+      console.error("Error creating vehicle:", err);
+      res.status(500).json({ message: "Failed to create vehicle" });
+    }
+  });
+
+  // Update vehicle
+  app.patch("/api/vehicles/:id", isAuthenticated, async (req, res) => {
+    try {
+      const partialSchema = insertVehicleSchema.partial();
+      const validation = partialSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const updated = await storage.updateVehicle(req.params.id, validation.data);
+      if (!updated) {
+        return res.status(404).json({ message: "Vehicle not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating vehicle:", err);
+      res.status(500).json({ message: "Failed to update vehicle" });
+    }
+  });
+
+  // Delete vehicle
+  app.delete("/api/vehicles/:id", isAuthenticated, async (req, res) => {
+    try {
+      const deleted = await storage.deleteVehicle(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Vehicle not found" });
+      }
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting vehicle:", err);
+      res.status(500).json({ message: "Failed to delete vehicle" });
+    }
+  });
+
+  // =====================
+  // VEHICLE ASSIGNMENT ROUTES
+  // =====================
+
+  // Get vehicle assignments
+  app.get("/api/vehicles/:vehicleId/assignments", isAuthenticated, async (req, res) => {
+    try {
+      const assignments = await storage.getVehicleAssignments(req.params.vehicleId);
+      res.json(assignments);
+    } catch (err: any) {
+      console.error("Error fetching assignments:", err);
+      res.status(500).json({ message: "Failed to fetch assignments" });
+    }
+  });
+
+  // Assign vehicle to staff
+  app.post("/api/vehicles/:vehicleId/assign", isAuthenticated, async (req: any, res) => {
+    try {
+      const validation = insertVehicleAssignmentSchema.safeParse({
+        ...req.body,
+        vehicleId: req.params.vehicleId,
+      });
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const assignment = await storage.assignVehicle(validation.data);
+      res.status(201).json(assignment);
+    } catch (err: any) {
+      console.error("Error assigning vehicle:", err);
+      res.status(500).json({ message: "Failed to assign vehicle" });
+    }
+  });
+
+  // Return vehicle (end assignment)
+  app.post("/api/vehicle-assignments/:id/return", isAuthenticated, async (req, res) => {
+    try {
+      const returned = await storage.returnVehicle(req.params.id);
+      if (!returned) {
+        return res.status(404).json({ message: "Assignment not found" });
+      }
+      res.json(returned);
+    } catch (err: any) {
+      console.error("Error returning vehicle:", err);
+      res.status(500).json({ message: "Failed to return vehicle" });
+    }
+  });
+
+  // =====================
+  // CHECKLIST TEMPLATE ROUTES
+  // =====================
+
+  // List checklist templates
+  app.get("/api/checklist-templates", isAuthenticated, async (req, res) => {
+    try {
+      const target = req.query.target as string | undefined;
+      const templates = target
+        ? await storage.getChecklistTemplatesByTarget(target)
+        : await storage.getChecklistTemplates();
+      res.json(templates);
+    } catch (err: any) {
+      console.error("Error fetching checklist templates:", err);
+      res.status(500).json({ message: "Failed to fetch checklist templates" });
+    }
+  });
+
+  // Get single checklist template with items
+  app.get("/api/checklist-templates/:id", isAuthenticated, async (req, res) => {
+    try {
+      const template = await storage.getChecklistTemplateWithItems(req.params.id);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+      res.json(template);
+    } catch (err: any) {
+      console.error("Error fetching checklist template:", err);
+      res.status(500).json({ message: "Failed to fetch checklist template" });
+    }
+  });
+
+  // Create checklist template
+  app.post("/api/checklist-templates", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const validation = insertChecklistTemplateSchema.safeParse({
+        ...req.body,
+        createdById: userId,
+      });
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const template = await storage.createChecklistTemplate(validation.data);
+      res.status(201).json(template);
+    } catch (err: any) {
+      console.error("Error creating checklist template:", err);
+      res.status(500).json({ message: "Failed to create checklist template" });
+    }
+  });
+
+  // Update checklist template
+  app.patch("/api/checklist-templates/:id", isAuthenticated, async (req, res) => {
+    try {
+      const partialSchema = insertChecklistTemplateSchema.partial();
+      const validation = partialSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const updated = await storage.updateChecklistTemplate(req.params.id, validation.data);
+      if (!updated) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating checklist template:", err);
+      res.status(500).json({ message: "Failed to update checklist template" });
+    }
+  });
+
+  // Delete checklist template
+  app.delete("/api/checklist-templates/:id", isAuthenticated, async (req, res) => {
+    try {
+      const deleted = await storage.deleteChecklistTemplate(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting checklist template:", err);
+      res.status(500).json({ message: "Failed to delete checklist template" });
+    }
+  });
+
+  // =====================
+  // CHECKLIST TEMPLATE ITEM ROUTES
+  // =====================
+
+  // Get template items
+  app.get("/api/checklist-templates/:templateId/items", isAuthenticated, async (req, res) => {
+    try {
+      const items = await storage.getChecklistTemplateItems(req.params.templateId);
+      res.json(items);
+    } catch (err: any) {
+      console.error("Error fetching template items:", err);
+      res.status(500).json({ message: "Failed to fetch template items" });
+    }
+  });
+
+  // Create template item
+  app.post("/api/checklist-templates/:templateId/items", isAuthenticated, async (req, res) => {
+    try {
+      const validation = insertChecklistTemplateItemSchema.safeParse({
+        ...req.body,
+        templateId: req.params.templateId,
+      });
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const item = await storage.createChecklistTemplateItem(validation.data);
+      res.status(201).json(item);
+    } catch (err: any) {
+      console.error("Error creating template item:", err);
+      res.status(500).json({ message: "Failed to create template item" });
+    }
+  });
+
+  // Update template item
+  app.patch("/api/checklist-template-items/:id", isAuthenticated, async (req, res) => {
+    try {
+      const partialSchema = insertChecklistTemplateItemSchema.partial();
+      const validation = partialSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const updated = await storage.updateChecklistTemplateItem(req.params.id, validation.data);
+      if (!updated) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating template item:", err);
+      res.status(500).json({ message: "Failed to update template item" });
+    }
+  });
+
+  // Delete template item
+  app.delete("/api/checklist-template-items/:id", isAuthenticated, async (req, res) => {
+    try {
+      const deleted = await storage.deleteChecklistTemplateItem(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting template item:", err);
+      res.status(500).json({ message: "Failed to delete template item" });
+    }
+  });
+
+  // =====================
+  // CHECKLIST RUN ROUTES
+  // =====================
+
+  // List checklist runs with optional filters
+  app.get("/api/checklist-runs", isAuthenticated, async (req, res) => {
+    try {
+      const filters = {
+        vehicleId: req.query.vehicleId as string | undefined,
+        jobId: req.query.jobId as string | undefined,
+        completedById: req.query.completedById as string | undefined,
+      };
+      const runs = await storage.getChecklistRuns(filters);
+      res.json(runs);
+    } catch (err: any) {
+      console.error("Error fetching checklist runs:", err);
+      res.status(500).json({ message: "Failed to fetch checklist runs" });
+    }
+  });
+
+  // Get single checklist run with items
+  app.get("/api/checklist-runs/:id", isAuthenticated, async (req, res) => {
+    try {
+      const run = await storage.getChecklistRunWithItems(req.params.id);
+      if (!run) {
+        return res.status(404).json({ message: "Checklist run not found" });
+      }
+      res.json(run);
+    } catch (err: any) {
+      console.error("Error fetching checklist run:", err);
+      res.status(500).json({ message: "Failed to fetch checklist run" });
+    }
+  });
+
+  // Start a new checklist run
+  app.post("/api/checklist-runs", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const staffProfile = await storage.getStaffProfileByUserId(userId);
+      
+      const validation = insertChecklistRunSchema.safeParse({
+        ...req.body,
+        completedById: staffProfile?.id,
+      });
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const run = await storage.startChecklistRun(validation.data);
+      res.status(201).json(run);
+    } catch (err: any) {
+      console.error("Error starting checklist run:", err);
+      res.status(500).json({ message: "Failed to start checklist run" });
+    }
+  });
+
+  // Complete a checklist run
+  app.post("/api/checklist-runs/:id/complete", isAuthenticated, async (req, res) => {
+    try {
+      const completed = await storage.completeChecklistRun(req.params.id);
+      if (!completed) {
+        return res.status(404).json({ message: "Checklist run not found" });
+      }
+      res.json(completed);
+    } catch (err: any) {
+      console.error("Error completing checklist run:", err);
+      res.status(500).json({ message: "Failed to complete checklist run" });
+    }
+  });
+
+  // =====================
+  // CHECKLIST RUN ITEM ROUTES
+  // =====================
+
+  // Get run items
+  app.get("/api/checklist-runs/:runId/items", isAuthenticated, async (req, res) => {
+    try {
+      const items = await storage.getChecklistRunItems(req.params.runId);
+      res.json(items);
+    } catch (err: any) {
+      console.error("Error fetching run items:", err);
+      res.status(500).json({ message: "Failed to fetch run items" });
+    }
+  });
+
+  // Update run item (answer a checklist question)
+  app.patch("/api/checklist-run-items/:id", isAuthenticated, async (req, res) => {
+    try {
+      const partialSchema = insertChecklistRunItemSchema.partial();
+      const validation = partialSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const updated = await storage.updateChecklistRunItem(req.params.id, validation.data);
+      if (!updated) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating run item:", err);
+      res.status(500).json({ message: "Failed to update run item" });
+    }
+  });
+
+  // =====================
+  // JOB PHOTO ROUTES
+  // =====================
+
+  // Get photos for a job
+  app.get("/api/jobs/:jobId/photos", isAuthenticated, async (req, res) => {
+    try {
+      const photos = await storage.getJobPhotos(req.params.jobId);
+      res.json(photos);
+    } catch (err: any) {
+      console.error("Error fetching job photos:", err);
+      res.status(500).json({ message: "Failed to fetch job photos" });
+    }
+  });
+
+  // Get single photo
+  app.get("/api/job-photos/:id", isAuthenticated, async (req, res) => {
+    try {
+      const photo = await storage.getJobPhoto(req.params.id);
+      if (!photo) {
+        return res.status(404).json({ message: "Photo not found" });
+      }
+      res.json(photo);
+    } catch (err: any) {
+      console.error("Error fetching job photo:", err);
+      res.status(500).json({ message: "Failed to fetch job photo" });
+    }
+  });
+
+  // Upload photo metadata (actual file upload handled separately)
+  app.post("/api/jobs/:jobId/photos", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const staffProfile = await storage.getStaffProfileByUserId(userId);
+
+      const validation = insertJobPhotoSchema.safeParse({
+        ...req.body,
+        jobId: req.params.jobId,
+        uploadedById: staffProfile?.id,
+      });
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const photo = await storage.createJobPhoto(validation.data);
+      res.status(201).json(photo);
+    } catch (err: any) {
+      console.error("Error creating job photo:", err);
+      res.status(500).json({ message: "Failed to create job photo" });
+    }
+  });
+
+  // Update photo (caption, category)
+  app.patch("/api/job-photos/:id", isAuthenticated, async (req, res) => {
+    try {
+      const partialSchema = insertJobPhotoSchema.partial();
+      const validation = partialSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const updated = await storage.updateJobPhoto(req.params.id, validation.data);
+      if (!updated) {
+        return res.status(404).json({ message: "Photo not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating job photo:", err);
+      res.status(500).json({ message: "Failed to update job photo" });
+    }
+  });
+
+  // Delete photo
+  app.delete("/api/job-photos/:id", isAuthenticated, async (req, res) => {
+    try {
+      const deleted = await storage.deleteJobPhoto(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Photo not found" });
+      }
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting job photo:", err);
+      res.status(500).json({ message: "Failed to delete job photo" });
+    }
+  });
+
+  // =====================
+  // VEHICLE MAINTENANCE ROUTES
+  // =====================
+
+  // Get maintenance records for a vehicle
+  app.get("/api/vehicles/:vehicleId/maintenance", isAuthenticated, async (req, res) => {
+    try {
+      const records = await storage.getVehicleMaintenanceRecords(req.params.vehicleId);
+      res.json(records);
+    } catch (err: any) {
+      console.error("Error fetching maintenance records:", err);
+      res.status(500).json({ message: "Failed to fetch maintenance records" });
+    }
+  });
+
+  // Get all scheduled maintenance
+  app.get("/api/vehicle-maintenance/scheduled", isAuthenticated, async (req, res) => {
+    try {
+      const records = await storage.getScheduledMaintenance();
+      res.json(records);
+    } catch (err: any) {
+      console.error("Error fetching scheduled maintenance:", err);
+      res.status(500).json({ message: "Failed to fetch scheduled maintenance" });
+    }
+  });
+
+  // Get single maintenance record
+  app.get("/api/vehicle-maintenance/:id", isAuthenticated, async (req, res) => {
+    try {
+      const record = await storage.getVehicleMaintenance(req.params.id);
+      if (!record) {
+        return res.status(404).json({ message: "Maintenance record not found" });
+      }
+      res.json(record);
+    } catch (err: any) {
+      console.error("Error fetching maintenance record:", err);
+      res.status(500).json({ message: "Failed to fetch maintenance record" });
+    }
+  });
+
+  // Create maintenance record
+  app.post("/api/vehicles/:vehicleId/maintenance", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const validation = insertVehicleMaintenanceSchema.safeParse({
+        ...req.body,
+        vehicleId: req.params.vehicleId,
+        createdById: userId,
+      });
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const record = await storage.createVehicleMaintenance(validation.data);
+      res.status(201).json(record);
+    } catch (err: any) {
+      console.error("Error creating maintenance record:", err);
+      res.status(500).json({ message: "Failed to create maintenance record" });
+    }
+  });
+
+  // Update maintenance record
+  app.patch("/api/vehicle-maintenance/:id", isAuthenticated, async (req, res) => {
+    try {
+      const partialSchema = insertVehicleMaintenanceSchema.partial();
+      const validation = partialSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const updated = await storage.updateVehicleMaintenance(req.params.id, validation.data);
+      if (!updated) {
+        return res.status(404).json({ message: "Maintenance record not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating maintenance record:", err);
+      res.status(500).json({ message: "Failed to update maintenance record" });
+    }
+  });
+
+  // Complete maintenance
+  app.post("/api/vehicle-maintenance/:id/complete", isAuthenticated, async (req, res) => {
+    try {
+      const { completedDate } = req.body;
+      if (!completedDate) {
+        return res.status(400).json({ message: "Completed date is required" });
+      }
+
+      const completed = await storage.completeVehicleMaintenance(req.params.id, completedDate);
+      if (!completed) {
+        return res.status(404).json({ message: "Maintenance record not found" });
+      }
+      res.json(completed);
+    } catch (err: any) {
+      console.error("Error completing maintenance:", err);
+      res.status(500).json({ message: "Failed to complete maintenance" });
+    }
+  });
+
+  // Delete maintenance record
+  app.delete("/api/vehicle-maintenance/:id", isAuthenticated, async (req, res) => {
+    try {
+      const deleted = await storage.deleteVehicleMaintenance(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Maintenance record not found" });
+      }
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting maintenance record:", err);
+      res.status(500).json({ message: "Failed to delete maintenance record" });
     }
   });
 

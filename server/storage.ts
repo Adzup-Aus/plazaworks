@@ -21,6 +21,25 @@ import {
   type InsertPayment,
   type QuoteWithLineItems,
   type InvoiceWithDetails,
+  type Vehicle,
+  type InsertVehicle,
+  type VehicleAssignment,
+  type InsertVehicleAssignment,
+  type VehicleWithAssignment,
+  type ChecklistTemplate,
+  type InsertChecklistTemplate,
+  type ChecklistTemplateItem,
+  type InsertChecklistTemplateItem,
+  type ChecklistTemplateWithItems,
+  type ChecklistRun,
+  type InsertChecklistRun,
+  type ChecklistRunItem,
+  type InsertChecklistRunItem,
+  type ChecklistRunWithItems,
+  type JobPhoto,
+  type InsertJobPhoto,
+  type VehicleMaintenance,
+  type InsertVehicleMaintenance,
   staffProfiles,
   jobs,
   scheduleEntries,
@@ -31,6 +50,14 @@ import {
   invoices,
   lineItems,
   payments,
+  vehicles,
+  vehicleAssignments,
+  checklistTemplates,
+  checklistTemplateItems,
+  checklistRuns,
+  checklistRunItems,
+  jobPhotos,
+  vehicleMaintenance,
   users,
   type User,
 } from "@shared/schema";
@@ -128,6 +155,64 @@ export interface IStorage {
   createPayment(payment: InsertPayment): Promise<Payment>;
   updatePayment(id: string, payment: Partial<InsertPayment>): Promise<Payment | undefined>;
   completePayment(id: string): Promise<Payment | undefined>;
+
+  // Vehicle operations
+  getVehicles(): Promise<Vehicle[]>;
+  getVehicle(id: string): Promise<Vehicle | undefined>;
+  getVehicleWithAssignment(id: string): Promise<VehicleWithAssignment | undefined>;
+  getVehiclesByStatus(status: string): Promise<Vehicle[]>;
+  createVehicle(vehicle: InsertVehicle): Promise<Vehicle>;
+  updateVehicle(id: string, vehicle: Partial<InsertVehicle>): Promise<Vehicle | undefined>;
+  deleteVehicle(id: string): Promise<boolean>;
+
+  // Vehicle assignment operations
+  getVehicleAssignments(vehicleId: string): Promise<VehicleAssignment[]>;
+  getCurrentAssignment(vehicleId: string): Promise<VehicleAssignment | undefined>;
+  getAssignmentsByStaff(staffId: string): Promise<VehicleAssignment[]>;
+  assignVehicle(assignment: InsertVehicleAssignment): Promise<VehicleAssignment>;
+  returnVehicle(assignmentId: string): Promise<VehicleAssignment | undefined>;
+
+  // Checklist template operations
+  getChecklistTemplates(): Promise<ChecklistTemplate[]>;
+  getChecklistTemplate(id: string): Promise<ChecklistTemplate | undefined>;
+  getChecklistTemplateWithItems(id: string): Promise<ChecklistTemplateWithItems | undefined>;
+  getChecklistTemplatesByTarget(target: string): Promise<ChecklistTemplate[]>;
+  createChecklistTemplate(template: InsertChecklistTemplate): Promise<ChecklistTemplate>;
+  updateChecklistTemplate(id: string, template: Partial<InsertChecklistTemplate>): Promise<ChecklistTemplate | undefined>;
+  deleteChecklistTemplate(id: string): Promise<boolean>;
+
+  // Checklist template item operations
+  getChecklistTemplateItems(templateId: string): Promise<ChecklistTemplateItem[]>;
+  createChecklistTemplateItem(item: InsertChecklistTemplateItem): Promise<ChecklistTemplateItem>;
+  updateChecklistTemplateItem(id: string, item: Partial<InsertChecklistTemplateItem>): Promise<ChecklistTemplateItem | undefined>;
+  deleteChecklistTemplateItem(id: string): Promise<boolean>;
+
+  // Checklist run operations
+  getChecklistRuns(filters?: { vehicleId?: string; jobId?: string; completedById?: string }): Promise<ChecklistRun[]>;
+  getChecklistRun(id: string): Promise<ChecklistRun | undefined>;
+  getChecklistRunWithItems(id: string): Promise<ChecklistRunWithItems | undefined>;
+  startChecklistRun(run: InsertChecklistRun): Promise<ChecklistRunWithItems>;
+  completeChecklistRun(id: string): Promise<ChecklistRun | undefined>;
+
+  // Checklist run item operations
+  getChecklistRunItems(runId: string): Promise<ChecklistRunItem[]>;
+  updateChecklistRunItem(id: string, item: Partial<InsertChecklistRunItem>): Promise<ChecklistRunItem | undefined>;
+
+  // Job photo operations
+  getJobPhotos(jobId: string): Promise<JobPhoto[]>;
+  getJobPhoto(id: string): Promise<JobPhoto | undefined>;
+  createJobPhoto(photo: InsertJobPhoto): Promise<JobPhoto>;
+  updateJobPhoto(id: string, photo: Partial<InsertJobPhoto>): Promise<JobPhoto | undefined>;
+  deleteJobPhoto(id: string): Promise<boolean>;
+
+  // Vehicle maintenance operations
+  getVehicleMaintenanceRecords(vehicleId: string): Promise<VehicleMaintenance[]>;
+  getVehicleMaintenance(id: string): Promise<VehicleMaintenance | undefined>;
+  getScheduledMaintenance(): Promise<VehicleMaintenance[]>;
+  createVehicleMaintenance(maintenance: InsertVehicleMaintenance): Promise<VehicleMaintenance>;
+  updateVehicleMaintenance(id: string, maintenance: Partial<InsertVehicleMaintenance>): Promise<VehicleMaintenance | undefined>;
+  completeVehicleMaintenance(id: string, completedDate: string): Promise<VehicleMaintenance | undefined>;
+  deleteVehicleMaintenance(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -708,6 +793,347 @@ export class DatabaseStorage implements IStorage {
     }
 
     return updated;
+  }
+
+  // =====================
+  // Phase 4: Vehicle Operations
+  // =====================
+
+  async getVehicles(): Promise<Vehicle[]> {
+    return await db.select().from(vehicles).orderBy(desc(vehicles.createdAt));
+  }
+
+  async getVehicle(id: string): Promise<Vehicle | undefined> {
+    const [vehicle] = await db.select().from(vehicles).where(eq(vehicles.id, id));
+    return vehicle;
+  }
+
+  async getVehicleWithAssignment(id: string): Promise<VehicleWithAssignment | undefined> {
+    const vehicle = await this.getVehicle(id);
+    if (!vehicle) return undefined;
+
+    const currentAssignment = await this.getCurrentAssignment(id);
+    if (currentAssignment) {
+      const [staff] = await db.select().from(staffProfiles).where(eq(staffProfiles.id, currentAssignment.staffId));
+      return { ...vehicle, currentAssignment: { ...currentAssignment, staff } };
+    }
+    return vehicle;
+  }
+
+  async getVehiclesByStatus(status: string): Promise<Vehicle[]> {
+    return await db.select().from(vehicles).where(eq(vehicles.status, status)).orderBy(desc(vehicles.createdAt));
+  }
+
+  async createVehicle(vehicle: InsertVehicle): Promise<Vehicle> {
+    const [created] = await db.insert(vehicles).values(vehicle).returning();
+    return created;
+  }
+
+  async updateVehicle(id: string, vehicle: Partial<InsertVehicle>): Promise<Vehicle | undefined> {
+    const [updated] = await db
+      .update(vehicles)
+      .set({ ...vehicle, updatedAt: new Date() })
+      .where(eq(vehicles.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteVehicle(id: string): Promise<boolean> {
+    await db.delete(vehicles).where(eq(vehicles.id, id));
+    return true;
+  }
+
+  // Vehicle Assignment Operations
+  async getVehicleAssignments(vehicleId: string): Promise<VehicleAssignment[]> {
+    return await db.select().from(vehicleAssignments)
+      .where(eq(vehicleAssignments.vehicleId, vehicleId))
+      .orderBy(desc(vehicleAssignments.assignedAt));
+  }
+
+  async getCurrentAssignment(vehicleId: string): Promise<VehicleAssignment | undefined> {
+    const [assignment] = await db.select().from(vehicleAssignments)
+      .where(and(
+        eq(vehicleAssignments.vehicleId, vehicleId),
+        sql`${vehicleAssignments.returnedAt} IS NULL`
+      ))
+      .orderBy(desc(vehicleAssignments.assignedAt))
+      .limit(1);
+    return assignment;
+  }
+
+  async getAssignmentsByStaff(staffId: string): Promise<VehicleAssignment[]> {
+    return await db.select().from(vehicleAssignments)
+      .where(eq(vehicleAssignments.staffId, staffId))
+      .orderBy(desc(vehicleAssignments.assignedAt));
+  }
+
+  async assignVehicle(assignment: InsertVehicleAssignment): Promise<VehicleAssignment> {
+    // Return any existing assignment for this vehicle
+    const existing = await this.getCurrentAssignment(assignment.vehicleId);
+    if (existing) {
+      await this.returnVehicle(existing.id);
+    }
+
+    // Create new assignment
+    const [created] = await db.insert(vehicleAssignments).values(assignment).returning();
+
+    // Update vehicle status to in_use
+    await this.updateVehicle(assignment.vehicleId, { status: "in_use" });
+
+    return created;
+  }
+
+  async returnVehicle(assignmentId: string): Promise<VehicleAssignment | undefined> {
+    const [updated] = await db
+      .update(vehicleAssignments)
+      .set({ returnedAt: new Date() })
+      .where(eq(vehicleAssignments.id, assignmentId))
+      .returning();
+
+    if (updated) {
+      // Update vehicle status to available
+      await this.updateVehicle(updated.vehicleId, { status: "available" });
+    }
+
+    return updated;
+  }
+
+  // Checklist Template Operations
+  async getChecklistTemplates(): Promise<ChecklistTemplate[]> {
+    return await db.select().from(checklistTemplates)
+      .where(eq(checklistTemplates.isActive, true))
+      .orderBy(desc(checklistTemplates.createdAt));
+  }
+
+  async getChecklistTemplate(id: string): Promise<ChecklistTemplate | undefined> {
+    const [template] = await db.select().from(checklistTemplates).where(eq(checklistTemplates.id, id));
+    return template;
+  }
+
+  async getChecklistTemplateWithItems(id: string): Promise<ChecklistTemplateWithItems | undefined> {
+    const template = await this.getChecklistTemplate(id);
+    if (!template) return undefined;
+
+    const items = await this.getChecklistTemplateItems(id);
+    return { ...template, items };
+  }
+
+  async getChecklistTemplatesByTarget(target: string): Promise<ChecklistTemplate[]> {
+    return await db.select().from(checklistTemplates)
+      .where(and(
+        eq(checklistTemplates.target, target),
+        eq(checklistTemplates.isActive, true)
+      ))
+      .orderBy(desc(checklistTemplates.createdAt));
+  }
+
+  async createChecklistTemplate(template: InsertChecklistTemplate): Promise<ChecklistTemplate> {
+    const [created] = await db.insert(checklistTemplates).values(template).returning();
+    return created;
+  }
+
+  async updateChecklistTemplate(id: string, template: Partial<InsertChecklistTemplate>): Promise<ChecklistTemplate | undefined> {
+    const [updated] = await db
+      .update(checklistTemplates)
+      .set({ ...template, updatedAt: new Date() })
+      .where(eq(checklistTemplates.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteChecklistTemplate(id: string): Promise<boolean> {
+    // Soft delete by setting isActive to false
+    await db.update(checklistTemplates).set({ isActive: false }).where(eq(checklistTemplates.id, id));
+    return true;
+  }
+
+  // Checklist Template Item Operations
+  async getChecklistTemplateItems(templateId: string): Promise<ChecklistTemplateItem[]> {
+    return await db.select().from(checklistTemplateItems)
+      .where(eq(checklistTemplateItems.templateId, templateId))
+      .orderBy(checklistTemplateItems.sortOrder);
+  }
+
+  async createChecklistTemplateItem(item: InsertChecklistTemplateItem): Promise<ChecklistTemplateItem> {
+    const [created] = await db.insert(checklistTemplateItems).values(item).returning();
+    return created;
+  }
+
+  async updateChecklistTemplateItem(id: string, item: Partial<InsertChecklistTemplateItem>): Promise<ChecklistTemplateItem | undefined> {
+    const [updated] = await db
+      .update(checklistTemplateItems)
+      .set(item)
+      .where(eq(checklistTemplateItems.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteChecklistTemplateItem(id: string): Promise<boolean> {
+    await db.delete(checklistTemplateItems).where(eq(checklistTemplateItems.id, id));
+    return true;
+  }
+
+  // Checklist Run Operations
+  async getChecklistRuns(filters?: { vehicleId?: string; jobId?: string; completedById?: string }): Promise<ChecklistRun[]> {
+    let query = db.select().from(checklistRuns);
+    
+    if (filters?.vehicleId) {
+      query = query.where(eq(checklistRuns.vehicleId, filters.vehicleId)) as typeof query;
+    }
+    if (filters?.jobId) {
+      query = query.where(eq(checklistRuns.jobId, filters.jobId)) as typeof query;
+    }
+    if (filters?.completedById) {
+      query = query.where(eq(checklistRuns.completedById, filters.completedById)) as typeof query;
+    }
+    
+    return await query.orderBy(desc(checklistRuns.startedAt));
+  }
+
+  async getChecklistRun(id: string): Promise<ChecklistRun | undefined> {
+    const [run] = await db.select().from(checklistRuns).where(eq(checklistRuns.id, id));
+    return run;
+  }
+
+  async getChecklistRunWithItems(id: string): Promise<ChecklistRunWithItems | undefined> {
+    const run = await this.getChecklistRun(id);
+    if (!run) return undefined;
+
+    const items = await this.getChecklistRunItems(id);
+    const template = await this.getChecklistTemplate(run.templateId);
+    return { ...run, items, template };
+  }
+
+  async startChecklistRun(run: InsertChecklistRun): Promise<ChecklistRunWithItems> {
+    // Create the run
+    const [created] = await db.insert(checklistRuns).values(run).returning();
+
+    // Get template items and create run items
+    const templateItems = await this.getChecklistTemplateItems(run.templateId);
+    const runItems: ChecklistRunItem[] = [];
+
+    for (const templateItem of templateItems) {
+      const [runItem] = await db.insert(checklistRunItems).values({
+        runId: created.id,
+        templateItemId: templateItem.id,
+        question: templateItem.question,
+        itemType: templateItem.itemType,
+      }).returning();
+      runItems.push(runItem);
+    }
+
+    const template = await this.getChecklistTemplate(run.templateId);
+    return { ...created, items: runItems, template };
+  }
+
+  async completeChecklistRun(id: string): Promise<ChecklistRun | undefined> {
+    const [updated] = await db
+      .update(checklistRuns)
+      .set({ status: "completed", completedAt: new Date() })
+      .where(eq(checklistRuns.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Checklist Run Item Operations
+  async getChecklistRunItems(runId: string): Promise<ChecklistRunItem[]> {
+    return await db.select().from(checklistRunItems)
+      .where(eq(checklistRunItems.runId, runId));
+  }
+
+  async updateChecklistRunItem(id: string, item: Partial<InsertChecklistRunItem>): Promise<ChecklistRunItem | undefined> {
+    const [updated] = await db
+      .update(checklistRunItems)
+      .set({ ...item, completedAt: new Date() })
+      .where(eq(checklistRunItems.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Job Photo Operations
+  async getJobPhotos(jobId: string): Promise<JobPhoto[]> {
+    return await db.select().from(jobPhotos)
+      .where(eq(jobPhotos.jobId, jobId))
+      .orderBy(desc(jobPhotos.createdAt));
+  }
+
+  async getJobPhoto(id: string): Promise<JobPhoto | undefined> {
+    const [photo] = await db.select().from(jobPhotos).where(eq(jobPhotos.id, id));
+    return photo;
+  }
+
+  async createJobPhoto(photo: InsertJobPhoto): Promise<JobPhoto> {
+    const [created] = await db.insert(jobPhotos).values(photo).returning();
+    return created;
+  }
+
+  async updateJobPhoto(id: string, photo: Partial<InsertJobPhoto>): Promise<JobPhoto | undefined> {
+    const [updated] = await db
+      .update(jobPhotos)
+      .set(photo)
+      .where(eq(jobPhotos.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteJobPhoto(id: string): Promise<boolean> {
+    await db.delete(jobPhotos).where(eq(jobPhotos.id, id));
+    return true;
+  }
+
+  // Vehicle Maintenance Operations
+  async getVehicleMaintenanceRecords(vehicleId: string): Promise<VehicleMaintenance[]> {
+    return await db.select().from(vehicleMaintenance)
+      .where(eq(vehicleMaintenance.vehicleId, vehicleId))
+      .orderBy(desc(vehicleMaintenance.scheduledDate));
+  }
+
+  async getVehicleMaintenance(id: string): Promise<VehicleMaintenance | undefined> {
+    const [record] = await db.select().from(vehicleMaintenance).where(eq(vehicleMaintenance.id, id));
+    return record;
+  }
+
+  async getScheduledMaintenance(): Promise<VehicleMaintenance[]> {
+    return await db.select().from(vehicleMaintenance)
+      .where(eq(vehicleMaintenance.status, "scheduled"))
+      .orderBy(vehicleMaintenance.scheduledDate);
+  }
+
+  async createVehicleMaintenance(maintenance: InsertVehicleMaintenance): Promise<VehicleMaintenance> {
+    const [created] = await db.insert(vehicleMaintenance).values(maintenance).returning();
+    return created;
+  }
+
+  async updateVehicleMaintenance(id: string, maintenance: Partial<InsertVehicleMaintenance>): Promise<VehicleMaintenance | undefined> {
+    const [updated] = await db
+      .update(vehicleMaintenance)
+      .set({ ...maintenance, updatedAt: new Date() })
+      .where(eq(vehicleMaintenance.id, id))
+      .returning();
+    return updated;
+  }
+
+  async completeVehicleMaintenance(id: string, completedDate: string): Promise<VehicleMaintenance | undefined> {
+    const [updated] = await db
+      .update(vehicleMaintenance)
+      .set({ status: "completed", completedDate, updatedAt: new Date() })
+      .where(eq(vehicleMaintenance.id, id))
+      .returning();
+
+    // Update vehicle status back to available if it was in maintenance
+    if (updated) {
+      const vehicle = await this.getVehicle(updated.vehicleId);
+      if (vehicle && vehicle.status === "maintenance") {
+        await this.updateVehicle(updated.vehicleId, { status: "available" });
+      }
+    }
+
+    return updated;
+  }
+
+  async deleteVehicleMaintenance(id: string): Promise<boolean> {
+    await db.delete(vehicleMaintenance).where(eq(vehicleMaintenance.id, id));
+    return true;
   }
 }
 

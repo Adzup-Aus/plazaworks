@@ -48,9 +48,13 @@ import {
   Share2, 
   Trash2,
   ListChecks,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Camera,
+  ImageIcon,
+  Upload,
+  X
 } from "lucide-react";
-import { jobTypes, jobStatuses, pcItemStatuses, type Job, type PCItem, type ClientAccessToken } from "@shared/schema";
+import { jobTypes, jobStatuses, pcItemStatuses, type Job, type PCItem, type ClientAccessToken, type JobPhoto } from "@shared/schema";
 
 const formSchema = z.object({
   clientName: z.string().min(1, "Client name is required"),
@@ -243,6 +247,230 @@ function PCItemsSection({ jobId }: { jobId: string }) {
             <p className="text-sm">Add items to track job completion</p>
           </div>
         ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function JobPhotosSection({ jobId }: { jobId: string }) {
+  const { toast } = useToast();
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<JobPhoto | null>(null);
+  const [newPhotoUrl, setNewPhotoUrl] = useState("");
+  const [newPhotoCaption, setNewPhotoCaption] = useState("");
+  const [newPhotoCategory, setNewPhotoCategory] = useState("general");
+
+  const { data: photos, isLoading } = useQuery<JobPhoto[]>({
+    queryKey: [`/api/jobs/${jobId}/photos`],
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: async (data: { url: string; caption?: string; category?: string }) => {
+      return apiRequest("POST", `/api/jobs/${jobId}/photos`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/photos`] });
+      toast({ title: "Photo added", description: "Photo has been added to the job." });
+      setIsAddDialogOpen(false);
+      setNewPhotoUrl("");
+      setNewPhotoCaption("");
+      setNewPhotoCategory("general");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (photoId: string) => {
+      return apiRequest("DELETE", `/api/photos/${photoId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/photos`] });
+      toast({ title: "Photo deleted", description: "Photo has been removed." });
+      setSelectedPhoto(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleAddPhoto = () => {
+    if (!newPhotoUrl.trim()) {
+      toast({ title: "URL required", description: "Please enter a photo URL.", variant: "destructive" });
+      return;
+    }
+    uploadMutation.mutate({
+      url: newPhotoUrl.trim(),
+      caption: newPhotoCaption.trim() || undefined,
+      category: newPhotoCategory,
+    });
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Camera className="h-5 w-5" />
+              Job Photos
+            </CardTitle>
+            <CardDescription>Upload and manage photos for this job</CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsAddDialogOpen(true)}
+            disabled={uploadMutation.isPending}
+            data-testid="button-add-photo"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add Photo
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="aspect-square rounded-md bg-muted animate-pulse" />
+            ))}
+          </div>
+        ) : photos && photos.length > 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {photos.map((photo) => (
+              <div
+                key={photo.id}
+                className="relative aspect-square rounded-md overflow-hidden border group cursor-pointer"
+                onClick={() => setSelectedPhoto(photo)}
+                data-testid={`photo-${photo.id}`}
+              >
+                <img
+                  src={photo.url}
+                  alt={photo.caption || "Job photo"}
+                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors" />
+                <Button
+                  size="icon"
+                  variant="destructive"
+                  className="absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm("Delete this photo?")) {
+                      deleteMutation.mutate(photo.id);
+                    }
+                  }}
+                  data-testid={`button-delete-photo-${photo.id}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+                {photo.caption && (
+                  <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 truncate">
+                    {photo.caption}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            <ImageIcon className="mx-auto h-8 w-8 mb-2 opacity-50" />
+            <p>No photos yet</p>
+            <p className="text-sm">Add photos to document this job</p>
+          </div>
+        )}
+
+        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add Photo</DialogTitle>
+              <DialogDescription>Add a photo to document this job</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="photo-url" className="text-sm font-medium">
+                  Photo URL <span className="text-destructive">*</span>
+                </label>
+                <Input
+                  id="photo-url"
+                  placeholder="https://example.com/photo.jpg"
+                  value={newPhotoUrl}
+                  onChange={(e) => setNewPhotoUrl(e.target.value)}
+                  data-testid="input-photo-url"
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="photo-caption" className="text-sm font-medium">
+                  Caption (optional)
+                </label>
+                <Input
+                  id="photo-caption"
+                  placeholder="Describe this photo..."
+                  value={newPhotoCaption}
+                  onChange={(e) => setNewPhotoCaption(e.target.value)}
+                  data-testid="input-photo-caption"
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="photo-category" className="text-sm font-medium">
+                  Category
+                </label>
+                <Select value={newPhotoCategory} onValueChange={setNewPhotoCategory}>
+                  <SelectTrigger data-testid="select-photo-category">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="general">General</SelectItem>
+                    <SelectItem value="before">Before</SelectItem>
+                    <SelectItem value="after">After</SelectItem>
+                    <SelectItem value="progress">Progress</SelectItem>
+                    <SelectItem value="issue">Issue</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAddPhoto}
+                disabled={uploadMutation.isPending || !newPhotoUrl.trim()}
+                data-testid="button-confirm-add-photo"
+              >
+                {uploadMutation.isPending ? "Adding..." : "Add Photo"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!selectedPhoto} onOpenChange={(open) => !open && setSelectedPhoto(null)}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Photo Details</DialogTitle>
+            </DialogHeader>
+            {selectedPhoto && (
+              <div className="space-y-4">
+                <img
+                  src={selectedPhoto.url}
+                  alt={selectedPhoto.caption || "Job photo"}
+                  className="w-full max-h-[60vh] object-contain rounded-md"
+                />
+                {selectedPhoto.caption && (
+                  <p className="text-sm text-muted-foreground">{selectedPhoto.caption}</p>
+                )}
+                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                  <span>Uploaded: {new Date(selectedPhoto.createdAt || "").toLocaleString()}</span>
+                  {selectedPhoto.category && (
+                    <Badge variant="secondary">{selectedPhoto.category}</Badge>
+                  )}
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );
@@ -808,6 +1036,7 @@ export default function JobForm() {
       {isEditing && id && (
         <>
           <PCItemsSection jobId={id} />
+          <JobPhotosSection jobId={id} />
           <ShareLinkSection jobId={id} />
         </>
       )}

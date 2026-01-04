@@ -580,3 +580,361 @@ export type InvoiceWithDetails = Invoice & {
   lineItems: LineItem[];
   payments: Payment[];
 };
+
+// =====================
+// PHASE 4: Vehicle Management, Checklists & Photos
+// =====================
+
+// Vehicle status enum
+export const vehicleStatuses = ["available", "in_use", "maintenance", "retired"] as const;
+export type VehicleStatus = typeof vehicleStatuses[number];
+
+// Checklist target enum - what the checklist applies to
+export const checklistTargets = ["vehicle", "job"] as const;
+export type ChecklistTarget = typeof checklistTargets[number];
+
+// Checklist item type enum
+export const checklistItemTypes = ["checkbox", "text", "number", "photo"] as const;
+export type ChecklistItemType = typeof checklistItemTypes[number];
+
+// Maintenance status enum
+export const maintenanceStatuses = ["scheduled", "in_progress", "completed", "cancelled"] as const;
+export type MaintenanceStatus = typeof maintenanceStatuses[number];
+
+// Vehicles table
+export const vehicles = pgTable("vehicles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  registrationNumber: varchar("registration_number", { length: 20 }).notNull().unique(),
+  make: varchar("make", { length: 100 }).notNull(),
+  model: varchar("model", { length: 100 }).notNull(),
+  year: integer("year"),
+  color: varchar("color", { length: 50 }),
+  vin: varchar("vin", { length: 50 }),
+  status: varchar("status", { length: 50 }).notNull().default("available"),
+  currentOdometer: integer("current_odometer").default(0),
+  fuelType: varchar("fuel_type", { length: 50 }),
+  capacity: integer("capacity"),
+  notes: text("notes"),
+  insuranceExpiry: varchar("insurance_expiry", { length: 10 }),
+  registrationExpiry: varchar("registration_expiry", { length: 10 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_vehicles_status").on(table.status),
+  index("idx_vehicles_rego").on(table.registrationNumber),
+]);
+
+// Vehicle assignments - tracks which staff is assigned to which vehicle
+export const vehicleAssignments = pgTable("vehicle_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  vehicleId: varchar("vehicle_id").notNull().references(() => vehicles.id, { onDelete: "cascade" }),
+  staffId: varchar("staff_id").notNull().references(() => staffProfiles.id, { onDelete: "cascade" }),
+  assignedAt: timestamp("assigned_at").defaultNow(),
+  returnedAt: timestamp("returned_at"),
+  notes: text("notes"),
+}, (table) => [
+  index("idx_vehicle_assignments_vehicle").on(table.vehicleId),
+  index("idx_vehicle_assignments_staff").on(table.staffId),
+]);
+
+// Checklist templates - reusable checklist definitions
+export const checklistTemplates = pgTable("checklist_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 200 }).notNull(),
+  description: text("description"),
+  target: varchar("target", { length: 50 }).notNull().default("vehicle"),
+  isActive: boolean("is_active").default(true),
+  createdById: varchar("created_by_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_checklist_templates_target").on(table.target),
+  index("idx_checklist_templates_active").on(table.isActive),
+]);
+
+// Checklist template items - questions/items within a template
+export const checklistTemplateItems = pgTable("checklist_template_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => checklistTemplates.id, { onDelete: "cascade" }),
+  question: varchar("question", { length: 500 }).notNull(),
+  itemType: varchar("item_type", { length: 50 }).notNull().default("checkbox"),
+  isRequired: boolean("is_required").default(true),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_checklist_template_items_template").on(table.templateId),
+]);
+
+// Checklist runs - actual completed checklists
+export const checklistRuns = pgTable("checklist_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => checklistTemplates.id),
+  vehicleId: varchar("vehicle_id").references(() => vehicles.id, { onDelete: "set null" }),
+  jobId: varchar("job_id").references(() => jobs.id, { onDelete: "set null" }),
+  scheduleEntryId: varchar("schedule_entry_id").references(() => scheduleEntries.id, { onDelete: "set null" }),
+  completedById: varchar("completed_by_id").references(() => staffProfiles.id),
+  status: varchar("status", { length: 50 }).notNull().default("in_progress"),
+  startedAt: timestamp("started_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+  notes: text("notes"),
+}, (table) => [
+  index("idx_checklist_runs_template").on(table.templateId),
+  index("idx_checklist_runs_vehicle").on(table.vehicleId),
+  index("idx_checklist_runs_job").on(table.jobId),
+  index("idx_checklist_runs_completed_by").on(table.completedById),
+]);
+
+// Checklist run items - individual answers for a checklist run
+export const checklistRunItems = pgTable("checklist_run_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  runId: varchar("run_id").notNull().references(() => checklistRuns.id, { onDelete: "cascade" }),
+  templateItemId: varchar("template_item_id").notNull().references(() => checklistTemplateItems.id),
+  question: varchar("question", { length: 500 }).notNull(),
+  itemType: varchar("item_type", { length: 50 }).notNull(),
+  isChecked: boolean("is_checked").default(false),
+  textValue: text("text_value"),
+  numberValue: decimal("number_value", { precision: 10, scale: 2 }),
+  photoUrl: varchar("photo_url", { length: 500 }),
+  completedAt: timestamp("completed_at"),
+}, (table) => [
+  index("idx_checklist_run_items_run").on(table.runId),
+]);
+
+// Job photos - photos attached to jobs
+export const jobPhotos = pgTable("job_photos", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobId: varchar("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
+  scheduleEntryId: varchar("schedule_entry_id").references(() => scheduleEntries.id, { onDelete: "set null" }),
+  uploadedById: varchar("uploaded_by_id").references(() => staffProfiles.id),
+  filename: varchar("filename", { length: 255 }).notNull(),
+  originalFilename: varchar("original_filename", { length: 255 }),
+  mimeType: varchar("mime_type", { length: 100 }),
+  fileSize: integer("file_size"),
+  url: varchar("url", { length: 1000 }).notNull(),
+  thumbnailUrl: varchar("thumbnail_url", { length: 1000 }),
+  caption: varchar("caption", { length: 500 }),
+  category: varchar("category", { length: 50 }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_job_photos_job").on(table.jobId),
+  index("idx_job_photos_schedule").on(table.scheduleEntryId),
+  index("idx_job_photos_uploaded_by").on(table.uploadedById),
+]);
+
+// Vehicle maintenance records
+export const vehicleMaintenance = pgTable("vehicle_maintenance", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  vehicleId: varchar("vehicle_id").notNull().references(() => vehicles.id, { onDelete: "cascade" }),
+  maintenanceType: varchar("maintenance_type", { length: 100 }).notNull(),
+  description: text("description"),
+  status: varchar("status", { length: 50 }).notNull().default("scheduled"),
+  scheduledDate: varchar("scheduled_date", { length: 10 }),
+  completedDate: varchar("completed_date", { length: 10 }),
+  odometerAtService: integer("odometer_at_service"),
+  cost: decimal("cost", { precision: 10, scale: 2 }),
+  vendor: varchar("vendor", { length: 200 }),
+  notes: text("notes"),
+  createdById: varchar("created_by_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_vehicle_maintenance_vehicle").on(table.vehicleId),
+  index("idx_vehicle_maintenance_status").on(table.status),
+  index("idx_vehicle_maintenance_scheduled").on(table.scheduledDate),
+]);
+
+// Phase 4 Relations
+export const vehiclesRelations = relations(vehicles, ({ many }) => ({
+  assignments: many(vehicleAssignments),
+  checklistRuns: many(checklistRuns),
+  maintenance: many(vehicleMaintenance),
+}));
+
+export const vehicleAssignmentsRelations = relations(vehicleAssignments, ({ one }) => ({
+  vehicle: one(vehicles, {
+    fields: [vehicleAssignments.vehicleId],
+    references: [vehicles.id],
+  }),
+  staff: one(staffProfiles, {
+    fields: [vehicleAssignments.staffId],
+    references: [staffProfiles.id],
+  }),
+}));
+
+export const checklistTemplatesRelations = relations(checklistTemplates, ({ many }) => ({
+  items: many(checklistTemplateItems),
+  runs: many(checklistRuns),
+}));
+
+export const checklistTemplateItemsRelations = relations(checklistTemplateItems, ({ one }) => ({
+  template: one(checklistTemplates, {
+    fields: [checklistTemplateItems.templateId],
+    references: [checklistTemplates.id],
+  }),
+}));
+
+export const checklistRunsRelations = relations(checklistRuns, ({ one, many }) => ({
+  template: one(checklistTemplates, {
+    fields: [checklistRuns.templateId],
+    references: [checklistTemplates.id],
+  }),
+  vehicle: one(vehicles, {
+    fields: [checklistRuns.vehicleId],
+    references: [vehicles.id],
+  }),
+  job: one(jobs, {
+    fields: [checklistRuns.jobId],
+    references: [jobs.id],
+  }),
+  completedBy: one(staffProfiles, {
+    fields: [checklistRuns.completedById],
+    references: [staffProfiles.id],
+  }),
+  items: many(checklistRunItems),
+}));
+
+export const checklistRunItemsRelations = relations(checklistRunItems, ({ one }) => ({
+  run: one(checklistRuns, {
+    fields: [checklistRunItems.runId],
+    references: [checklistRuns.id],
+  }),
+  templateItem: one(checklistTemplateItems, {
+    fields: [checklistRunItems.templateItemId],
+    references: [checklistTemplateItems.id],
+  }),
+}));
+
+export const jobPhotosRelations = relations(jobPhotos, ({ one }) => ({
+  job: one(jobs, {
+    fields: [jobPhotos.jobId],
+    references: [jobs.id],
+  }),
+  scheduleEntry: one(scheduleEntries, {
+    fields: [jobPhotos.scheduleEntryId],
+    references: [scheduleEntries.id],
+  }),
+  uploadedBy: one(staffProfiles, {
+    fields: [jobPhotos.uploadedById],
+    references: [staffProfiles.id],
+  }),
+}));
+
+export const vehicleMaintenanceRelations = relations(vehicleMaintenance, ({ one }) => ({
+  vehicle: one(vehicles, {
+    fields: [vehicleMaintenance.vehicleId],
+    references: [vehicles.id],
+  }),
+}));
+
+// Phase 4 Insert Schemas
+export const insertVehicleSchema = createInsertSchema(vehicles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  registrationNumber: z.string().min(1, "Registration number is required"),
+  make: z.string().min(1, "Make is required"),
+  model: z.string().min(1, "Model is required"),
+  status: z.enum(vehicleStatuses).optional(),
+});
+
+export const insertVehicleAssignmentSchema = createInsertSchema(vehicleAssignments).omit({
+  id: true,
+  assignedAt: true,
+}).extend({
+  vehicleId: z.string().min(1, "Vehicle is required"),
+  staffId: z.string().min(1, "Staff member is required"),
+});
+
+export const insertChecklistTemplateSchema = createInsertSchema(checklistTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1, "Name is required"),
+  target: z.enum(checklistTargets).optional(),
+});
+
+export const insertChecklistTemplateItemSchema = createInsertSchema(checklistTemplateItems).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  templateId: z.string().min(1, "Template is required"),
+  question: z.string().min(1, "Question is required"),
+  itemType: z.enum(checklistItemTypes).optional(),
+});
+
+export const insertChecklistRunSchema = createInsertSchema(checklistRuns).omit({
+  id: true,
+  startedAt: true,
+  completedAt: true,
+}).extend({
+  templateId: z.string().min(1, "Template is required"),
+});
+
+export const insertChecklistRunItemSchema = createInsertSchema(checklistRunItems).omit({
+  id: true,
+  completedAt: true,
+}).extend({
+  runId: z.string().min(1, "Run is required"),
+  templateItemId: z.string().min(1, "Template item is required"),
+  question: z.string().min(1, "Question is required"),
+});
+
+export const insertJobPhotoSchema = createInsertSchema(jobPhotos).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  jobId: z.string().min(1, "Job is required"),
+  filename: z.string().min(1, "Filename is required"),
+  url: z.string().min(1, "URL is required"),
+});
+
+export const insertVehicleMaintenanceSchema = createInsertSchema(vehicleMaintenance).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  vehicleId: z.string().min(1, "Vehicle is required"),
+  maintenanceType: z.string().min(1, "Maintenance type is required"),
+  status: z.enum(maintenanceStatuses).optional(),
+});
+
+// Phase 4 Types
+export type Vehicle = typeof vehicles.$inferSelect;
+export type InsertVehicle = z.infer<typeof insertVehicleSchema>;
+
+export type VehicleAssignment = typeof vehicleAssignments.$inferSelect;
+export type InsertVehicleAssignment = z.infer<typeof insertVehicleAssignmentSchema>;
+
+export type ChecklistTemplate = typeof checklistTemplates.$inferSelect;
+export type InsertChecklistTemplate = z.infer<typeof insertChecklistTemplateSchema>;
+
+export type ChecklistTemplateItem = typeof checklistTemplateItems.$inferSelect;
+export type InsertChecklistTemplateItem = z.infer<typeof insertChecklistTemplateItemSchema>;
+
+export type ChecklistRun = typeof checklistRuns.$inferSelect;
+export type InsertChecklistRun = z.infer<typeof insertChecklistRunSchema>;
+
+export type ChecklistRunItem = typeof checklistRunItems.$inferSelect;
+export type InsertChecklistRunItem = z.infer<typeof insertChecklistRunItemSchema>;
+
+export type JobPhoto = typeof jobPhotos.$inferSelect;
+export type InsertJobPhoto = z.infer<typeof insertJobPhotoSchema>;
+
+export type VehicleMaintenance = typeof vehicleMaintenance.$inferSelect;
+export type InsertVehicleMaintenance = z.infer<typeof insertVehicleMaintenanceSchema>;
+
+// Phase 4 Helper types
+export type VehicleWithAssignment = Vehicle & {
+  currentAssignment?: VehicleAssignment & { staff?: StaffProfile };
+};
+
+export type ChecklistTemplateWithItems = ChecklistTemplate & {
+  items: ChecklistTemplateItem[];
+};
+
+export type ChecklistRunWithItems = ChecklistRun & {
+  items: ChecklistRunItem[];
+  template?: ChecklistTemplate;
+};

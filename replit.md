@@ -4,7 +4,7 @@
 A job management system for Plaza Works, a plumbing/renovation company. Building all 5 phases to replace their existing Fergus system.
 
 ## Current State
-**Phase 3 In Progress** - Quotes, Invoices & Payments:
+**Phase 4 Complete** - Vehicle Management, Checklists & Photos
 
 ### Phase 1 Complete - Foundation:
 - User authentication via Replit Auth (Google, GitHub, email/password)
@@ -19,13 +19,25 @@ A job management system for Plaza Works, a plumbing/renovation company. Building
 - PC items tracking for jobs
 - Notification center for system alerts
 
-### Phase 3 In Progress - Quotes, Invoices & Payments:
-- Quote management with line items, numbering (Q2024-0001), and status tracking
-- Invoice management with numbering (INV2024-0001), tax calculations, and payment tracking
+### Phase 3 Complete - Quotes, Invoices & Payments:
+- Quote management with line items, numbering (Q2026-XXXX), and status tracking
+- Invoice management with numbering (INV2026-XXXX), tax calculations, and payment tracking
 - Quote-to-job conversion workflow
-- Invoice generation from jobs/quotes
+- Invoice generation from jobs/quotes via API routes
 - Payment recording (bank transfer, cash, cheque) with automatic invoice status updates
+- Client portal displays invoices with payment information
 - **Note: Stripe integration dismissed by user** - can be added later if needed
+
+### Phase 4 Complete - Vehicle Management, Checklists & Photos:
+- Vehicle fleet management with status tracking (available, in_use, maintenance, retired)
+- Vehicle-to-staff assignment with automatic status updates
+- Pre-start checklists with template builder for vehicles and jobs
+- Checklist item types: checkbox, text, number, photo
+- Checklist execution with run history tracking
+- Job photos gallery with upload functionality
+- Vehicle maintenance tracking with scheduling
+- Fleet management page with filtering and search
+- Checklists page with templates and run history tabs
 
 ## Tech Stack
 - **Frontend**: React + TypeScript + Tailwind CSS + shadcn/ui
@@ -71,6 +83,19 @@ A job management system for Plaza Works, a plumbing/renovation company. Building
 - **staff_profiles** - Extended user info with roles/permissions
 - **jobs** - Job records with client info and status
 - **schedule_entries** - Job scheduling assignments
+- **quotes** - Quote records with line items
+- **quote_line_items** - Individual quote items
+- **invoices** - Invoice records with payment tracking
+- **invoice_line_items** - Individual invoice items
+- **payments** - Payment records for invoices
+- **vehicles** - Company vehicle fleet
+- **vehicle_assignments** - Vehicle-to-staff assignments
+- **checklist_templates** - Reusable checklist templates
+- **checklist_template_items** - Template items with types
+- **checklist_runs** - Executed checklists
+- **checklist_run_items** - Individual run item responses
+- **job_photos** - Photos attached to jobs
+- **vehicle_maintenance** - Vehicle maintenance records
 
 ## API Endpoints
 All endpoints require authentication except login/logout.
@@ -97,6 +122,34 @@ All endpoints require authentication except login/logout.
 - `POST /api/schedule` - Create entry
 - `PATCH /api/schedule/:id` - Update entry
 - `DELETE /api/schedule/:id` - Delete entry
+
+### Vehicles (Phase 4)
+- `GET /api/vehicles` - List all vehicles
+- `GET /api/vehicles/:id` - Get vehicle details
+- `POST /api/vehicles` - Create vehicle
+- `PATCH /api/vehicles/:id` - Update vehicle
+- `DELETE /api/vehicles/:id` - Delete vehicle
+- `POST /api/vehicles/:id/assign` - Assign vehicle to staff
+- `POST /api/vehicles/:id/return` - Return vehicle from assignment
+
+### Checklists (Phase 4)
+- `GET /api/checklist-templates` - List templates
+- `POST /api/checklist-templates` - Create template
+- `GET /api/checklist-templates/:id/items` - Get template items
+- `POST /api/checklist-templates/:id/items` - Add template item
+- `GET /api/checklist-runs` - List checklist runs
+- `POST /api/checklist-runs` - Start checklist run
+- `PATCH /api/checklist-runs/:id` - Update run status
+
+### Job Photos (Phase 4)
+- `GET /api/jobs/:id/photos` - List job photos
+- `POST /api/jobs/:id/photos` - Add photo to job
+- `DELETE /api/photos/:id` - Delete photo
+
+### Vehicle Maintenance (Phase 4)
+- `GET /api/vehicles/:id/maintenance` - List maintenance records
+- `POST /api/vehicles/:id/maintenance` - Schedule maintenance
+- `PATCH /api/maintenance/:id` - Update maintenance record
 
 ## User Roles
 - `plumber` - Field plumber
@@ -134,7 +187,4 @@ All API mutations use Zod validation:
 - `updateStaffSchema` for staff profile updates
 
 ## Future Phases
-- **Phase 2**: Client portal, PC items, notifications
-- **Phase 3**: Quotes, invoices, payments
-- **Phase 4**: Vehicle management, checklists, photo uploads
 - **Phase 5**: Productivity tracking, backcosting, capacity dashboard

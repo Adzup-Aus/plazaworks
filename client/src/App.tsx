@@ -22,6 +22,8 @@ import QuoteForm from "@/pages/quote-form";
 import Invoices from "@/pages/invoices";
 import InvoiceDetail from "@/pages/invoice-detail";
 import ClientPortal from "@/pages/client-portal";
+import Fleet from "@/pages/fleet";
+import Checklists from "@/pages/checklists";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -38,6 +40,8 @@ function AuthenticatedRouter() {
       <Route path="/invoices/new" component={InvoiceDetail} />
       <Route path="/invoices/:id" component={InvoiceDetail} />
       <Route path="/schedule" component={Schedule} />
+      <Route path="/fleet" component={Fleet} />
+      <Route path="/checklists" component={Checklists} />
       <Route path="/team" component={Team} />
       <Route component={NotFound} />
     </Switch>

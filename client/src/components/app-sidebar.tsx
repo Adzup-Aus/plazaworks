@@ -22,6 +22,8 @@ import {
   Wrench,
   FileText,
   Receipt,
+  Truck,
+  ClipboardCheck,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -50,6 +52,16 @@ const mainNavItems = [
     title: "Schedule",
     url: "/schedule",
     icon: Calendar,
+  },
+  {
+    title: "Fleet",
+    url: "/fleet",
+    icon: Truck,
+  },
+  {
+    title: "Checklists",
+    url: "/checklists",
+    icon: ClipboardCheck,
   },
   {
     title: "Team",
