@@ -2,7 +2,18 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
-import { insertJobSchema, insertScheduleEntrySchema, userRoles, employmentTypes, userPermissions } from "@shared/schema";
+import { 
+  insertJobSchema, 
+  insertScheduleEntrySchema, 
+  insertPCItemSchema,
+  insertNotificationSchema,
+  insertClientAccessTokenSchema,
+  userRoles, 
+  employmentTypes, 
+  userPermissions,
+  pcItemStatuses,
+  notificationTypes
+} from "@shared/schema";
 import { z } from "zod";
 
 // Validation schema for staff profile updates
@@ -287,6 +298,253 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("Error deleting schedule entry:", err);
       res.status(500).json({ message: "Failed to delete schedule entry" });
+    }
+  });
+
+  // =====================
+  // PC ITEM ROUTES
+  // =====================
+
+  // Get PC items for a job
+  app.get("/api/jobs/:jobId/pc-items", isAuthenticated, async (req, res) => {
+    try {
+      const items = await storage.getPCItems(req.params.jobId);
+      res.json(items);
+    } catch (err: any) {
+      console.error("Error fetching PC items:", err);
+      res.status(500).json({ message: "Failed to fetch PC items" });
+    }
+  });
+
+  // Create PC item
+  app.post("/api/jobs/:jobId/pc-items", isAuthenticated, async (req, res) => {
+    try {
+      const validation = insertPCItemSchema.safeParse({
+        ...req.body,
+        jobId: req.params.jobId,
+      });
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const item = await storage.createPCItem(validation.data);
+      res.status(201).json(item);
+    } catch (err: any) {
+      console.error("Error creating PC item:", err);
+      res.status(500).json({ message: "Failed to create PC item" });
+    }
+  });
+
+  // Update PC item
+  app.patch("/api/pc-items/:id", isAuthenticated, async (req, res) => {
+    try {
+      const partialSchema = insertPCItemSchema.partial();
+      const validation = partialSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const updated = await storage.updatePCItem(req.params.id, validation.data);
+      if (!updated) {
+        return res.status(404).json({ message: "PC item not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating PC item:", err);
+      res.status(500).json({ message: "Failed to update PC item" });
+    }
+  });
+
+  // Complete PC item
+  app.post("/api/pc-items/:id/complete", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const completed = await storage.completePCItem(req.params.id, userId);
+      if (!completed) {
+        return res.status(404).json({ message: "PC item not found" });
+      }
+      res.json(completed);
+    } catch (err: any) {
+      console.error("Error completing PC item:", err);
+      res.status(500).json({ message: "Failed to complete PC item" });
+    }
+  });
+
+  // Delete PC item
+  app.delete("/api/pc-items/:id", isAuthenticated, async (req, res) => {
+    try {
+      const deleted = await storage.deletePCItem(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "PC item not found" });
+      }
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting PC item:", err);
+      res.status(500).json({ message: "Failed to delete PC item" });
+    }
+  });
+
+  // =====================
+  // NOTIFICATION ROUTES
+  // =====================
+
+  // Get notifications for current user
+  app.get("/api/notifications", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const notificationsList = await storage.getNotifications(userId);
+      res.json(notificationsList);
+    } catch (err: any) {
+      console.error("Error fetching notifications:", err);
+      res.status(500).json({ message: "Failed to fetch notifications" });
+    }
+  });
+
+  // Get unread notification count
+  app.get("/api/notifications/unread-count", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const count = await storage.getUnreadNotificationCount(userId);
+      res.json({ count });
+    } catch (err: any) {
+      console.error("Error fetching notification count:", err);
+      res.status(500).json({ message: "Failed to fetch notification count" });
+    }
+  });
+
+  // Mark notification as read
+  app.patch("/api/notifications/:id/read", isAuthenticated, async (req, res) => {
+    try {
+      const updated = await storage.markNotificationRead(req.params.id);
+      if (!updated) {
+        return res.status(404).json({ message: "Notification not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error marking notification read:", err);
+      res.status(500).json({ message: "Failed to mark notification read" });
+    }
+  });
+
+  // Mark all notifications as read
+  app.patch("/api/notifications/read-all", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      await storage.markAllNotificationsRead(userId);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error marking all notifications read:", err);
+      res.status(500).json({ message: "Failed to mark all notifications read" });
+    }
+  });
+
+  // Delete notification
+  app.delete("/api/notifications/:id", isAuthenticated, async (req, res) => {
+    try {
+      const deleted = await storage.deleteNotification(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Notification not found" });
+      }
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting notification:", err);
+      res.status(500).json({ message: "Failed to delete notification" });
+    }
+  });
+
+  // =====================
+  // CLIENT PORTAL ROUTES
+  // =====================
+
+  // Generate share link for a job
+  app.post("/api/jobs/:jobId/share", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const job = await storage.getJob(req.params.jobId);
+      if (!job) {
+        return res.status(404).json({ message: "Job not found" });
+      }
+
+      const accessToken = await storage.createClientAccessToken({
+        jobId: req.params.jobId,
+        createdById: userId,
+        isActive: true,
+        expiresAt: req.body.expiresAt ? new Date(req.body.expiresAt) : null,
+      });
+
+      res.status(201).json(accessToken);
+    } catch (err: any) {
+      console.error("Error creating share link:", err);
+      res.status(500).json({ message: "Failed to create share link" });
+    }
+  });
+
+  // Get share links for a job
+  app.get("/api/jobs/:jobId/share", isAuthenticated, async (req, res) => {
+    try {
+      const tokens = await storage.getClientAccessTokensByJob(req.params.jobId);
+      res.json(tokens);
+    } catch (err: any) {
+      console.error("Error fetching share links:", err);
+      res.status(500).json({ message: "Failed to fetch share links" });
+    }
+  });
+
+  // Revoke share link
+  app.delete("/api/share/:id", isAuthenticated, async (req, res) => {
+    try {
+      const revoked = await storage.revokeClientAccessToken(req.params.id);
+      if (!revoked) {
+        return res.status(404).json({ message: "Share link not found" });
+      }
+      res.json({ revoked: true });
+    } catch (err: any) {
+      console.error("Error revoking share link:", err);
+      res.status(500).json({ message: "Failed to revoke share link" });
+    }
+  });
+
+  // PUBLIC: Get job details by token (no auth required)
+  app.get("/api/portal/:token", async (req, res) => {
+    try {
+      const accessToken = await storage.getClientAccessToken(req.params.token);
+      if (!accessToken) {
+        return res.status(404).json({ message: "Invalid or expired link" });
+      }
+
+      // Check if token is expired
+      if (accessToken.expiresAt && new Date(accessToken.expiresAt) < new Date()) {
+        return res.status(410).json({ message: "This link has expired" });
+      }
+
+      const job = await storage.getJob(accessToken.jobId);
+      if (!job) {
+        return res.status(404).json({ message: "Job not found" });
+      }
+
+      // Get PC items for the job
+      const pcItemsList = await storage.getPCItems(accessToken.jobId);
+
+      // Return limited job info for client view
+      res.json({
+        job: {
+          id: job.id,
+          clientName: job.clientName,
+          address: job.address,
+          jobType: job.jobType,
+          status: job.status,
+          description: job.description,
+        },
+        pcItems: pcItemsList.map((item) => ({
+          id: item.id,
+          title: item.title,
+          status: item.status,
+          dueDate: item.dueDate,
+        })),
+      });
+    } catch (err: any) {
+      console.error("Error fetching portal data:", err);
+      res.status(500).json({ message: "Failed to fetch job details" });
     }
   });
 
