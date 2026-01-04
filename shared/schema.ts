@@ -502,6 +502,7 @@ export const paymentsRelations = relations(payments, ({ one }) => ({
 // Phase 3 Insert Schemas
 export const insertQuoteSchema = createInsertSchema(quotes).omit({
   id: true,
+  quoteNumber: true,
   createdAt: true,
   updatedAt: true,
   sentAt: true,
@@ -520,6 +521,7 @@ export const insertQuoteSchema = createInsertSchema(quotes).omit({
 
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({
   id: true,
+  invoiceNumber: true,
   createdAt: true,
   updatedAt: true,
   sentAt: true,

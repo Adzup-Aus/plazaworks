@@ -850,6 +850,36 @@ export async function registerRoutes(
     }
   });
 
+  // Generate invoice from job
+  app.post("/api/invoices/generate/job/:jobId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const invoice = await storage.createInvoiceFromJob(req.params.jobId, userId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Job not found" });
+      }
+      res.status(201).json(invoice);
+    } catch (err: any) {
+      console.error("Error generating invoice from job:", err);
+      res.status(500).json({ message: "Failed to generate invoice" });
+    }
+  });
+
+  // Generate invoice from quote
+  app.post("/api/invoices/generate/quote/:quoteId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const invoice = await storage.createInvoiceFromQuote(req.params.quoteId, userId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Quote not found" });
+      }
+      res.status(201).json(invoice);
+    } catch (err: any) {
+      console.error("Error generating invoice from quote:", err);
+      res.status(500).json({ message: "Failed to generate invoice" });
+    }
+  });
+
   // =====================
   // LINE ITEM ROUTES
   // =====================

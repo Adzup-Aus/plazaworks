@@ -37,12 +37,32 @@ const lineItemSchema = z.object({
   unitPrice: z.coerce.number().min(0, "Unit price must be non-negative"),
 });
 
+const jobTypes = [
+  "plumbing",
+  "renovation",
+  "waterproofing",
+  "tiling",
+  "electrical",
+  "carpentry",
+  "general",
+] as const;
+
+const jobTypeLabels: Record<string, string> = {
+  plumbing: "Plumbing",
+  renovation: "Renovation",
+  waterproofing: "Waterproofing",
+  tiling: "Tiling",
+  electrical: "Electrical",
+  carpentry: "Carpentry",
+  general: "General",
+};
+
 const quoteFormSchema = z.object({
   clientName: z.string().min(1, "Client name is required"),
   clientEmail: z.string().email("Valid email required").optional().or(z.literal("")),
   clientPhone: z.string().optional(),
-  clientAddress: z.string().optional(),
-  jobType: z.string().optional(),
+  clientAddress: z.string().min(1, "Address is required"),
+  jobType: z.enum(jobTypes, { required_error: "Job type is required" }),
   description: z.string().optional(),
   validUntil: z.string().optional(),
   notes: z.string().optional(),
@@ -51,16 +71,6 @@ const quoteFormSchema = z.object({
 });
 
 type QuoteFormValues = z.infer<typeof quoteFormSchema>;
-
-const jobTypes = [
-  "Plumbing",
-  "Renovation",
-  "Waterproofing",
-  "Tiling",
-  "Electrical",
-  "Carpentry",
-  "General",
-];
 
 const statusColors: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -92,7 +102,7 @@ export default function QuoteForm() {
       clientEmail: "",
       clientPhone: "",
       clientAddress: "",
-      jobType: "",
+      jobType: undefined,
       description: "",
       validUntil: "",
       notes: "",
@@ -108,12 +118,15 @@ export default function QuoteForm() {
 
   useEffect(() => {
     if (quote) {
+      const validJobType = jobTypes.includes(quote.jobType as typeof jobTypes[number]) 
+        ? quote.jobType as typeof jobTypes[number]
+        : undefined;
       form.reset({
         clientName: quote.clientName || "",
         clientEmail: quote.clientEmail || "",
         clientPhone: quote.clientPhone || "",
         clientAddress: quote.clientAddress || "",
-        jobType: quote.jobType || "",
+        jobType: validJobType,
         description: quote.description || "",
         validUntil: quote.validUntil || "",
         notes: quote.notes || "",
@@ -139,6 +152,7 @@ export default function QuoteForm() {
 
       const response = await apiRequest("POST", "/api/quotes", {
         ...quoteData,
+        taxRate: (data.taxRate || 10).toString(),
         subtotal: subtotal.toFixed(2),
         taxAmount: taxAmount.toFixed(2),
         total: total.toFixed(2),
@@ -177,6 +191,7 @@ export default function QuoteForm() {
 
       await apiRequest("PATCH", `/api/quotes/${params.id}`, {
         ...quoteData,
+        taxRate: (data.taxRate || 10).toString(),
         subtotal: subtotal.toFixed(2),
         taxAmount: taxAmount.toFixed(2),
         total: total.toFixed(2),
@@ -440,7 +455,7 @@ export default function QuoteForm() {
                         <SelectContent>
                           {jobTypes.map((type) => (
                             <SelectItem key={type} value={type}>
-                              {type}
+                              {jobTypeLabels[type]}
                             </SelectItem>
                           ))}
                         </SelectContent>
