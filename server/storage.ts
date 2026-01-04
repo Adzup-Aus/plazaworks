@@ -72,7 +72,10 @@ import {
   type KpiDashboardWeekly,
   type KpiDashboardMonthly,
   type TradesmanKpiSummary,
+  type UserWorkingHours,
+  type InsertUserWorkingHours,
   staffProfiles,
+  userWorkingHours,
   jobs,
   scheduleEntries,
   pcItems,
@@ -295,6 +298,11 @@ export interface IStorage {
   getJobBackcostingSummary(jobId: string): Promise<JobBackcostingSummary | undefined>;
   getAllJobBackcosting(): Promise<JobBackcostingSummary[]>;
   getStaffCapacityView(weekStartDate: string): Promise<StaffCapacityView[]>;
+
+  // Staff working hours operations
+  getStaffWorkingHours(staffId: string): Promise<UserWorkingHours[]>;
+  setStaffWorkingHours(staffId: string, hours: InsertUserWorkingHours[]): Promise<UserWorkingHours[]>;
+  getStaffAvailability(staffId: string, date: string): Promise<{ isAvailable: boolean; startTime?: string; endTime?: string }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1993,6 +2001,67 @@ export class DatabaseStorage implements IStorage {
       return { tier: "tier4", amount: 1500 };
     }
     return { tier: "phase1", amount: 0 }; // Phase 1 has no bonus
+  }
+
+  // Staff working hours operations
+  async getStaffWorkingHours(staffId: string): Promise<UserWorkingHours[]> {
+    return await db.select().from(userWorkingHours)
+      .where(eq(userWorkingHours.staffId, staffId))
+      .orderBy(userWorkingHours.dayOfWeek);
+  }
+
+  async setStaffWorkingHours(staffId: string, hours: InsertUserWorkingHours[]): Promise<UserWorkingHours[]> {
+    // Delete existing hours for this staff member
+    await db.delete(userWorkingHours).where(eq(userWorkingHours.staffId, staffId));
+    
+    // Insert new hours
+    if (hours.length > 0) {
+      const hoursWithStaffId = hours.map(h => ({ ...h, staffId }));
+      await db.insert(userWorkingHours).values(hoursWithStaffId);
+    }
+    
+    return this.getStaffWorkingHours(staffId);
+  }
+
+  async getStaffAvailability(staffId: string, date: string): Promise<{ isAvailable: boolean; startTime?: string; endTime?: string }> {
+    const dateObj = new Date(date);
+    const dayOfWeek = dateObj.getDay(); // 0=Sunday, 1=Monday, etc.
+    
+    // Check if there's a time-off request for this date
+    const timeOff = await db.select().from(staffTimeOff)
+      .where(and(
+        eq(staffTimeOff.staffId, staffId),
+        lte(staffTimeOff.startDate, date),
+        gte(staffTimeOff.endDate, date),
+        eq(staffTimeOff.status, "approved")
+      ));
+    
+    if (timeOff.length > 0) {
+      return { isAvailable: false };
+    }
+    
+    // Check working hours for this day
+    const [workingDay] = await db.select().from(userWorkingHours)
+      .where(and(
+        eq(userWorkingHours.staffId, staffId),
+        eq(userWorkingHours.dayOfWeek, dayOfWeek)
+      ));
+    
+    if (!workingDay) {
+      // Default availability: Mon-Fri, 7:00-15:30
+      const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+      return {
+        isAvailable: isWeekday,
+        startTime: isWeekday ? "07:00" : undefined,
+        endTime: isWeekday ? "15:30" : undefined,
+      };
+    }
+    
+    return {
+      isAvailable: workingDay.isWorkingDay,
+      startTime: workingDay.isWorkingDay ? (workingDay.startTime || undefined) : undefined,
+      endTime: workingDay.isWorkingDay ? (workingDay.endTime || undefined) : undefined,
+    };
   }
 }
 

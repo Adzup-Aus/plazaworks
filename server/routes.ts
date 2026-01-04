@@ -133,6 +133,36 @@ export async function registerRoutes(
   });
 
   // =====================
+  // STAFF WORKING HOURS ROUTES
+  // =====================
+
+  // Get staff working hours
+  app.get("/api/staff/:id/working-hours", isAuthenticated, async (req, res) => {
+    try {
+      const hours = await storage.getStaffWorkingHours(req.params.id);
+      res.json(hours);
+    } catch (err: any) {
+      console.error("Error fetching working hours:", err);
+      res.status(500).json({ message: "Failed to fetch working hours" });
+    }
+  });
+
+  // Set staff working hours (replaces all existing hours)
+  app.put("/api/staff/:id/working-hours", isAuthenticated, async (req, res) => {
+    try {
+      const { hours } = req.body;
+      if (!Array.isArray(hours)) {
+        return res.status(400).json({ message: "Hours must be an array" });
+      }
+      const updated = await storage.setStaffWorkingHours(req.params.id, hours);
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error setting working hours:", err);
+      res.status(500).json({ message: "Failed to set working hours" });
+    }
+  });
+
+  // =====================
   // JOB ROUTES
   // =====================
 
@@ -264,20 +294,22 @@ export async function registerRoutes(
   // Create schedule entry
   app.post("/api/schedule", isAuthenticated, async (req: any, res) => {
     try {
-      // Get the user's staff profile to use as the staff id
+      // Get the user's staff profile as fallback if no staffId provided
       const userId = req.user?.claims?.sub;
       const staffProfile = await storage.getStaffProfileByUserId(userId);
       if (!staffProfile) {
         return res.status(400).json({ message: "Staff profile not found" });
       }
 
-      // Build the schedule entry with staffId from authenticated user
+      // Allow assigning to specific staff member or default to current user
       const scheduleData = {
         jobId: req.body.jobId,
-        staffId: staffProfile.id,
+        staffId: req.body.staffId || staffProfile.id,
         scheduledDate: req.body.scheduledDate,
         startTime: req.body.startTime,
         endTime: req.body.endTime,
+        durationHours: req.body.durationHours || "7.5",
+        status: req.body.status || "scheduled",
         notes: req.body.notes,
       };
 
@@ -291,6 +323,89 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("Error creating schedule entry:", err);
       res.status(500).json({ message: "Failed to create schedule entry" });
+    }
+  });
+
+  // Create multiple schedule entries at once (for multi-day scheduling)
+  app.post("/api/schedule/bulk", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const staffProfile = await storage.getStaffProfileByUserId(userId);
+      if (!staffProfile) {
+        return res.status(400).json({ message: "Staff profile not found" });
+      }
+
+      const { entries } = req.body;
+      if (!Array.isArray(entries) || entries.length === 0) {
+        return res.status(400).json({ message: "Entries array is required" });
+      }
+
+      const created = [];
+      for (const entry of entries) {
+        const scheduleData = {
+          jobId: entry.jobId,
+          staffId: entry.staffId || staffProfile.id,
+          scheduledDate: entry.scheduledDate,
+          startTime: entry.startTime,
+          endTime: entry.endTime,
+          durationHours: entry.durationHours || "7.5",
+          status: entry.status || "scheduled",
+          notes: entry.notes,
+        };
+
+        const validation = insertScheduleEntrySchema.safeParse(scheduleData);
+        if (!validation.success) {
+          return res.status(400).json({ message: validation.error.errors[0].message });
+        }
+
+        const createdEntry = await storage.createScheduleEntry(validation.data);
+        created.push(createdEntry);
+      }
+
+      res.status(201).json(created);
+    } catch (err: any) {
+      console.error("Error creating bulk schedule entries:", err);
+      res.status(500).json({ message: "Failed to create schedule entries" });
+    }
+  });
+
+  // Mark schedule entry as complete
+  app.post("/api/schedule/:id/complete", isAuthenticated, async (req, res) => {
+    try {
+      const updated = await storage.updateScheduleEntry(req.params.id, { status: "completed" });
+      if (!updated) {
+        return res.status(404).json({ message: "Schedule entry not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error completing schedule entry:", err);
+      res.status(500).json({ message: "Failed to complete schedule entry" });
+    }
+  });
+
+  // Cancel schedule entry
+  app.post("/api/schedule/:id/cancel", isAuthenticated, async (req, res) => {
+    try {
+      const updated = await storage.updateScheduleEntry(req.params.id, { status: "cancelled" });
+      if (!updated) {
+        return res.status(404).json({ message: "Schedule entry not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error cancelling schedule entry:", err);
+      res.status(500).json({ message: "Failed to cancel schedule entry" });
+    }
+  });
+
+  // Check staff availability for a date
+  app.get("/api/schedule/availability/:staffId/:date", isAuthenticated, async (req, res) => {
+    try {
+      const { staffId, date } = req.params;
+      const availability = await storage.getStaffAvailability(staffId, date);
+      res.json(availability);
+    } catch (err: any) {
+      console.error("Error checking availability:", err);
+      res.status(500).json({ message: "Failed to check availability" });
     }
   });
 

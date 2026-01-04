@@ -67,6 +67,10 @@ export const jobTypes = [
 
 export type JobType = typeof jobTypes[number];
 
+// Salary types
+export const salaryTypes = ["annual", "hourly"] as const;
+export type SalaryType = typeof salaryTypes[number];
+
 // Staff profiles - extends auth users with role info
 export const staffProfiles = pgTable("staff_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -77,6 +81,17 @@ export const staffProfiles = pgTable("staff_profiles", {
   phone: varchar("phone", { length: 20 }),
   skills: text("skills").array().default(sql`ARRAY[]::text[]`),
   isActive: boolean("is_active").notNull().default(true),
+  // Compensation fields
+  salaryType: varchar("salary_type", { length: 20 }).default("hourly"),
+  salaryAmount: decimal("salary_amount", { precision: 12, scale: 2 }),
+  overtimeRateMultiplier: decimal("overtime_rate_multiplier", { precision: 4, scale: 2 }).default("1.5"),
+  overtimeThresholdHours: decimal("overtime_threshold_hours", { precision: 5, scale: 2 }).default("38"),
+  // Contact fields
+  emailSignature: text("email_signature"),
+  // Working hours fields
+  timezone: varchar("timezone", { length: 50 }).default("Australia/Brisbane"),
+  lunchBreakMinutes: integer("lunch_break_minutes").default(30),
+  lunchBreakPaid: boolean("lunch_break_paid").default(false),
   // KPI Module fields
   hourlyCostLoaded: decimal("hourly_cost_loaded", { precision: 10, scale: 2 }),
   dailyCostLoaded: decimal("daily_cost_loaded", { precision: 10, scale: 2 }),
@@ -113,6 +128,10 @@ export const jobs = pgTable("jobs", {
   index("idx_jobs_created").on(table.createdAt),
 ]);
 
+// Schedule entry statuses
+export const scheduleEntryStatuses = ["scheduled", "completed", "cancelled"] as const;
+export type ScheduleEntryStatus = typeof scheduleEntryStatuses[number];
+
 // Schedule entries - assigns staff to jobs on specific dates
 export const scheduleEntries = pgTable("schedule_entries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -121,8 +140,11 @@ export const scheduleEntries = pgTable("schedule_entries", {
   scheduledDate: date("scheduled_date").notNull(),
   startTime: varchar("start_time", { length: 10 }),
   endTime: varchar("end_time", { length: 10 }),
+  durationHours: decimal("duration_hours", { precision: 4, scale: 2 }).default("7.5"),
+  status: varchar("status", { length: 20 }).default("scheduled"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("idx_schedule_job").on(table.jobId),
   index("idx_schedule_staff").on(table.staffId),
@@ -182,6 +204,41 @@ export type InsertScheduleEntry = z.infer<typeof insertScheduleEntrySchema>;
 export type JobWithSchedule = Job & {
   scheduleEntries: ScheduleEntry[];
 };
+
+// =====================
+// STAFF WORKING HOURS
+// =====================
+
+// User working hours - per-day schedule for each staff member
+export const userWorkingHours = pgTable("user_working_hours", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  staffId: varchar("staff_id").notNull().references(() => staffProfiles.id, { onDelete: "cascade" }),
+  dayOfWeek: integer("day_of_week").notNull(), // 0=Sunday, 1=Monday, etc.
+  isWorkingDay: boolean("is_working_day").notNull().default(true),
+  startTime: varchar("start_time", { length: 10 }).default("07:00"),
+  endTime: varchar("end_time", { length: 10 }).default("15:30"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_working_hours_staff").on(table.staffId),
+  index("idx_working_hours_day").on(table.dayOfWeek),
+]);
+
+export const userWorkingHoursRelations = relations(userWorkingHours, ({ one }) => ({
+  staff: one(staffProfiles, {
+    fields: [userWorkingHours.staffId],
+    references: [staffProfiles.id],
+  }),
+}));
+
+export const insertUserWorkingHoursSchema = createInsertSchema(userWorkingHours).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type UserWorkingHours = typeof userWorkingHours.$inferSelect;
+export type InsertUserWorkingHours = z.infer<typeof insertUserWorkingHoursSchema>;
 
 // =====================
 // PHASE 2: PC Items, Notifications, Client Portal
