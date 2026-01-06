@@ -4,7 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Plus, Trash2, Send, Check, X, ArrowRight, Save } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Send, Check, X, ArrowRight, Save, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from "@/components/ui/form";
 import {
   Select,
@@ -28,11 +29,13 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { QuoteWithLineItems, Job } from "@shared/schema";
+import type { QuoteWithLineItems, Job, Client } from "@shared/schema";
 
 const lineItemSchema = z.object({
   id: z.string().optional(),
+  heading: z.string().optional(),
   description: z.string().min(1, "Description is required"),
+  richDescription: z.string().optional(),
   quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
   unitPrice: z.coerce.number().min(0, "Unit price must be non-negative"),
 });
@@ -58,6 +61,7 @@ const jobTypeLabels: Record<string, string> = {
 };
 
 const quoteFormSchema = z.object({
+  clientId: z.string().min(1, "Please select a client"),
   clientName: z.string().min(1, "Client name is required"),
   clientEmail: z.string().email("Valid email required").optional().or(z.literal("")),
   clientPhone: z.string().optional(),
@@ -95,9 +99,14 @@ export default function QuoteForm() {
     queryKey: ["/api/jobs"],
   });
 
+  const { data: clients } = useQuery<Client[]>({
+    queryKey: ["/api/clients"],
+  });
+
   const form = useForm<QuoteFormValues>({
     resolver: zodResolver(quoteFormSchema),
     defaultValues: {
+      clientId: "",
       clientName: "",
       clientEmail: "",
       clientPhone: "",
@@ -107,9 +116,24 @@ export default function QuoteForm() {
       validUntil: "",
       notes: "",
       taxRate: 10,
-      lineItems: [{ description: "", quantity: 1, unitPrice: 0 }],
+      lineItems: [{ heading: "", description: "", richDescription: "", quantity: 1, unitPrice: 0 }],
     },
   });
+
+  // Handle client selection - auto-populate client details
+  const handleClientSelect = (clientId: string) => {
+    const client = clients?.find(c => c.id === clientId);
+    if (client) {
+      const fullName = `${client.firstName} ${client.lastName}`.trim();
+      const fullAddress = [client.streetAddress, client.streetAddress2, client.city, client.state, client.postalCode]
+        .filter(Boolean).join(", ");
+      form.setValue("clientId", clientId);
+      form.setValue("clientName", fullName);
+      form.setValue("clientEmail", client.email || "");
+      form.setValue("clientPhone", client.phone || client.mobilePhone || "");
+      form.setValue("clientAddress", fullAddress);
+    }
+  };
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
@@ -122,6 +146,7 @@ export default function QuoteForm() {
         ? quote.jobType as typeof jobTypes[number]
         : undefined;
       form.reset({
+        clientId: quote.clientId || "",
         clientName: quote.clientName || "",
         clientEmail: quote.clientEmail || "",
         clientPhone: quote.clientPhone || "",
@@ -134,11 +159,13 @@ export default function QuoteForm() {
         lineItems: quote.lineItems?.length
           ? quote.lineItems.map((item) => ({
               id: item.id,
+              heading: item.heading || "",
               description: item.description,
+              richDescription: item.richDescription || "",
               quantity: parseFloat(item.quantity),
               unitPrice: parseFloat(item.unitPrice),
             }))
-          : [{ description: "", quantity: 1, unitPrice: 0 }],
+          : [{ heading: "", description: "", richDescription: "", quantity: 1, unitPrice: 0 }],
       });
     }
   }, [quote, form]);
@@ -162,7 +189,9 @@ export default function QuoteForm() {
       for (const item of lineItems) {
         if (item.description.trim()) {
           await apiRequest("POST", `/api/quotes/${newQuote.id}/line-items`, {
+            heading: item.heading || null,
             description: item.description,
+            richDescription: item.richDescription || null,
             quantity: item.quantity.toString(),
             unitPrice: item.unitPrice.toFixed(2),
             amount: (item.quantity * item.unitPrice).toFixed(2),
@@ -207,7 +236,9 @@ export default function QuoteForm() {
       for (const item of lineItems) {
         if (item.description.trim()) {
           await apiRequest("POST", `/api/quotes/${params.id}/line-items`, {
+            heading: item.heading || null,
             description: item.description,
+            richDescription: item.richDescription || null,
             quantity: item.quantity.toString(),
             unitPrice: item.unitPrice.toFixed(2),
             amount: (item.quantity * item.unitPrice).toFixed(2),
@@ -377,60 +408,64 @@ export default function QuoteForm() {
               <CardTitle>Client Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="clientName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Client Name</FormLabel>
+              <FormField
+                control={form.control}
+                name="clientId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Select Client</FormLabel>
+                    <Select 
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        handleClientSelect(value);
+                      }} 
+                      value={field.value}
+                    >
                       <FormControl>
-                        <Input {...field} placeholder="Enter client name" data-testid="input-client-name" />
+                        <SelectTrigger data-testid="select-client">
+                          <SelectValue placeholder="Choose an existing client" />
+                        </SelectTrigger>
                       </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="clientEmail"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <Input {...field} type="email" placeholder="client@example.com" data-testid="input-client-email" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="clientPhone"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Phone</FormLabel>
-                      <FormControl>
-                        <Input {...field} placeholder="Enter phone number" data-testid="input-client-phone" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="clientAddress"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Address</FormLabel>
-                      <FormControl>
-                        <Input {...field} placeholder="Enter address" data-testid="input-client-address" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+                      <SelectContent>
+                        {clients?.map((client) => (
+                          <SelectItem key={client.id} value={client.id}>
+                            <div className="flex items-center gap-2">
+                              <User className="h-4 w-4" />
+                              {client.firstName} {client.lastName}
+                              {client.email && <span className="text-muted-foreground ml-2">({client.email})</span>}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Select a client from your client list. Client details will be auto-filled.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              {form.watch("clientId") && (
+                <div className="grid gap-4 md:grid-cols-2 pt-4 border-t">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Name</p>
+                    <p className="text-sm">{form.watch("clientName")}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Email</p>
+                    <p className="text-sm">{form.watch("clientEmail") || "Not provided"}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Phone</p>
+                    <p className="text-sm">{form.watch("clientPhone") || "Not provided"}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Address</p>
+                    <p className="text-sm">{form.watch("clientAddress") || "Not provided"}</p>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -501,24 +536,51 @@ export default function QuoteForm() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => append({ description: "", quantity: 1, unitPrice: 0 })}
+                onClick={() => append({ heading: "", description: "", richDescription: "", quantity: 1, unitPrice: 0 })}
                 data-testid="button-add-line-item"
               >
                 <Plus className="mr-2 h-4 w-4" />
                 Add Item
               </Button>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               {fields.map((field, index) => (
-                <div key={field.id} className="flex flex-wrap items-end gap-2">
+                <div key={field.id} className="space-y-3 border rounded-md p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-muted-foreground">Item {index + 1}</span>
+                    {fields.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => remove(index)}
+                        data-testid={`button-remove-line-item-${index}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name={`lineItems.${index}.heading`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Heading (optional)</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="e.g., Bathroom Renovation Phase 1" data-testid={`input-line-item-heading-${index}`} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <FormField
                     control={form.control}
                     name={`lineItems.${index}.description`}
                     render={({ field }) => (
-                      <FormItem className="flex-1 min-w-[200px]">
-                        {index === 0 && <FormLabel>Description</FormLabel>}
+                      <FormItem>
+                        <FormLabel>Description</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="Item description" data-testid={`input-line-item-description-${index}`} />
+                          <Input {...field} placeholder="Brief item description" data-testid={`input-line-item-description-${index}`} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -526,47 +588,51 @@ export default function QuoteForm() {
                   />
                   <FormField
                     control={form.control}
-                    name={`lineItems.${index}.quantity`}
+                    name={`lineItems.${index}.richDescription`}
                     render={({ field }) => (
-                      <FormItem className="w-24">
-                        {index === 0 && <FormLabel>Qty</FormLabel>}
+                      <FormItem>
+                        <FormLabel>Detailed Description (optional)</FormLabel>
                         <FormControl>
-                          <Input {...field} type="number" step="0.01" data-testid={`input-line-item-qty-${index}`} />
+                          <Textarea {...field} placeholder="Add detailed notes, specifications, materials..." className="min-h-[60px]" data-testid={`input-line-item-rich-description-${index}`} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                  <FormField
-                    control={form.control}
-                    name={`lineItems.${index}.unitPrice`}
-                    render={({ field }) => (
-                      <FormItem className="w-28">
-                        {index === 0 && <FormLabel>Unit Price</FormLabel>}
-                        <FormControl>
-                          <Input {...field} type="number" step="0.01" data-testid={`input-line-item-price-${index}`} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="w-28 text-right">
-                    {index === 0 && <div className="text-sm font-medium mb-2">Amount</div>}
-                    <div className="h-9 flex items-center justify-end text-sm">
-                      ${((watchedLineItems[index]?.quantity || 0) * (watchedLineItems[index]?.unitPrice || 0)).toFixed(2)}
+                  <div className="flex flex-wrap items-end gap-4">
+                    <FormField
+                      control={form.control}
+                      name={`lineItems.${index}.quantity`}
+                      render={({ field }) => (
+                        <FormItem className="w-24">
+                          <FormLabel>Qty</FormLabel>
+                          <FormControl>
+                            <Input {...field} type="number" step="0.01" data-testid={`input-line-item-qty-${index}`} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name={`lineItems.${index}.unitPrice`}
+                      render={({ field }) => (
+                        <FormItem className="w-28">
+                          <FormLabel>Unit Price</FormLabel>
+                          <FormControl>
+                            <Input {...field} type="number" step="0.01" data-testid={`input-line-item-price-${index}`} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="w-28 text-right">
+                      <div className="text-sm font-medium mb-2">Amount</div>
+                      <div className="h-9 flex items-center justify-end text-sm font-medium">
+                        ${((watchedLineItems[index]?.quantity || 0) * (watchedLineItems[index]?.unitPrice || 0)).toFixed(2)}
+                      </div>
                     </div>
                   </div>
-                  {fields.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => remove(index)}
-                      data-testid={`button-remove-line-item-${index}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
                 </div>
               ))}
 

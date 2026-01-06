@@ -73,6 +73,29 @@ export const organizationSubscriptions = pgTable("organization_subscriptions", {
   index("idx_sub_status").on(table.status),
 ]);
 
+// Organization settings table - configurable settings per organization
+export const organizationSettings = pgTable("organization_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  // Quote/Invoice settings
+  autoConvertApprovedQuotes: boolean("auto_convert_approved_quotes").notNull().default(true),
+  autoCreateJobFromInvoice: boolean("auto_create_job_from_invoice").notNull().default(true),
+  defaultTaxRate: decimal("default_tax_rate", { precision: 5, scale: 2 }).default("10"),
+  defaultPaymentTermsDays: integer("default_payment_terms_days").default(14),
+  // Quote numbering
+  quoteNumberPrefix: varchar("quote_number_prefix", { length: 10 }).default("Q-"),
+  invoiceNumberPrefix: varchar("invoice_number_prefix", { length: 10 }).default("INV-"),
+  jobNumberPrefix: varchar("job_number_prefix", { length: 10 }).default("J-"),
+  // Default terms and conditions
+  defaultQuoteTerms: text("default_quote_terms"),
+  defaultInvoiceTerms: text("default_invoice_terms"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  unique("uniq_settings_org").on(table.organizationId),
+  index("idx_settings_org").on(table.organizationId),
+]);
+
 // Organization members table - links users to organizations
 export const organizationMembers = pgTable("organization_members", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -155,8 +178,19 @@ export const organizationsRelations = relations(organizations, ({ many, one }) =
     fields: [organizations.id],
     references: [organizationSubscriptions.organizationId],
   }),
+  settings: one(organizationSettings, {
+    fields: [organizations.id],
+    references: [organizationSettings.organizationId],
+  }),
   members: many(organizationMembers),
   invites: many(organizationInvites),
+}));
+
+export const organizationSettingsRelations = relations(organizationSettings, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [organizationSettings.organizationId],
+    references: [organizations.id],
+  }),
 }));
 
 export const organizationSubscriptionsRelations = relations(organizationSubscriptions, ({ one }) => ({
@@ -193,6 +227,14 @@ export const insertOrganizationSubscriptionSchema = createInsertSchema(organizat
   updatedAt: true,
 });
 
+export const insertOrganizationSettingsSchema = createInsertSchema(organizationSettings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  defaultTaxRate: z.string().optional(),
+});
+
 export const insertOrganizationMemberSchema = createInsertSchema(organizationMembers).omit({
   id: true,
   createdAt: true,
@@ -221,6 +263,9 @@ export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 
 export type OrganizationSubscription = typeof organizationSubscriptions.$inferSelect;
 export type InsertOrganizationSubscription = z.infer<typeof insertOrganizationSubscriptionSchema>;
+
+export type OrganizationSettings = typeof organizationSettings.$inferSelect;
+export type InsertOrganizationSettings = z.infer<typeof insertOrganizationSettingsSchema>;
 
 export type OrganizationMember = typeof organizationMembers.$inferSelect;
 export type InsertOrganizationMember = z.infer<typeof insertOrganizationMemberSchema>;
@@ -637,7 +682,7 @@ export type InsertClientAccessToken = z.infer<typeof insertClientAccessTokenSche
 // PHASE 3: Quotes, Invoices, Payments
 // =====================
 
-// Quote statuses
+// Quote statuses (internal)
 export const quoteStatuses = [
   "draft",
   "sent",
@@ -647,6 +692,25 @@ export const quoteStatuses = [
 ] as const;
 
 export type QuoteStatus = typeof quoteStatuses[number];
+
+// Quote client statuses (client-facing approval workflow)
+export const quoteClientStatuses = [
+  "pending",
+  "approved",
+  "rejected",
+  "changes_requested"
+] as const;
+
+export type QuoteClientStatus = typeof quoteClientStatuses[number];
+
+// Payment schedule types
+export const paymentScheduleTypes = [
+  "deposit",
+  "progress",
+  "final"
+] as const;
+
+export type PaymentScheduleType = typeof paymentScheduleTypes[number];
 
 // Invoice statuses
 export const invoiceStatuses = [
@@ -687,6 +751,9 @@ export const quotes = pgTable("quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   quoteNumber: varchar("quote_number", { length: 50 }).notNull().unique(),
+  // Client reference - required, no manual entry allowed
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
+  // Snapshot of client details at time of quote creation (for historical accuracy)
   clientName: varchar("client_name", { length: 255 }).notNull(),
   clientEmail: varchar("client_email", { length: 255 }),
   clientPhone: varchar("client_phone", { length: 50 }),
@@ -694,6 +761,14 @@ export const quotes = pgTable("quotes", {
   jobType: varchar("job_type", { length: 50 }).notNull(),
   description: text("description"),
   status: varchar("status", { length: 50 }).notNull().default("draft"),
+  // Client approval workflow
+  clientStatus: varchar("client_status", { length: 50 }).default("pending"),
+  clientApprovedAt: timestamp("client_approved_at"),
+  clientApprovedById: varchar("client_approved_by_id"),
+  clientRejectedAt: timestamp("client_rejected_at"),
+  clientChangesRequestedAt: timestamp("client_changes_requested_at"),
+  clientChangesNote: text("client_changes_note"),
+  // Financials
   subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull().default("0"),
   taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default("10"),
   taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).notNull().default("0"),
@@ -701,7 +776,9 @@ export const quotes = pgTable("quotes", {
   validUntil: date("valid_until"),
   notes: text("notes"),
   termsAndConditions: text("terms_and_conditions"),
+  // Conversion tracking
   convertedToJobId: varchar("converted_to_job_id"),
+  convertedToInvoiceId: varchar("converted_to_invoice_id"),
   createdById: varchar("created_by_id"),
   sentAt: timestamp("sent_at"),
   acceptedAt: timestamp("accepted_at"),
@@ -712,6 +789,8 @@ export const quotes = pgTable("quotes", {
   index("idx_quotes_status").on(table.status),
   index("idx_quotes_number").on(table.quoteNumber),
   index("idx_quotes_created").on(table.createdAt),
+  index("idx_quotes_client").on(table.clientId),
+  index("idx_quotes_client_status").on(table.clientStatus),
 ]);
 
 // Invoices table
@@ -753,7 +832,12 @@ export const lineItems = pgTable("line_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   quoteId: varchar("quote_id").references(() => quotes.id, { onDelete: "cascade" }),
   invoiceId: varchar("invoice_id").references(() => invoices.id, { onDelete: "cascade" }),
+  // Heading for the line item (e.g., "Kitchen Renovation", "Bathroom Plumbing")
+  heading: varchar("heading", { length: 255 }),
+  // Short description for the line item
   description: varchar("description", { length: 500 }).notNull(),
+  // Rich text description for detailed scope of works (stored as JSON/HTML)
+  richDescription: text("rich_description"),
   quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull().default("1"),
   unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
@@ -762,6 +846,49 @@ export const lineItems = pgTable("line_items", {
 }, (table) => [
   index("idx_line_items_quote").on(table.quoteId),
   index("idx_line_items_invoice").on(table.invoiceId),
+]);
+
+// Quote payment schedules - for split payments (deposit, progress, final)
+export const quotePaymentSchedules = pgTable("quote_payment_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").notNull().references(() => quotes.id, { onDelete: "cascade" }),
+  type: varchar("type", { length: 20 }).notNull(), // deposit, progress, final
+  name: varchar("name", { length: 100 }).notNull(), // e.g., "Deposit", "Progress Payment 1", "Final Payment"
+  // Amount can be percentage or fixed amount
+  isPercentage: boolean("is_percentage").notNull().default(true),
+  percentage: decimal("percentage", { precision: 5, scale: 2 }), // e.g., 20.00 for 20%
+  fixedAmount: decimal("fixed_amount", { precision: 10, scale: 2 }),
+  // Calculated amount from quote total
+  calculatedAmount: decimal("calculated_amount", { precision: 10, scale: 2 }),
+  // Optional milestone link
+  milestoneDescription: varchar("milestone_description", { length: 255 }),
+  // Due date offset from quote acceptance (in days)
+  dueDaysFromAcceptance: integer("due_days_from_acceptance").default(0),
+  sortOrder: integer("sort_order").default(0),
+  // Payment tracking
+  isPaid: boolean("is_paid").notNull().default(false),
+  paidAt: timestamp("paid_at"),
+  paidAmount: decimal("paid_amount", { precision: 10, scale: 2 }),
+  invoiceId: varchar("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_payment_schedule_quote").on(table.quoteId),
+  index("idx_payment_schedule_type").on(table.type),
+]);
+
+// Quote workflow events - audit trail for client interactions
+export const quoteWorkflowEvents = pgTable("quote_workflow_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").notNull().references(() => quotes.id, { onDelete: "cascade" }),
+  eventType: varchar("event_type", { length: 50 }).notNull(), // sent, viewed, approved, rejected, changes_requested, converted
+  actorType: varchar("actor_type", { length: 20 }).notNull(), // staff, client
+  actorId: varchar("actor_id"),
+  notes: text("notes"),
+  metadata: json("metadata"), // Additional event-specific data
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_workflow_event_quote").on(table.quoteId),
+  index("idx_workflow_event_type").on(table.eventType),
 ]);
 
 // Payments table
@@ -786,9 +913,19 @@ export const payments = pgTable("payments", {
 // Phase 3 Relations
 export const quotesRelations = relations(quotes, ({ many, one }) => ({
   lineItems: many(lineItems),
+  paymentSchedules: many(quotePaymentSchedules),
+  workflowEvents: many(quoteWorkflowEvents),
+  client: one(clients, {
+    fields: [quotes.clientId],
+    references: [clients.id],
+  }),
   convertedJob: one(jobs, {
     fields: [quotes.convertedToJobId],
     references: [jobs.id],
+  }),
+  convertedInvoice: one(invoices, {
+    fields: [quotes.convertedToInvoiceId],
+    references: [invoices.id],
   }),
 }));
 
@@ -823,6 +960,24 @@ export const paymentsRelations = relations(payments, ({ one }) => ({
   }),
 }));
 
+export const quotePaymentSchedulesRelations = relations(quotePaymentSchedules, ({ one }) => ({
+  quote: one(quotes, {
+    fields: [quotePaymentSchedules.quoteId],
+    references: [quotes.id],
+  }),
+  invoice: one(invoices, {
+    fields: [quotePaymentSchedules.invoiceId],
+    references: [invoices.id],
+  }),
+}));
+
+export const quoteWorkflowEventsRelations = relations(quoteWorkflowEvents, ({ one }) => ({
+  quote: one(quotes, {
+    fields: [quoteWorkflowEvents.quoteId],
+    references: [quotes.id],
+  }),
+}));
+
 // Phase 3 Insert Schemas
 export const insertQuoteSchema = createInsertSchema(quotes).omit({
   id: true,
@@ -832,11 +987,17 @@ export const insertQuoteSchema = createInsertSchema(quotes).omit({
   sentAt: true,
   acceptedAt: true,
   rejectedAt: true,
+  clientApprovedAt: true,
+  clientRejectedAt: true,
+  clientChangesRequestedAt: true,
+  convertedToInvoiceId: true,
 }).extend({
+  clientId: z.string().min(1, "Client is required"),
   clientName: z.string().min(1, "Client name is required"),
   clientAddress: z.string().min(1, "Address is required"),
   jobType: z.enum(jobTypes),
   status: z.enum(quoteStatuses).optional(),
+  clientStatus: z.enum(quoteClientStatuses).optional(),
   subtotal: z.string().optional(),
   taxRate: z.string().optional(),
   taxAmount: z.string().optional(),
@@ -866,7 +1027,9 @@ export const insertLineItemSchema = createInsertSchema(lineItems).omit({
   id: true,
   createdAt: true,
 }).extend({
+  heading: z.string().optional(),
   description: z.string().min(1, "Description is required"),
+  richDescription: z.string().optional(),
   quantity: z.string().optional(),
   unitPrice: z.string(),
   amount: z.string(),
@@ -882,6 +1045,25 @@ export const insertPaymentSchema = createInsertSchema(payments).omit({
   status: z.enum(paymentStatuses).optional(),
 });
 
+export const insertQuotePaymentScheduleSchema = createInsertSchema(quotePaymentSchedules).omit({
+  id: true,
+  createdAt: true,
+  paidAt: true,
+  invoiceId: true,
+}).extend({
+  type: z.enum(paymentScheduleTypes),
+  name: z.string().min(1, "Payment name is required"),
+  percentage: z.string().optional(),
+  fixedAmount: z.string().optional(),
+  calculatedAmount: z.string().optional(),
+  paidAmount: z.string().optional(),
+});
+
+export const insertQuoteWorkflowEventSchema = createInsertSchema(quoteWorkflowEvents).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Phase 3 Types
 export type Quote = typeof quotes.$inferSelect;
 export type InsertQuote = z.infer<typeof insertQuoteSchema>;
@@ -895,9 +1077,21 @@ export type InsertLineItem = z.infer<typeof insertLineItemSchema>;
 export type Payment = typeof payments.$inferSelect;
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 
+export type QuotePaymentSchedule = typeof quotePaymentSchedules.$inferSelect;
+export type InsertQuotePaymentSchedule = z.infer<typeof insertQuotePaymentScheduleSchema>;
+
+export type QuoteWorkflowEvent = typeof quoteWorkflowEvents.$inferSelect;
+export type InsertQuoteWorkflowEvent = z.infer<typeof insertQuoteWorkflowEventSchema>;
+
 // Helper types
 export type QuoteWithLineItems = Quote & {
   lineItems: LineItem[];
+};
+
+export type QuoteWithDetails = Quote & {
+  lineItems: LineItem[];
+  paymentSchedules: QuotePaymentSchedule[];
+  workflowEvents: QuoteWorkflowEvent[];
 };
 
 export type InvoiceWithDetails = Invoice & {

@@ -29,7 +29,12 @@ import {
   ChevronRight,
   Calendar,
   AlertCircle,
+  FileText,
+  Check,
+  X,
+  MessageSquare,
 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -75,6 +80,18 @@ interface Milestone {
 interface TimelineData {
   job: Job;
   timeline: Milestone[];
+}
+
+interface PortalQuote {
+  id: string;
+  quoteNumber: string;
+  clientName: string;
+  jobType: string;
+  description: string | null;
+  total: string;
+  validUntil: string | null;
+  clientStatus: string;
+  createdAt: string;
 }
 
 function getStatusColor(status: string): string {
@@ -179,6 +196,267 @@ function PaymentApprovalDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function QuotesSection({ token }: { token: string }) {
+  const { toast } = useToast();
+  const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [actionType, setActionType] = useState<"approve" | "reject" | "changes">("approve");
+  const [selectedQuote, setSelectedQuote] = useState<PortalQuote | null>(null);
+  const [actionNotes, setActionNotes] = useState("");
+
+  const { data: quotes, isLoading, refetch } = useQuery<PortalQuote[]>({
+    queryKey: ["/api/client-portal/quotes"],
+    queryFn: async () => {
+      const response = await fetch("/api/client-portal/quotes", {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Failed to fetch quotes");
+      const result = await response.json();
+      return result.data || result;
+    },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async ({ quoteId, notes }: { quoteId: string; notes?: string }) => {
+      const response = await fetch(`/api/client-portal/quotes/${quoteId}/approve`, {
+        method: "POST",
+        headers: { 
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ notes }),
+      });
+      if (!response.ok) throw new Error("Failed to approve quote");
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Quote approved successfully" });
+      refetch();
+      setActionDialogOpen(false);
+      setSelectedQuote(null);
+      setActionNotes("");
+    },
+    onError: () => {
+      toast({ title: "Failed to approve quote", variant: "destructive" });
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async ({ quoteId, reason }: { quoteId: string; reason?: string }) => {
+      const response = await fetch(`/api/client-portal/quotes/${quoteId}/reject`, {
+        method: "POST",
+        headers: { 
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ reason }),
+      });
+      if (!response.ok) throw new Error("Failed to reject quote");
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Quote declined" });
+      refetch();
+      setActionDialogOpen(false);
+      setSelectedQuote(null);
+      setActionNotes("");
+    },
+    onError: () => {
+      toast({ title: "Failed to decline quote", variant: "destructive" });
+    },
+  });
+
+  const requestChangesMutation = useMutation({
+    mutationFn: async ({ quoteId, changes }: { quoteId: string; changes: string }) => {
+      const response = await fetch(`/api/client-portal/quotes/${quoteId}/request-changes`, {
+        method: "POST",
+        headers: { 
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ changes }),
+      });
+      if (!response.ok) throw new Error("Failed to request changes");
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Changes requested successfully" });
+      refetch();
+      setActionDialogOpen(false);
+      setSelectedQuote(null);
+      setActionNotes("");
+    },
+    onError: () => {
+      toast({ title: "Failed to request changes", variant: "destructive" });
+    },
+  });
+
+  const handleAction = (quote: PortalQuote, type: "approve" | "reject" | "changes") => {
+    setSelectedQuote(quote);
+    setActionType(type);
+    setActionNotes("");
+    setActionDialogOpen(true);
+  };
+
+  const confirmAction = () => {
+    if (!selectedQuote) return;
+    
+    if (actionType === "approve") {
+      approveMutation.mutate({ quoteId: selectedQuote.id, notes: actionNotes || undefined });
+    } else if (actionType === "reject") {
+      rejectMutation.mutate({ quoteId: selectedQuote.id, reason: actionNotes || undefined });
+    } else {
+      requestChangesMutation.mutate({ quoteId: selectedQuote.id, changes: actionNotes });
+    }
+  };
+
+  const pendingQuotes = (Array.isArray(quotes) ? quotes : []).filter(q => q.clientStatus === "pending");
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <Skeleton className="h-6 w-3/4 mb-4" />
+          <Skeleton className="h-4 w-full mb-2" />
+          <Skeleton className="h-4 w-2/3" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (pendingQuotes.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-xl font-semibold flex items-center gap-2" data-testid="text-quotes-heading">
+          <FileText className="h-5 w-5" />
+          Quotes Awaiting Your Approval
+        </h2>
+        <p className="text-muted-foreground text-sm">Review and respond to these quotes</p>
+      </div>
+
+      <div className="grid gap-4">
+        {pendingQuotes.map((quote) => (
+          <Card key={quote.id} data-testid={`card-quote-${quote.id}`}>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <CardTitle className="text-base">{quote.quoteNumber}</CardTitle>
+                  <CardDescription className="mt-1">
+                    {quote.jobType && formatLabel(quote.jobType)}
+                    {quote.description && ` - ${quote.description}`}
+                  </CardDescription>
+                </div>
+                <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                  Pending Approval
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="text-2xl font-bold" data-testid={`text-quote-total-${quote.id}`}>
+                  {formatCurrency(quote.total)}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => handleAction(quote, "changes")}
+                    data-testid={`button-request-changes-${quote.id}`}
+                  >
+                    <MessageSquare className="mr-2 h-4 w-4" />
+                    Request Changes
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => handleAction(quote, "reject")}
+                    data-testid={`button-decline-${quote.id}`}
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    Decline
+                  </Button>
+                  <Button 
+                    size="sm"
+                    onClick={() => handleAction(quote, "approve")}
+                    data-testid={`button-approve-${quote.id}`}
+                  >
+                    <Check className="mr-2 h-4 w-4" />
+                    Approve
+                  </Button>
+                </div>
+              </div>
+              {quote.validUntil && (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Valid until {format(new Date(quote.validUntil), "MMM d, yyyy")}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <Dialog open={actionDialogOpen} onOpenChange={setActionDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {actionType === "approve" && "Approve Quote"}
+              {actionType === "reject" && "Decline Quote"}
+              {actionType === "changes" && "Request Changes"}
+            </DialogTitle>
+            <DialogDescription>
+              {actionType === "approve" && "By approving this quote, you agree to the work and pricing outlined."}
+              {actionType === "reject" && "Let us know why you're declining this quote (optional)."}
+              {actionType === "changes" && "Please describe the changes you'd like us to make."}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedQuote && (
+            <div className="space-y-4 py-4">
+              <div className="rounded-md bg-muted p-4">
+                <div className="font-medium">{selectedQuote.quoteNumber}</div>
+                <div className="text-2xl font-bold mt-1">{formatCurrency(selectedQuote.total)}</div>
+              </div>
+              
+              <Textarea
+                placeholder={
+                  actionType === "approve" 
+                    ? "Add any notes (optional)..." 
+                    : actionType === "reject" 
+                    ? "Reason for declining (optional)..." 
+                    : "Describe the changes you need..."
+                }
+                value={actionNotes}
+                onChange={(e) => setActionNotes(e.target.value)}
+                className="min-h-[100px]"
+                data-testid="input-action-notes"
+              />
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setActionDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={confirmAction}
+              disabled={approveMutation.isPending || rejectMutation.isPending || requestChangesMutation.isPending || (actionType === "changes" && !actionNotes.trim())}
+              variant={actionType === "reject" ? "destructive" : "default"}
+              data-testid="button-confirm-action"
+            >
+              {actionType === "approve" && (approveMutation.isPending ? "Approving..." : "Approve Quote")}
+              {actionType === "reject" && (rejectMutation.isPending ? "Declining..." : "Decline Quote")}
+              {actionType === "changes" && (requestChangesMutation.isPending ? "Submitting..." : "Submit Request")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
@@ -537,11 +815,14 @@ export default function ClientPortalDashboard() {
               <JobTimeline jobId={selectedJobId} />
             </div>
           ) : (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-2xl font-semibold" data-testid="text-portal-heading">Your Projects</h2>
-                <p className="text-muted-foreground">View progress and updates for your active projects</p>
-              </div>
+            <div className="space-y-8">
+              {token && <QuotesSection token={token} />}
+              
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-semibold" data-testid="text-portal-heading">Your Projects</h2>
+                  <p className="text-muted-foreground">View progress and updates for your active projects</p>
+                </div>
 
               {isLoading ? (
                 <div className="grid gap-4 md:grid-cols-2">
@@ -605,6 +886,7 @@ export default function ClientPortalDashboard() {
                   </CardContent>
                 </Card>
               )}
+              </div>
             </div>
           )}
         </main>

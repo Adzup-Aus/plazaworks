@@ -2330,6 +2330,130 @@ export async function registerRoutes(
   });
 
   // =====================
+  // QUOTE PAYMENT SCHEDULES
+  // =====================
+
+  // Get payment schedules for quote
+  app.get("/api/quotes/:quoteId/payment-schedules", isAuthenticated, async (req, res) => {
+    try {
+      const schedules = await storage.getQuotePaymentSchedules(req.params.quoteId);
+      res.json(schedules);
+    } catch (err: any) {
+      console.error("Error fetching payment schedules:", err);
+      res.status(500).json({ message: "Failed to fetch payment schedules" });
+    }
+  });
+
+  // Create payment schedule for quote
+  app.post("/api/quotes/:quoteId/payment-schedules", isAuthenticated, async (req, res) => {
+    try {
+      const schedule = await storage.createQuotePaymentSchedule({
+        ...req.body,
+        quoteId: req.params.quoteId,
+      });
+      res.status(201).json(schedule);
+    } catch (err: any) {
+      console.error("Error creating payment schedule:", err);
+      res.status(500).json({ message: "Failed to create payment schedule" });
+    }
+  });
+
+  // Update payment schedule
+  app.patch("/api/payment-schedules/:id", isAuthenticated, async (req, res) => {
+    try {
+      const updated = await storage.updateQuotePaymentSchedule(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ message: "Payment schedule not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating payment schedule:", err);
+      res.status(500).json({ message: "Failed to update payment schedule" });
+    }
+  });
+
+  // Delete payment schedule
+  app.delete("/api/payment-schedules/:id", isAuthenticated, async (req, res) => {
+    try {
+      await storage.deleteQuotePaymentSchedule(req.params.id);
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting payment schedule:", err);
+      res.status(500).json({ message: "Failed to delete payment schedule" });
+    }
+  });
+
+  // Mark payment schedule as paid
+  app.post("/api/payment-schedules/:id/mark-paid", isAuthenticated, async (req, res) => {
+    try {
+      const { paidAmount } = req.body;
+      const updated = await storage.markPaymentSchedulePaid(req.params.id, paidAmount);
+      if (!updated) {
+        return res.status(404).json({ message: "Payment schedule not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error marking payment as paid:", err);
+      res.status(500).json({ message: "Failed to mark payment as paid" });
+    }
+  });
+
+  // =====================
+  // QUOTE WORKFLOW EVENTS
+  // =====================
+
+  // Get workflow events for quote
+  app.get("/api/quotes/:quoteId/workflow-events", isAuthenticated, async (req, res) => {
+    try {
+      const events = await storage.getQuoteWorkflowEvents(req.params.quoteId);
+      res.json(events);
+    } catch (err: any) {
+      console.error("Error fetching workflow events:", err);
+      res.status(500).json({ message: "Failed to fetch workflow events" });
+    }
+  });
+
+  // =====================
+  // ORGANIZATION SETTINGS
+  // =====================
+
+  // Get organization settings
+  app.get("/api/organizations/:orgId/settings", isAuthenticated, async (req, res) => {
+    try {
+      let settings = await storage.getOrganizationSettings(req.params.orgId);
+      if (!settings) {
+        // Create default settings if not exists
+        settings = await storage.createOrganizationSettings({
+          organizationId: req.params.orgId,
+        });
+      }
+      res.json(settings);
+    } catch (err: any) {
+      console.error("Error fetching organization settings:", err);
+      res.status(500).json({ message: "Failed to fetch organization settings" });
+    }
+  });
+
+  // Update organization settings
+  app.patch("/api/organizations/:orgId/settings", isAuthenticated, async (req, res) => {
+    try {
+      let settings = await storage.getOrganizationSettings(req.params.orgId);
+      if (!settings) {
+        settings = await storage.createOrganizationSettings({
+          ...req.body,
+          organizationId: req.params.orgId,
+        });
+      } else {
+        settings = await storage.updateOrganizationSettings(req.params.orgId, req.body);
+      }
+      res.json(settings);
+    } catch (err: any) {
+      console.error("Error updating organization settings:", err);
+      res.status(500).json({ message: "Failed to update organization settings" });
+    }
+  });
+
+  // =====================
   // PAYMENT ROUTES
   // =====================
 
@@ -4173,6 +4297,196 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("Error logging out:", err);
       res.status(500).json({ message: "Failed to logout" });
+    }
+  });
+
+  // =====================
+  // CLIENT PORTAL QUOTE APPROVAL
+  // =====================
+
+  // Get quotes for client
+  app.get("/api/client-portal/quotes", clientPortalAuth, async (req: ClientPortalRequest, res) => {
+    try {
+      const clientId = req.clientPortal!.clientId;
+      const quotes = await storage.getQuotesByClient(clientId);
+      res.json(quotes);
+    } catch (err: any) {
+      console.error("Error fetching client quotes:", err);
+      res.status(500).json({ message: "Failed to fetch quotes" });
+    }
+  });
+
+  // Get single quote for client (with line items and payment schedules)
+  app.get("/api/client-portal/quotes/:id", clientPortalAuth, async (req: ClientPortalRequest, res) => {
+    try {
+      const clientId = req.clientPortal!.clientId;
+      const quote = await storage.getQuote(req.params.id);
+      
+      if (!quote || quote.clientId !== clientId) {
+        return res.status(404).json({ message: "Quote not found" });
+      }
+
+      const lineItems = await storage.getLineItemsByQuote(quote.id);
+      const paymentSchedules = await storage.getQuotePaymentSchedules(quote.id);
+      const workflowEvents = await storage.getQuoteWorkflowEvents(quote.id);
+
+      res.json({ ...quote, lineItems, paymentSchedules, workflowEvents });
+    } catch (err: any) {
+      console.error("Error fetching quote:", err);
+      res.status(500).json({ message: "Failed to fetch quote" });
+    }
+  });
+
+  // Approve quote
+  app.post("/api/client-portal/quotes/:id/approve", clientPortalAuth, async (req: ClientPortalRequest, res) => {
+    try {
+      const clientId = req.clientPortal!.clientId;
+      const quote = await storage.getQuote(req.params.id);
+      
+      if (!quote || quote.clientId !== clientId) {
+        return res.status(404).json({ message: "Quote not found" });
+      }
+
+      if (quote.clientStatus !== "pending") {
+        return res.status(400).json({ message: "Quote is not pending approval" });
+      }
+
+      // Update quote status
+      const updated = await storage.updateQuote(req.params.id, {
+        clientStatus: "approved",
+        approvedAt: new Date(),
+        approvedByClientId: clientId,
+        status: "accepted",
+      });
+
+      // Log workflow event
+      await storage.createQuoteWorkflowEvent({
+        quoteId: req.params.id,
+        action: "approved",
+        actorType: "client",
+        actorId: clientId,
+        notes: req.body.notes || null,
+      });
+
+      // Check for auto-convert setting and trigger if enabled
+      if (quote.organizationId) {
+        const settings = await storage.getOrganizationSettings(quote.organizationId);
+        if (settings?.autoConvertApprovedQuotes) {
+          try {
+            // Auto-convert quote to invoice
+            const invoice = await storage.createInvoiceFromQuote(req.params.id, "system");
+            
+            if (invoice) {
+              await storage.createQuoteWorkflowEvent({
+                quoteId: req.params.id,
+                action: "auto_converted_to_invoice",
+                actorType: "system",
+                actorId: "system",
+                notes: `Invoice ${invoice.invoiceNumber} created automatically`,
+              });
+
+              // Auto-create job from approved quote
+              const convertResult = await storage.convertQuoteToJob(req.params.id);
+              if (convertResult) {
+                await storage.createQuoteWorkflowEvent({
+                  quoteId: req.params.id,
+                  action: "auto_converted_to_job",
+                  actorType: "system",
+                  actorId: "system",
+                  notes: `Job created automatically`,
+                });
+
+                // Link invoice to the job
+                await storage.updateInvoice(invoice.id, {
+                  jobId: convertResult.job.id,
+                });
+              }
+            }
+          } catch (convertError: any) {
+            console.error("Auto-conversion error:", convertError);
+            await storage.createQuoteWorkflowEvent({
+              quoteId: req.params.id,
+              action: "auto_convert_failed",
+              actorType: "system",
+              actorId: "system",
+              notes: convertError.message || "Auto-conversion failed",
+            });
+          }
+        }
+      }
+
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error approving quote:", err);
+      res.status(500).json({ message: "Failed to approve quote" });
+    }
+  });
+
+  // Reject quote
+  app.post("/api/client-portal/quotes/:id/reject", clientPortalAuth, async (req: ClientPortalRequest, res) => {
+    try {
+      const clientId = req.clientPortal!.clientId;
+      const quote = await storage.getQuote(req.params.id);
+      
+      if (!quote || quote.clientId !== clientId) {
+        return res.status(404).json({ message: "Quote not found" });
+      }
+
+      if (quote.clientStatus !== "pending") {
+        return res.status(400).json({ message: "Quote is not pending approval" });
+      }
+
+      const updated = await storage.updateQuote(req.params.id, {
+        clientStatus: "rejected",
+        status: "rejected",
+      });
+
+      await storage.createQuoteWorkflowEvent({
+        quoteId: req.params.id,
+        action: "rejected",
+        actorType: "client",
+        actorId: clientId,
+        notes: req.body.reason || null,
+      });
+
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error rejecting quote:", err);
+      res.status(500).json({ message: "Failed to reject quote" });
+    }
+  });
+
+  // Request changes to quote
+  app.post("/api/client-portal/quotes/:id/request-changes", clientPortalAuth, async (req: ClientPortalRequest, res) => {
+    try {
+      const clientId = req.clientPortal!.clientId;
+      const quote = await storage.getQuote(req.params.id);
+      
+      if (!quote || quote.clientId !== clientId) {
+        return res.status(404).json({ message: "Quote not found" });
+      }
+
+      if (quote.clientStatus !== "pending") {
+        return res.status(400).json({ message: "Quote is not pending approval" });
+      }
+
+      const updated = await storage.updateQuote(req.params.id, {
+        clientStatus: "changes_requested",
+        status: "draft",
+      });
+
+      await storage.createQuoteWorkflowEvent({
+        quoteId: req.params.id,
+        action: "changes_requested",
+        actorType: "client",
+        actorId: clientId,
+        notes: req.body.changes || null,
+      });
+
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error requesting changes:", err);
+      res.status(500).json({ message: "Failed to request changes" });
     }
   });
 

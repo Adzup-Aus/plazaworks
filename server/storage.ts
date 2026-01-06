@@ -100,6 +100,13 @@ import {
   type MilestoneMedia,
   type InsertMilestoneMedia,
   type JobMilestoneWithDetails,
+  // Quote payment schedule types
+  type QuotePaymentSchedule,
+  type InsertQuotePaymentSchedule,
+  type QuoteWorkflowEvent,
+  type InsertQuoteWorkflowEvent,
+  type OrganizationSettings,
+  type InsertOrganizationSettings,
   staffProfiles,
   userWorkingHours,
   jobs,
@@ -149,6 +156,10 @@ import {
   jobMilestones,
   milestonePayments,
   milestoneMedia,
+  // Quote payment schedules and workflow
+  quotePaymentSchedules,
+  quoteWorkflowEvents,
+  organizationSettings,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, lt, sql, inArray, isNull } from "drizzle-orm";
@@ -208,6 +219,7 @@ export interface IStorage {
   getQuote(id: string): Promise<Quote | undefined>;
   getQuoteWithLineItems(id: string): Promise<QuoteWithLineItems | undefined>;
   getQuotesByStatus(status: string): Promise<Quote[]>;
+  getQuotesByClient(clientId: string): Promise<Quote[]>;
   createQuote(quote: InsertQuote): Promise<Quote>;
   updateQuote(id: string, quote: Partial<InsertQuote>): Promise<Quote | undefined>;
   sendQuote(id: string): Promise<Quote | undefined>;
@@ -244,6 +256,23 @@ export interface IStorage {
   createPayment(payment: InsertPayment): Promise<Payment>;
   updatePayment(id: string, payment: Partial<InsertPayment>): Promise<Payment | undefined>;
   completePayment(id: string): Promise<Payment | undefined>;
+
+  // Quote payment schedule operations
+  getQuotePaymentSchedules(quoteId: string): Promise<QuotePaymentSchedule[]>;
+  getQuotePaymentSchedule(id: string): Promise<QuotePaymentSchedule | undefined>;
+  createQuotePaymentSchedule(schedule: InsertQuotePaymentSchedule): Promise<QuotePaymentSchedule>;
+  updateQuotePaymentSchedule(id: string, schedule: Partial<InsertQuotePaymentSchedule>): Promise<QuotePaymentSchedule | undefined>;
+  deleteQuotePaymentSchedule(id: string): Promise<boolean>;
+  markPaymentSchedulePaid(id: string, paidAmount: string): Promise<QuotePaymentSchedule | undefined>;
+
+  // Quote workflow event operations
+  getQuoteWorkflowEvents(quoteId: string): Promise<QuoteWorkflowEvent[]>;
+  createQuoteWorkflowEvent(event: InsertQuoteWorkflowEvent): Promise<QuoteWorkflowEvent>;
+
+  // Organization settings operations
+  getOrganizationSettings(organizationId: string): Promise<OrganizationSettings | undefined>;
+  createOrganizationSettings(settings: InsertOrganizationSettings): Promise<OrganizationSettings>;
+  updateOrganizationSettings(organizationId: string, settings: Partial<InsertOrganizationSettings>): Promise<OrganizationSettings | undefined>;
 
   // Vehicle operations
   getVehicles(): Promise<Vehicle[]>;
@@ -715,6 +744,12 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(quotes).where(eq(quotes.status, status)).orderBy(desc(quotes.createdAt));
   }
 
+  async getQuotesByClient(clientId: string): Promise<Quote[]> {
+    return db.select().from(quotes)
+      .where(eq(quotes.clientId, clientId))
+      .orderBy(desc(quotes.createdAt));
+  }
+
   async createQuote(quote: InsertQuote): Promise<Quote> {
     const quoteNumber = await this.generateQuoteNumber();
     const [created] = await db.insert(quotes).values({ ...quote, quoteNumber }).returning();
@@ -1022,6 +1057,87 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
+    return updated;
+  }
+
+  // =====================
+  // Quote Payment Schedules
+  // =====================
+
+  async getQuotePaymentSchedules(quoteId: string): Promise<QuotePaymentSchedule[]> {
+    return await db.select().from(quotePaymentSchedules)
+      .where(eq(quotePaymentSchedules.quoteId, quoteId))
+      .orderBy(quotePaymentSchedules.sortOrder);
+  }
+
+  async getQuotePaymentSchedule(id: string): Promise<QuotePaymentSchedule | undefined> {
+    const [schedule] = await db.select().from(quotePaymentSchedules)
+      .where(eq(quotePaymentSchedules.id, id));
+    return schedule;
+  }
+
+  async createQuotePaymentSchedule(schedule: InsertQuotePaymentSchedule): Promise<QuotePaymentSchedule> {
+    const [created] = await db.insert(quotePaymentSchedules).values(schedule).returning();
+    return created;
+  }
+
+  async updateQuotePaymentSchedule(id: string, schedule: Partial<InsertQuotePaymentSchedule>): Promise<QuotePaymentSchedule | undefined> {
+    const [updated] = await db.update(quotePaymentSchedules)
+      .set(schedule)
+      .where(eq(quotePaymentSchedules.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteQuotePaymentSchedule(id: string): Promise<boolean> {
+    const result = await db.delete(quotePaymentSchedules)
+      .where(eq(quotePaymentSchedules.id, id));
+    return true;
+  }
+
+  async markPaymentSchedulePaid(id: string, paidAmount: string): Promise<QuotePaymentSchedule | undefined> {
+    const [updated] = await db.update(quotePaymentSchedules)
+      .set({ isPaid: true, paidAt: new Date(), paidAmount })
+      .where(eq(quotePaymentSchedules.id, id))
+      .returning();
+    return updated;
+  }
+
+  // =====================
+  // Quote Workflow Events
+  // =====================
+
+  async getQuoteWorkflowEvents(quoteId: string): Promise<QuoteWorkflowEvent[]> {
+    return await db.select().from(quoteWorkflowEvents)
+      .where(eq(quoteWorkflowEvents.quoteId, quoteId))
+      .orderBy(desc(quoteWorkflowEvents.createdAt));
+  }
+
+  async createQuoteWorkflowEvent(event: InsertQuoteWorkflowEvent): Promise<QuoteWorkflowEvent> {
+    const [created] = await db.insert(quoteWorkflowEvents).values(event).returning();
+    return created;
+  }
+
+  // =====================
+  // Organization Settings
+  // =====================
+
+  async getOrganizationSettings(organizationId: string): Promise<OrganizationSettings | undefined> {
+    const [settings] = await db.select().from(organizationSettings)
+      .where(eq(organizationSettings.organizationId, organizationId));
+    return settings;
+  }
+
+  async createOrganizationSettings(settings: InsertOrganizationSettings): Promise<OrganizationSettings> {
+    const [created] = await db.insert(organizationSettings).values(settings).returning();
+    return created;
+  }
+
+  async updateOrganizationSettings(organizationId: string, settings: Partial<InsertOrganizationSettings>): Promise<OrganizationSettings | undefined> {
+    const [updated] = await db.update(organizationSettings)
+      .set({ ...settings, updatedAt: new Date() })
+      .where(eq(organizationSettings.organizationId, organizationId))
+      .returning();
     return updated;
   }
 
