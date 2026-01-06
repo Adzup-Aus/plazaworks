@@ -69,6 +69,1109 @@ export async function registerRoutes(
   await setupAuth(app);
   registerAuthRoutes(app);
 
+  // =====================
+  // OTP AUTHENTICATION ROUTES
+  // =====================
+
+  // Helper to generate 6-digit OTP code
+  const generateOTPCode = (): string => {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  };
+
+  // Request OTP code (email or phone)
+  app.post("/api/auth/otp/request", async (req, res) => {
+    try {
+      const { email, phone } = req.body;
+      
+      if (!email && !phone) {
+        return res.status(400).json({ message: "Email or phone is required" });
+      }
+
+      const code = generateOTPCode();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      // Create verification code
+      await storage.createVerificationCode({
+        email: email?.toLowerCase(),
+        phone,
+        code,
+        purpose: "login",
+        expiresAt,
+      });
+
+      // In production, send the code via email/SMS
+      // For now, log it for testing
+      console.log(`OTP Code for ${email || phone}: ${code}`);
+
+      // TODO: Integrate with Resend for email sending
+      // TODO: Integrate with Twilio for SMS sending
+
+      res.json({ 
+        message: "Verification code sent",
+      });
+    } catch (err: any) {
+      console.error("Error requesting OTP:", err);
+      res.status(500).json({ message: "Failed to send verification code" });
+    }
+  });
+
+  // Verify OTP code and login
+  app.post("/api/auth/otp/verify", async (req: any, res) => {
+    try {
+      const { email, phone, code } = req.body;
+      
+      if ((!email && !phone) || !code) {
+        return res.status(400).json({ message: "Email/phone and code are required" });
+      }
+
+      // Find the verification code
+      const verification = await storage.getVerificationCode(code, email, phone);
+      
+      if (!verification) {
+        return res.status(400).json({ message: "Invalid verification code" });
+      }
+
+      if (verification.usedAt) {
+        return res.status(400).json({ message: "Code has already been used" });
+      }
+
+      if (new Date() > verification.expiresAt) {
+        return res.status(400).json({ message: "Code has expired" });
+      }
+
+      // Mark code as used
+      await storage.markVerificationCodeUsed(verification.id);
+
+      // Find or create auth identity
+      const identifier = email || phone;
+      const identityType = email ? "email" : "phone";
+      let identity = await storage.getAuthIdentityByIdentifier(identityType, identifier);
+      
+      if (!identity) {
+        // Create new identity with a generated userId
+        const newUserId = `${identityType}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        identity = await storage.createAuthIdentity({
+          userId: newUserId,
+          type: identityType,
+          identifier,
+          isVerified: true,
+          isPrimary: true,
+        });
+      } else {
+        // Update last used time
+        await storage.updateAuthIdentity(identity.id, {
+          lastUsedAt: new Date(),
+          isVerified: true,
+        });
+      }
+
+      // Set session
+      if (req.session) {
+        req.session.userId = identity.userId;
+        req.session.authType = identityType;
+        req.session.isAuthenticated = true;
+      }
+
+      // Get user memberships to determine which org to log into
+      const memberships = await storage.getUserMemberships(identity.userId);
+      
+      res.json({ 
+        message: "Login successful",
+        userId: identity.userId,
+        memberships: memberships.map(m => ({
+          organizationId: m.organizationId,
+          role: m.role,
+        })),
+      });
+    } catch (err: any) {
+      console.error("Error verifying OTP:", err);
+      res.status(500).json({ message: "Failed to verify code" });
+    }
+  });
+
+  // Get current session info for OTP-authenticated users
+  app.get("/api/auth/session", async (req: any, res) => {
+    try {
+      // Check for Replit Auth first
+      if (req.user?.claims?.sub) {
+        return res.json({
+          isAuthenticated: true,
+          authType: "replit",
+          userId: req.user.claims.sub,
+          user: req.user.claims,
+        });
+      }
+
+      // Check for OTP session
+      if (req.session?.isAuthenticated && req.session?.userId) {
+        const memberships = await storage.getUserMemberships(req.session.userId);
+        const identities = await storage.getAuthIdentities(req.session.userId);
+        
+        return res.json({
+          isAuthenticated: true,
+          authType: req.session.authType,
+          userId: req.session.userId,
+          memberships,
+          identities: identities.map(i => ({
+            type: i.type,
+            identifier: i.identifier,
+            isVerified: i.isVerified,
+          })),
+        });
+      }
+
+      res.json({ isAuthenticated: false });
+    } catch (err: any) {
+      console.error("Error getting session:", err);
+      res.status(500).json({ message: "Failed to get session" });
+    }
+  });
+
+  // Logout
+  app.post("/api/auth/otp/logout", (req: any, res) => {
+    if (req.session) {
+      req.session.destroy((err: any) => {
+        if (err) {
+          return res.status(500).json({ message: "Failed to logout" });
+        }
+        res.json({ message: "Logged out successfully" });
+      });
+    } else {
+      res.json({ message: "No session to logout" });
+    }
+  });
+
+  // =====================
+  // PASSWORD AUTHENTICATION ROUTES
+  // =====================
+
+  // Register with email/password
+  app.post("/api/auth/register", async (req: any, res) => {
+    try {
+      const { email, password, firstName, lastName } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+
+      if (password.length < 8) {
+        return res.status(400).json({ message: "Password must be at least 8 characters" });
+      }
+
+      // Check if email already exists
+      const existing = await storage.getAuthIdentityByIdentifier("email", email.toLowerCase());
+      if (existing) {
+        return res.status(400).json({ message: "Email is already registered" });
+      }
+
+      // Hash password
+      const bcrypt = await import("bcrypt");
+      const passwordHash = await bcrypt.hash(password, 12);
+
+      // Create new user identity
+      const newUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      const identity = await storage.createAuthIdentity({
+        userId: newUserId,
+        type: "email",
+        identifier: email.toLowerCase(),
+        passwordHash,
+        isVerified: false, // Require email verification
+        isPrimary: true,
+      });
+
+      // Send verification code
+      const code = generateOTPCode();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      await storage.createVerificationCode({
+        email: email.toLowerCase(),
+        code,
+        purpose: "verify_email",
+        expiresAt,
+      });
+
+      console.log(`Verification code for ${email}: ${code}`);
+
+      res.status(201).json({
+        message: "Account created. Please verify your email.",
+        userId: newUserId,
+        requiresVerification: true,
+      });
+    } catch (err: any) {
+      console.error("Error registering:", err);
+      res.status(500).json({ message: "Failed to create account" });
+    }
+  });
+
+  // Login with email/password
+  app.post("/api/auth/login", async (req: any, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+
+      // Find the email identity
+      const identity = await storage.getAuthIdentityByIdentifier("email", email.toLowerCase());
+      
+      if (!identity) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      if (!identity.passwordHash) {
+        return res.status(400).json({ 
+          message: "This account uses passwordless login. Please request an OTP code instead.",
+          useOTP: true,
+        });
+      }
+
+      // Verify password
+      const bcrypt = await import("bcrypt");
+      const isValid = await bcrypt.compare(password, identity.passwordHash);
+      
+      if (!isValid) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      // Update last used time
+      await storage.updateAuthIdentity(identity.id, {
+        lastUsedAt: new Date(),
+      });
+
+      // Set session
+      if (req.session) {
+        req.session.userId = identity.userId;
+        req.session.authType = "email";
+        req.session.isAuthenticated = true;
+      }
+
+      // Get user memberships
+      const memberships = await storage.getUserMemberships(identity.userId);
+
+      res.json({
+        message: "Login successful",
+        userId: identity.userId,
+        isVerified: identity.isVerified,
+        memberships: memberships.map(m => ({
+          organizationId: m.organizationId,
+          role: m.role,
+        })),
+      });
+    } catch (err: any) {
+      console.error("Error logging in:", err);
+      res.status(500).json({ message: "Failed to login" });
+    }
+  });
+
+  // Verify email after registration
+  app.post("/api/auth/verify-email", async (req: any, res) => {
+    try {
+      const { email, code } = req.body;
+      
+      if (!email || !code) {
+        return res.status(400).json({ message: "Email and code are required" });
+      }
+
+      // Find the verification code
+      const verification = await storage.getVerificationCode(code, email.toLowerCase());
+      
+      if (!verification) {
+        return res.status(400).json({ message: "Invalid verification code" });
+      }
+
+      if (verification.usedAt) {
+        return res.status(400).json({ message: "Code has already been used" });
+      }
+
+      if (new Date() > verification.expiresAt) {
+        return res.status(400).json({ message: "Code has expired" });
+      }
+
+      // Mark code as used
+      await storage.markVerificationCodeUsed(verification.id);
+
+      // Mark email as verified
+      const identity = await storage.getAuthIdentityByIdentifier("email", email.toLowerCase());
+      if (identity) {
+        await storage.updateAuthIdentity(identity.id, {
+          isVerified: true,
+        });
+      }
+
+      res.json({ message: "Email verified successfully" });
+    } catch (err: any) {
+      console.error("Error verifying email:", err);
+      res.status(500).json({ message: "Failed to verify email" });
+    }
+  });
+
+  // Request password reset
+  app.post("/api/auth/forgot-password", async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+
+      // Find the email identity
+      const identity = await storage.getAuthIdentityByIdentifier("email", email.toLowerCase());
+      
+      // Don't reveal if email exists or not
+      if (identity && identity.passwordHash) {
+        const code = generateOTPCode();
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+        await storage.createVerificationCode({
+          email: email.toLowerCase(),
+          code,
+          purpose: "password_reset",
+          expiresAt,
+        });
+
+        console.log(`Password reset code for ${email}: ${code}`);
+        // TODO: Send email with Resend
+      }
+
+      res.json({ 
+        message: "If this email exists, a password reset code will be sent.",
+      });
+    } catch (err: any) {
+      console.error("Error requesting password reset:", err);
+      res.status(500).json({ message: "Failed to process request" });
+    }
+  });
+
+  // Reset password with code
+  app.post("/api/auth/reset-password", async (req, res) => {
+    try {
+      const { email, code, newPassword } = req.body;
+      
+      if (!email || !code || !newPassword) {
+        return res.status(400).json({ message: "Email, code, and new password are required" });
+      }
+
+      if (newPassword.length < 8) {
+        return res.status(400).json({ message: "Password must be at least 8 characters" });
+      }
+
+      // Find the verification code
+      const verification = await storage.getVerificationCode(code, email.toLowerCase());
+      
+      if (!verification) {
+        return res.status(400).json({ message: "Invalid reset code" });
+      }
+
+      if (verification.usedAt) {
+        return res.status(400).json({ message: "Code has already been used" });
+      }
+
+      if (new Date() > verification.expiresAt) {
+        return res.status(400).json({ message: "Code has expired" });
+      }
+
+      if (verification.purpose !== "password_reset") {
+        return res.status(400).json({ message: "Invalid code type" });
+      }
+
+      // Mark code as used
+      await storage.markVerificationCodeUsed(verification.id);
+
+      // Update password
+      const identity = await storage.getAuthIdentityByIdentifier("email", email.toLowerCase());
+      if (identity) {
+        const bcrypt = await import("bcrypt");
+        const passwordHash = await bcrypt.hash(newPassword, 12);
+        
+        await storage.updateAuthIdentity(identity.id, {
+          passwordHash,
+        });
+      }
+
+      res.json({ message: "Password reset successfully" });
+    } catch (err: any) {
+      console.error("Error resetting password:", err);
+      res.status(500).json({ message: "Failed to reset password" });
+    }
+  });
+
+  // Change password (authenticated)
+  app.post("/api/auth/change-password", async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      const { currentPassword, newPassword } = req.body;
+      
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ message: "Current and new password are required" });
+      }
+
+      if (newPassword.length < 8) {
+        return res.status(400).json({ message: "Password must be at least 8 characters" });
+      }
+
+      // Get user's email identity
+      const identities = await storage.getAuthIdentities(userId);
+      const emailIdentity = identities.find(i => i.type === "email" && i.passwordHash);
+      
+      if (!emailIdentity) {
+        return res.status(400).json({ message: "No password-based login found for this account" });
+      }
+
+      // Verify current password
+      const bcrypt = await import("bcrypt");
+      const isValid = await bcrypt.compare(currentPassword, emailIdentity.passwordHash!);
+      
+      if (!isValid) {
+        return res.status(401).json({ message: "Current password is incorrect" });
+      }
+
+      // Update password
+      const passwordHash = await bcrypt.hash(newPassword, 12);
+      await storage.updateAuthIdentity(emailIdentity.id, {
+        passwordHash,
+      });
+
+      res.json({ message: "Password changed successfully" });
+    } catch (err: any) {
+      console.error("Error changing password:", err);
+      res.status(500).json({ message: "Failed to change password" });
+    }
+  });
+
+  // Add password to existing OTP account
+  app.post("/api/auth/set-password", async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+
+      if (password.length < 8) {
+        return res.status(400).json({ message: "Password must be at least 8 characters" });
+      }
+
+      // Get user's email identity
+      const identity = await storage.getAuthIdentityByIdentifier("email", email.toLowerCase());
+      
+      if (!identity) {
+        return res.status(400).json({ message: "Email not found" });
+      }
+
+      if (identity.userId !== userId) {
+        return res.status(403).json({ message: "This email belongs to another account" });
+      }
+
+      if (identity.passwordHash) {
+        return res.status(400).json({ message: "Password already set. Use change-password instead." });
+      }
+
+      // Set password
+      const bcrypt = await import("bcrypt");
+      const passwordHash = await bcrypt.hash(password, 12);
+      
+      await storage.updateAuthIdentity(identity.id, {
+        passwordHash,
+      });
+
+      res.json({ message: "Password set successfully" });
+    } catch (err: any) {
+      console.error("Error setting password:", err);
+      res.status(500).json({ message: "Failed to set password" });
+    }
+  });
+
+  // =====================
+  // SUBSCRIPTION FEATURE GATING MIDDLEWARE
+  // =====================
+
+  // Define features by tier
+  const tierFeatures: Record<string, string[]> = {
+    starter: ["jobs", "schedule", "basic_reports"],
+    professional: ["jobs", "schedule", "basic_reports", "quotes", "invoices", "time_tracking", "vehicles", "checklists"],
+    scale: ["jobs", "schedule", "basic_reports", "quotes", "invoices", "time_tracking", "vehicles", "checklists", "kpi", "capacity", "backcosting", "analytics", "custom_integrations"],
+  };
+
+  const tierLimits: Record<string, { maxUsers: number; maxJobs: number }> = {
+    starter: { maxUsers: 3, maxJobs: 50 },
+    professional: { maxUsers: 15, maxJobs: 500 },
+    scale: { maxUsers: -1, maxJobs: -1 }, // -1 means unlimited
+  };
+
+  // Middleware to check if a feature is available for the user's organization
+  const requireFeature = (feature: string) => async (req: any, res: any, next: any) => {
+    try {
+      const userId = req.user?.claims?.sub || req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Get user's memberships
+      const memberships = await storage.getUserMemberships(userId);
+      if (memberships.length === 0) {
+        return res.status(403).json({ message: "Not a member of any organization" });
+      }
+
+      // Use the first active membership's organization
+      const membership = memberships.find(m => m.isActive) || memberships[0];
+      const subscription = await storage.getOrganizationSubscription(membership.organizationId);
+      
+      if (!subscription) {
+        return res.status(403).json({ message: "No active subscription" });
+      }
+
+      if (subscription.status !== "active" && subscription.status !== "trialing") {
+        return res.status(403).json({ message: "Subscription is not active" });
+      }
+
+      const availableFeatures = tierFeatures[subscription.tier] || tierFeatures.starter;
+      if (!availableFeatures.includes(feature)) {
+        return res.status(403).json({ 
+          message: `This feature requires a higher subscription tier`,
+          feature,
+          currentTier: subscription.tier,
+          requiredTiers: Object.entries(tierFeatures)
+            .filter(([, features]) => features.includes(feature))
+            .map(([tier]) => tier),
+        });
+      }
+
+      // Attach organization context to request
+      req.organizationId = membership.organizationId;
+      req.organizationRole = membership.role;
+      req.subscription = subscription;
+      
+      next();
+    } catch (err) {
+      console.error("Error checking feature access:", err);
+      res.status(500).json({ message: "Failed to check feature access" });
+    }
+  };
+
+  // Middleware to check user limits
+  const checkUserLimit = async (req: any, res: any, next: any) => {
+    try {
+      const organizationId = req.organizationId;
+      if (!organizationId) {
+        return res.status(400).json({ message: "Organization context required" });
+      }
+
+      const subscription = await storage.getOrganizationSubscription(organizationId);
+      if (!subscription) {
+        return res.status(403).json({ message: "No active subscription" });
+      }
+
+      const limits = tierLimits[subscription.tier] || tierLimits.starter;
+      if (limits.maxUsers === -1) {
+        return next(); // Unlimited
+      }
+
+      const members = await storage.getOrganizationMembers(organizationId);
+      const activeMembers = members.filter(m => m.isActive);
+      
+      if (activeMembers.length >= limits.maxUsers) {
+        return res.status(403).json({ 
+          message: `User limit reached. Upgrade your plan to add more team members.`,
+          currentCount: activeMembers.length,
+          limit: limits.maxUsers,
+          tier: subscription.tier,
+        });
+      }
+
+      next();
+    } catch (err) {
+      console.error("Error checking user limit:", err);
+      res.status(500).json({ message: "Failed to check user limit" });
+    }
+  };
+
+  // Middleware to check job limits
+  const checkJobLimit = async (req: any, res: any, next: any) => {
+    try {
+      const organizationId = req.organizationId;
+      if (!organizationId) {
+        return res.status(400).json({ message: "Organization context required" });
+      }
+
+      const subscription = await storage.getOrganizationSubscription(organizationId);
+      if (!subscription) {
+        return res.status(403).json({ message: "No active subscription" });
+      }
+
+      const limits = tierLimits[subscription.tier] || tierLimits.starter;
+      if (limits.maxJobs === -1) {
+        return next(); // Unlimited
+      }
+
+      // Check jobs created this month
+      const jobs = await storage.getJobs();
+      const orgJobs = jobs.filter((j: any) => j.organizationId === organizationId);
+      
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      
+      const monthlyJobs = orgJobs.filter((j: any) => new Date(j.createdAt) >= startOfMonth);
+      
+      if (monthlyJobs.length >= limits.maxJobs) {
+        return res.status(403).json({ 
+          message: `Monthly job limit reached. Upgrade your plan to create more jobs.`,
+          currentCount: monthlyJobs.length,
+          limit: limits.maxJobs,
+          tier: subscription.tier,
+        });
+      }
+
+      next();
+    } catch (err) {
+      console.error("Error checking job limit:", err);
+      res.status(500).json({ message: "Failed to check job limit" });
+    }
+  };
+
+  // Middleware to get organization context for authenticated users
+  const withOrganization = async (req: any, res: any, next: any) => {
+    try {
+      const userId = req.user?.claims?.sub || req.session?.userId;
+      if (!userId) {
+        return next(); // Not authenticated
+      }
+
+      const memberships = await storage.getUserMemberships(userId);
+      if (memberships.length > 0) {
+        const membership = memberships.find(m => m.isActive) || memberships[0];
+        req.organizationId = membership.organizationId;
+        req.organizationRole = membership.role;
+        
+        const subscription = await storage.getOrganizationSubscription(membership.organizationId);
+        req.subscription = subscription;
+      }
+      
+      next();
+    } catch (err) {
+      console.error("Error getting organization context:", err);
+      next();
+    }
+  };
+
+  // Super-admin check middleware
+  const requireSuperAdmin = async (req: any, res: any, next: any) => {
+    try {
+      const userId = req.user?.claims?.sub || req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Check if user is a member of an owner organization
+      const memberships = await storage.getUserMemberships(userId);
+      const ownerMembership = memberships.find(async (m) => {
+        const org = await storage.getOrganization(m.organizationId);
+        return org?.isOwner && m.role === "owner";
+      });
+
+      // For now, check if user has an owner membership in any org marked as isOwner
+      const orgsWithOwner = await Promise.all(
+        memberships.map(async (m) => {
+          const org = await storage.getOrganization(m.organizationId);
+          return { membership: m, org };
+        })
+      );
+      
+      const isSuperAdmin = orgsWithOwner.some(
+        ({ membership, org }) => org?.isOwner && (membership.role === "owner" || membership.role === "admin")
+      );
+
+      if (!isSuperAdmin) {
+        return res.status(403).json({ message: "Super-admin access required" });
+      }
+
+      req.isSuperAdmin = true;
+      next();
+    } catch (err) {
+      console.error("Error checking super-admin access:", err);
+      res.status(500).json({ message: "Failed to verify admin access" });
+    }
+  };
+
+  // Check if current user is super-admin
+  app.get("/api/auth/is-super-admin", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.session?.userId;
+      if (!userId) {
+        return res.json({ isSuperAdmin: false });
+      }
+
+      const memberships = await storage.getUserMemberships(userId);
+      const orgsWithOwner = await Promise.all(
+        memberships.map(async (m) => {
+          const org = await storage.getOrganization(m.organizationId);
+          return { membership: m, org };
+        })
+      );
+      
+      const isSuperAdmin = orgsWithOwner.some(
+        ({ membership, org }) => org?.isOwner && (membership.role === "owner" || membership.role === "admin")
+      );
+
+      res.json({ isSuperAdmin });
+    } catch (err) {
+      console.error("Error checking super-admin:", err);
+      res.json({ isSuperAdmin: false });
+    }
+  });
+
+  // =====================
+  // ORGANIZATION ROUTES
+  // =====================
+
+  // Get all organizations (super-admin only)
+  app.get("/api/organizations", isAuthenticated, requireSuperAdmin, async (req: any, res) => {
+    try {
+      const orgs = await storage.getOrganizations();
+      res.json(orgs);
+    } catch (err: any) {
+      console.error("Error fetching organizations:", err);
+      res.status(500).json({ message: "Failed to fetch organizations" });
+    }
+  });
+
+  // Get single organization
+  app.get("/api/organizations/:id", isAuthenticated, async (req, res) => {
+    try {
+      const org = await storage.getOrganization(req.params.id);
+      if (!org) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+      res.json(org);
+    } catch (err: any) {
+      console.error("Error fetching organization:", err);
+      res.status(500).json({ message: "Failed to fetch organization" });
+    }
+  });
+
+  // Create organization
+  app.post("/api/organizations", isAuthenticated, async (req: any, res) => {
+    try {
+      const { name, slug, type, email, phone, address, timezone } = req.body;
+      
+      if (!name || !slug) {
+        return res.status(400).json({ message: "Name and slug are required" });
+      }
+
+      // Check if slug is unique
+      const existing = await storage.getOrganizationBySlug(slug);
+      if (existing) {
+        return res.status(400).json({ message: "Slug already in use" });
+      }
+
+      const org = await storage.createOrganization({
+        name,
+        slug: slug.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+        type: type || "customer",
+        email,
+        phone,
+        address,
+        timezone: timezone || "Australia/Brisbane",
+        isActive: true,
+        isOwner: false,
+      });
+
+      // Create default subscription (starter tier)
+      await storage.createOrganizationSubscription({
+        organizationId: org.id,
+        tier: "starter",
+        status: "active",
+        maxUsers: 3,
+        maxJobs: 50,
+        features: ["jobs", "schedule", "basic_reports"],
+      });
+
+      // Add the creating user as owner
+      const userId = req.user?.claims?.sub || req.session?.userId;
+      if (userId) {
+        await storage.createOrganizationMember({
+          organizationId: org.id,
+          userId,
+          role: "owner",
+          isLocked: true, // Owner cannot be demoted
+          joinedAt: new Date(),
+          isActive: true,
+        });
+      }
+
+      res.status(201).json(org);
+    } catch (err: any) {
+      console.error("Error creating organization:", err);
+      res.status(500).json({ message: "Failed to create organization" });
+    }
+  });
+
+  // Update organization
+  app.patch("/api/organizations/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const { name, email, phone, address, timezone, isActive } = req.body;
+      
+      const updated = await storage.updateOrganization(req.params.id, {
+        name,
+        email,
+        phone,
+        address,
+        timezone,
+        isActive,
+      });
+
+      if (!updated) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating organization:", err);
+      res.status(500).json({ message: "Failed to update organization" });
+    }
+  });
+
+  // Get organization subscription
+  app.get("/api/organizations/:id/subscription", isAuthenticated, async (req, res) => {
+    try {
+      const sub = await storage.getOrganizationSubscription(req.params.id);
+      if (!sub) {
+        return res.status(404).json({ message: "Subscription not found" });
+      }
+      res.json(sub);
+    } catch (err: any) {
+      console.error("Error fetching subscription:", err);
+      res.status(500).json({ message: "Failed to fetch subscription" });
+    }
+  });
+
+  // Update subscription tier
+  app.patch("/api/organizations/:id/subscription", isAuthenticated, async (req, res) => {
+    try {
+      const { tier, maxUsers, maxJobs, features } = req.body;
+      
+      const existing = await storage.getOrganizationSubscription(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ message: "Subscription not found" });
+      }
+
+      const updated = await storage.updateOrganizationSubscription(existing.id, {
+        tier,
+        maxUsers,
+        maxJobs,
+        features,
+      });
+
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating subscription:", err);
+      res.status(500).json({ message: "Failed to update subscription" });
+    }
+  });
+
+  // Get organization members
+  app.get("/api/organizations/:id/members", isAuthenticated, async (req, res) => {
+    try {
+      const members = await storage.getOrganizationMembers(req.params.id);
+      res.json(members);
+    } catch (err: any) {
+      console.error("Error fetching members:", err);
+      res.status(500).json({ message: "Failed to fetch members" });
+    }
+  });
+
+  // Add organization member
+  app.post("/api/organizations/:id/members", isAuthenticated, async (req: any, res) => {
+    try {
+      const { userId, role } = req.body;
+      
+      if (!userId || !role) {
+        return res.status(400).json({ message: "UserId and role are required" });
+      }
+
+      // Check if member already exists
+      const existing = await storage.getOrganizationMember(req.params.id, userId);
+      if (existing) {
+        return res.status(400).json({ message: "User is already a member" });
+      }
+
+      const member = await storage.createOrganizationMember({
+        organizationId: req.params.id,
+        userId,
+        role,
+        invitedBy: req.user?.claims?.sub || req.session?.userId,
+        invitedAt: new Date(),
+        joinedAt: new Date(),
+        isActive: true,
+      });
+
+      res.status(201).json(member);
+    } catch (err: any) {
+      console.error("Error adding member:", err);
+      res.status(500).json({ message: "Failed to add member" });
+    }
+  });
+
+  // Update member role
+  app.patch("/api/organizations/:orgId/members/:memberId", isAuthenticated, async (req, res) => {
+    try {
+      const { role, isActive } = req.body;
+      
+      const updated = await storage.updateOrganizationMember(req.params.memberId, {
+        role,
+        isActive,
+      });
+
+      if (!updated) {
+        return res.status(404).json({ message: "Member not found" });
+      }
+
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating member:", err);
+      res.status(500).json({ message: "Failed to update member" });
+    }
+  });
+
+  // Remove member
+  app.delete("/api/organizations/:orgId/members/:memberId", isAuthenticated, async (req, res) => {
+    try {
+      await storage.deleteOrganizationMember(req.params.memberId);
+      res.status(204).send();
+    } catch (err: any) {
+      console.error("Error removing member:", err);
+      res.status(500).json({ message: "Failed to remove member" });
+    }
+  });
+
+  // =====================
+  // ORGANIZATION INVITE ROUTES
+  // =====================
+
+  // Get organization invites
+  app.get("/api/organizations/:id/invites", isAuthenticated, async (req, res) => {
+    try {
+      const invites = await storage.getOrganizationInvites(req.params.id);
+      res.json(invites);
+    } catch (err: any) {
+      console.error("Error fetching invites:", err);
+      res.status(500).json({ message: "Failed to fetch invites" });
+    }
+  });
+
+  // Create invite
+  app.post("/api/organizations/:id/invites", isAuthenticated, async (req: any, res) => {
+    try {
+      const { email, phone, role } = req.body;
+      
+      if (!email && !phone) {
+        return res.status(400).json({ message: "Email or phone is required" });
+      }
+
+      // Generate unique invite code
+      const inviteCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+
+      const invite = await storage.createOrganizationInvite({
+        organizationId: req.params.id,
+        email: email?.toLowerCase(),
+        phone,
+        role: role || "staff",
+        inviteCode,
+        invitedBy: req.user?.claims?.sub || req.session?.userId,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      });
+
+      // TODO: Send invite email/SMS
+
+      res.status(201).json({
+        ...invite,
+        // Include invite code in response
+        inviteCode,
+      });
+    } catch (err: any) {
+      console.error("Error creating invite:", err);
+      res.status(500).json({ message: "Failed to create invite" });
+    }
+  });
+
+  // Accept invite
+  app.post("/api/invites/:code/accept", async (req: any, res) => {
+    try {
+      const invite = await storage.getInviteByCode(req.params.code);
+      
+      if (!invite) {
+        return res.status(404).json({ message: "Invalid invite code" });
+      }
+
+      if (invite.acceptedAt) {
+        return res.status(400).json({ message: "Invite has already been used" });
+      }
+
+      if (invite.expiresAt && new Date() > invite.expiresAt) {
+        return res.status(400).json({ message: "Invite has expired" });
+      }
+
+      const userId = req.user?.claims?.sub || req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Check if user is already a member
+      const existing = await storage.getOrganizationMember(invite.organizationId, userId);
+      if (existing) {
+        return res.status(400).json({ message: "You are already a member of this organization" });
+      }
+
+      // Accept the invite
+      await storage.acceptInvite(invite.id, userId);
+
+      // Add user as member
+      const member = await storage.createOrganizationMember({
+        organizationId: invite.organizationId,
+        userId,
+        role: invite.role,
+        invitedBy: invite.invitedBy,
+        invitedAt: invite.createdAt,
+        joinedAt: new Date(),
+        isActive: true,
+      });
+
+      // Get organization details
+      const org = await storage.getOrganization(invite.organizationId);
+
+      res.json({
+        message: "Invite accepted",
+        member,
+        organization: org,
+      });
+    } catch (err: any) {
+      console.error("Error accepting invite:", err);
+      res.status(500).json({ message: "Failed to accept invite" });
+    }
+  });
+
+  // Delete invite
+  app.delete("/api/organizations/:orgId/invites/:inviteId", isAuthenticated, async (req, res) => {
+    try {
+      await storage.deleteOrganizationInvite(req.params.inviteId);
+      res.status(204).send();
+    } catch (err: any) {
+      console.error("Error deleting invite:", err);
+      res.status(500).json({ message: "Failed to delete invite" });
+    }
+  });
+
   // Middleware to auto-create staff profile for authenticated users
   const ensureStaffProfile = async (req: any, res: any, next: any) => {
     try {

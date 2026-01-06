@@ -12,6 +12,10 @@ import { useAuth } from "@/hooks/use-auth";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import Landing from "@/pages/landing";
+import Login from "@/pages/login";
+import Register from "@/pages/register";
+import Onboarding from "@/pages/onboarding";
+import AcceptInvite from "@/pages/accept-invite";
 import Dashboard from "@/pages/dashboard";
 import Jobs from "@/pages/jobs";
 import JobForm from "@/pages/job-form";
@@ -28,6 +32,7 @@ import Productivity from "@/pages/productivity";
 import Backcosting from "@/pages/backcosting";
 import Capacity from "@/pages/capacity";
 import KpiDashboard from "@/pages/kpi-dashboard";
+import Admin from "@/pages/admin";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -51,6 +56,7 @@ function AuthenticatedRouter() {
       <Route path="/capacity" component={Capacity} />
       <Route path="/kpi" component={KpiDashboard} />
       <Route path="/team" component={Team} />
+      <Route path="/admin" component={Admin} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -102,7 +108,12 @@ function LoadingScreen() {
 function PublicRouter() {
   return (
     <Switch>
+      <Route path="/" component={Landing} />
+      <Route path="/login" component={Login} />
+      <Route path="/register" component={Register} />
+      <Route path="/invite/:code" component={AcceptInvite} />
       <Route path="/portal/:token" component={ClientPortal} />
+      <Route component={NotFound} />
     </Switch>
   );
 }
@@ -110,7 +121,14 @@ function PublicRouter() {
 function AppContent() {
   const { user, isLoading, isAuthenticated } = useAuth();
 
-  if (typeof window !== "undefined" && window.location.pathname.startsWith("/portal/")) {
+  const pathname = typeof window !== "undefined" ? window.location.pathname : "";
+  const isPublicRoute = pathname === "/" || 
+                        pathname === "/login" || 
+                        pathname === "/register" || 
+                        pathname.startsWith("/invite/") ||
+                        pathname.startsWith("/portal/");
+
+  if (isPublicRoute && !isAuthenticated) {
     return <PublicRouter />;
   }
 
@@ -119,7 +137,11 @@ function AppContent() {
   }
 
   if (!isAuthenticated) {
-    return <Landing />;
+    return <PublicRouter />;
+  }
+
+  if (pathname === "/onboarding") {
+    return <Onboarding />;
   }
 
   return <AuthenticatedLayout />;
