@@ -30,6 +30,7 @@ import {
   BarChart3,
   Target,
   Shield,
+  UserCircle,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -93,6 +94,11 @@ const mainNavItems = [
     title: "Team",
     url: "/team",
     icon: Users,
+  },
+  {
+    title: "Clients",
+    url: "/clients",
+    icon: UserCircle,
   },
 ];
 
