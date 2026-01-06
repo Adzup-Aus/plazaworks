@@ -40,33 +40,12 @@ const lineItemSchema = z.object({
   unitPrice: z.coerce.number().min(0, "Unit price must be non-negative"),
 });
 
-const jobTypes = [
-  "plumbing",
-  "renovation",
-  "waterproofing",
-  "tiling",
-  "electrical",
-  "carpentry",
-  "general",
-] as const;
-
-const jobTypeLabels: Record<string, string> = {
-  plumbing: "Plumbing",
-  renovation: "Renovation",
-  waterproofing: "Waterproofing",
-  tiling: "Tiling",
-  electrical: "Electrical",
-  carpentry: "Carpentry",
-  general: "General",
-};
-
 const quoteFormSchema = z.object({
   clientId: z.string().min(1, "Please select a client"),
   clientName: z.string().min(1, "Client name is required"),
   clientEmail: z.string().email("Valid email required").optional().or(z.literal("")),
   clientPhone: z.string().optional(),
   clientAddress: z.string().min(1, "Address is required"),
-  jobType: z.enum(jobTypes, { required_error: "Job type is required" }),
   description: z.string().optional(),
   validUntil: z.string().optional(),
   notes: z.string().optional(),
@@ -111,7 +90,6 @@ export default function QuoteForm() {
       clientEmail: "",
       clientPhone: "",
       clientAddress: "",
-      jobType: undefined,
       description: "",
       validUntil: "",
       notes: "",
@@ -142,16 +120,12 @@ export default function QuoteForm() {
 
   useEffect(() => {
     if (quote) {
-      const validJobType = jobTypes.includes(quote.jobType as typeof jobTypes[number]) 
-        ? quote.jobType as typeof jobTypes[number]
-        : undefined;
       form.reset({
         clientId: quote.clientId || "",
         clientName: quote.clientName || "",
         clientEmail: quote.clientEmail || "",
         clientPhone: quote.clientPhone || "",
         clientAddress: quote.clientAddress || "",
-        jobType: validJobType,
         description: quote.description || "",
         validUntil: quote.validUntil || "",
         notes: quote.notes || "",
@@ -474,45 +448,19 @@ export default function QuoteForm() {
               <CardTitle>Quote Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="jobType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Job Type</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-job-type">
-                            <SelectValue placeholder="Select job type" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {jobTypes.map((type) => (
-                            <SelectItem key={type} value={type}>
-                              {jobTypeLabels[type]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="validUntil"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Valid Until</FormLabel>
-                      <FormControl>
-                        <Input {...field} type="date" data-testid="input-valid-until" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+              <FormField
+                control={form.control}
+                name="validUntil"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Valid Until</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="date" data-testid="input-valid-until" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="description"

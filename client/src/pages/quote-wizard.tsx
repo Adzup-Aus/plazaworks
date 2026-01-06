@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { 
   ArrowLeft, ArrowRight, Check, User, DollarSign, 
-  Milestone, FileText, Plus, Trash2, ChevronRight
+  Milestone, FileText, Plus, Trash2, ChevronRight, UserPlus
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Form,
   FormControl,
@@ -35,25 +43,33 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Client } from "@shared/schema";
 
-const jobTypes = [
-  "plumbing",
-  "renovation",
-  "waterproofing",
-  "tiling",
-  "electrical",
-  "carpentry",
-  "general",
-] as const;
+const newClientFormSchema = z.object({
+  type: z.enum(["individual", "company"]),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  companyName: z.string().optional(),
+  email: z.string().email("Invalid email").optional().or(z.literal("")),
+  phone: z.string().optional(),
+  mobilePhone: z.string().optional(),
+  streetAddress: z.string().optional(),
+  streetAddress2: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  postalCode: z.string().optional(),
+}).refine((data) => {
+  if (data.type === "individual") {
+    return data.firstName && data.firstName.length > 0;
+  }
+  if (data.type === "company") {
+    return data.companyName && data.companyName.length > 0;
+  }
+  return true;
+}, {
+  message: "Individual clients require a first name. Company clients require a company name.",
+  path: ["firstName"],
+});
 
-const jobTypeLabels: Record<string, string> = {
-  plumbing: "Plumbing",
-  renovation: "Renovation",
-  waterproofing: "Waterproofing",
-  tiling: "Tiling",
-  electrical: "Electrical",
-  carpentry: "Carpentry",
-  general: "General",
-};
+type NewClientFormValues = z.infer<typeof newClientFormSchema>;
 
 const depositTypes = [
   { id: "none", label: "No Deposit", description: "Full payment on completion" },
@@ -83,7 +99,6 @@ const quoteWizardSchema = z.object({
   clientEmail: z.string().email("Valid email required").optional().or(z.literal("")),
   clientPhone: z.string().optional(),
   clientAddress: z.string().min(1, "Address is required"),
-  jobType: z.enum(jobTypes, { required_error: "Job type is required" }),
   description: z.string().optional(),
   validUntil: z.string().optional(),
   notes: z.string().optional(),
@@ -161,7 +176,6 @@ export default function QuoteWizard() {
       clientEmail: "",
       clientPhone: "",
       clientAddress: "",
-      jobType: undefined,
       description: "",
       validUntil: "",
       notes: "",
@@ -224,7 +238,7 @@ export default function QuoteWizard() {
     
     switch (step) {
       case 1:
-        fields = ["clientId", "clientName", "clientAddress", "jobType"];
+        fields = ["clientId", "clientName", "clientAddress"];
         break;
       case 2:
         fields = ["depositType"];
@@ -267,7 +281,6 @@ export default function QuoteWizard() {
         clientEmail: data.clientEmail || null,
         clientPhone: data.clientPhone || null,
         clientAddress: data.clientAddress,
-        jobType: data.jobType,
         description: data.description || null,
         validUntil: data.validUntil || null,
         notes: data.notes || null,
@@ -484,103 +497,151 @@ function Step1ClientSelector({
   clientsLoading: boolean;
   onClientSelect: (clientId: string) => void;
 }) {
+  const { toast } = useToast();
+  const [isNewClientDialogOpen, setIsNewClientDialogOpen] = useState(false);
   const selectedClientId = form.watch("clientId");
   const selectedClient = clients.find(c => c.id === selectedClientId);
+
+  const newClientForm = useForm<NewClientFormValues>({
+    resolver: zodResolver(newClientFormSchema),
+    defaultValues: {
+      type: "individual",
+      firstName: "",
+      lastName: "",
+      companyName: "",
+      email: "",
+      phone: "",
+      mobilePhone: "",
+      streetAddress: "",
+      streetAddress2: "",
+      city: "",
+      state: "",
+      postalCode: "",
+    },
+  });
+
+  const createClientMutation = useMutation({
+    mutationFn: async (data: NewClientFormValues) => {
+      const response = await apiRequest("POST", "/api/clients", data);
+      return response.json();
+    },
+    onSuccess: (newClient: Client) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      
+      const fullName = `${newClient.firstName || ""} ${newClient.lastName || ""}`.trim() || newClient.companyName || "";
+      const fullAddress = [newClient.streetAddress, newClient.streetAddress2, newClient.city, newClient.state, newClient.postalCode]
+        .filter(Boolean).join(", ");
+      
+      form.setValue("clientId", newClient.id);
+      form.setValue("clientName", fullName);
+      form.setValue("clientEmail", newClient.email || "");
+      form.setValue("clientPhone", newClient.phone || newClient.mobilePhone || "");
+      form.setValue("clientAddress", fullAddress);
+      
+      toast({
+        title: "Client created",
+        description: "The new client has been added and selected.",
+      });
+      setIsNewClientDialogOpen(false);
+      newClientForm.reset();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create client",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleCreateClient = (data: NewClientFormValues) => {
+    createClientMutation.mutate(data);
+  };
+
+  const newClientType = newClientForm.watch("type");
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold mb-2">Select Client</h2>
-        <p className="text-muted-foreground">Choose an existing client for this quote</p>
+        <p className="text-muted-foreground">Choose an existing client or create a new one</p>
       </div>
 
       <Card>
         <CardContent className="pt-6">
-          <FormField
-            control={form.control}
-            name="clientId"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Client</FormLabel>
-                <Select 
-                  value={field.value} 
-                  onValueChange={(value) => {
-                    field.onChange(value);
-                    onClientSelect(value);
-                  }}
-                >
-                  <FormControl>
-                    <SelectTrigger data-testid="select-client">
-                      <SelectValue placeholder={clientsLoading ? "Loading clients..." : "Select a client"} />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {clients.map((client) => (
-                      <SelectItem key={client.id} value={client.id}>
-                        {client.firstName} {client.lastName} - {client.email || client.phone}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <div className="space-y-4">
+            <FormField
+              control={form.control}
+              name="clientId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Client</FormLabel>
+                  <div className="flex gap-2">
+                    <Select 
+                      value={field.value} 
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        onClientSelect(value);
+                      }}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-client" className="flex-1">
+                          <SelectValue placeholder={clientsLoading ? "Loading clients..." : "Select a client"} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {clients.map((client) => (
+                          <SelectItem key={client.id} value={client.id}>
+                            {client.firstName} {client.lastName} - {client.email || client.phone}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button 
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsNewClientDialogOpen(true)}
+                      data-testid="button-new-client"
+                    >
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      New Client
+                    </Button>
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-          {selectedClient && (
-            <div className="mt-6 p-4 rounded-md bg-muted/50 space-y-3">
-              <div className="flex items-center gap-2">
-                <User className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium" data-testid="text-client-name">
-                  {selectedClient.firstName} {selectedClient.lastName}
-                </span>
+            {selectedClient && (
+              <div className="p-4 rounded-md bg-muted/50 space-y-3">
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium" data-testid="text-client-name">
+                    {selectedClient.firstName} {selectedClient.lastName}
+                  </span>
+                </div>
+                {selectedClient.email && (
+                  <div className="text-sm text-muted-foreground">{selectedClient.email}</div>
+                )}
+                {(selectedClient.phone || selectedClient.mobilePhone) && (
+                  <div className="text-sm text-muted-foreground">
+                    {selectedClient.phone || selectedClient.mobilePhone}
+                  </div>
+                )}
+                {selectedClient.streetAddress && (
+                  <div className="text-sm text-muted-foreground">
+                    {[selectedClient.streetAddress, selectedClient.city, selectedClient.state, selectedClient.postalCode]
+                      .filter(Boolean).join(", ")}
+                  </div>
+                )}
               </div>
-              {selectedClient.email && (
-                <div className="text-sm text-muted-foreground">{selectedClient.email}</div>
-              )}
-              {(selectedClient.phone || selectedClient.mobilePhone) && (
-                <div className="text-sm text-muted-foreground">
-                  {selectedClient.phone || selectedClient.mobilePhone}
-                </div>
-              )}
-              {selectedClient.streetAddress && (
-                <div className="text-sm text-muted-foreground">
-                  {[selectedClient.streetAddress, selectedClient.city, selectedClient.state, selectedClient.postalCode]
-                    .filter(Boolean).join(", ")}
-                </div>
-              )}
-            </div>
-          )}
+            )}
+          </div>
         </CardContent>
       </Card>
 
       <Card>
         <CardContent className="pt-6 space-y-4">
-          <FormField
-            control={form.control}
-            name="jobType"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Job Type</FormLabel>
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <FormControl>
-                    <SelectTrigger data-testid="select-job-type">
-                      <SelectValue placeholder="Select job type" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {jobTypes.map((type) => (
-                      <SelectItem key={type} value={type}>
-                        {jobTypeLabels[type]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
           <FormField
             control={form.control}
             name="description"
@@ -601,6 +662,180 @@ function Step1ClientSelector({
           />
         </CardContent>
       </Card>
+
+      <Dialog open={isNewClientDialogOpen} onOpenChange={setIsNewClientDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Create New Client</DialogTitle>
+            <DialogDescription>
+              Add a new client to use for this quote
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={newClientForm.handleSubmit(handleCreateClient)} className="space-y-4">
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium">Client Type</label>
+                <Select
+                  value={newClientType}
+                  onValueChange={(value: "individual" | "company") => {
+                    newClientForm.setValue("type", value);
+                  }}
+                >
+                  <SelectTrigger data-testid="select-client-type">
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="individual">Individual</SelectItem>
+                    <SelectItem value="company">Company</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {newClientType === "company" && (
+                <div>
+                  <label className="text-sm font-medium">Company Name *</label>
+                  <Input
+                    {...newClientForm.register("companyName")}
+                    placeholder="Company name"
+                    data-testid="input-company-name"
+                  />
+                  {newClientForm.formState.errors.companyName && (
+                    <p className="text-sm text-destructive mt-1">
+                      {newClientForm.formState.errors.companyName.message}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium">
+                    First Name {newClientType === "individual" ? "*" : ""}
+                  </label>
+                  <Input
+                    {...newClientForm.register("firstName")}
+                    placeholder="First name"
+                    data-testid="input-first-name"
+                  />
+                  {newClientForm.formState.errors.firstName && (
+                    <p className="text-sm text-destructive mt-1">
+                      {newClientForm.formState.errors.firstName.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Last Name</label>
+                  <Input
+                    {...newClientForm.register("lastName")}
+                    placeholder="Last name"
+                    data-testid="input-last-name"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">Email</label>
+                <Input
+                  {...newClientForm.register("email")}
+                  type="email"
+                  placeholder="email@example.com"
+                  data-testid="input-email"
+                />
+                {newClientForm.formState.errors.email && (
+                  <p className="text-sm text-destructive mt-1">
+                    {newClientForm.formState.errors.email.message}
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium">Phone</label>
+                  <Input
+                    {...newClientForm.register("phone")}
+                    placeholder="Phone number"
+                    data-testid="input-phone"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Mobile</label>
+                  <Input
+                    {...newClientForm.register("mobilePhone")}
+                    placeholder="Mobile number"
+                    data-testid="input-mobile"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">Street Address</label>
+                <Input
+                  {...newClientForm.register("streetAddress")}
+                  placeholder="Street address"
+                  data-testid="input-street-address"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">Address Line 2</label>
+                <Input
+                  {...newClientForm.register("streetAddress2")}
+                  placeholder="Apartment, suite, etc."
+                  data-testid="input-street-address-2"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="text-sm font-medium">City</label>
+                  <Input
+                    {...newClientForm.register("city")}
+                    placeholder="City"
+                    data-testid="input-city"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">State</label>
+                  <Input
+                    {...newClientForm.register("state")}
+                    placeholder="State"
+                    data-testid="input-state"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Postal Code</label>
+                  <Input
+                    {...newClientForm.register("postalCode")}
+                    placeholder="Postal code"
+                    data-testid="input-postal-code"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsNewClientDialogOpen(false);
+                  newClientForm.reset();
+                }}
+                data-testid="button-cancel-new-client"
+              >
+                Cancel
+              </Button>
+              <Button 
+                type="submit"
+                disabled={createClientMutation.isPending}
+                data-testid="button-save-new-client"
+              >
+                {createClientMutation.isPending ? "Creating..." : "Create Client"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1142,10 +1377,6 @@ function Step5Review({
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <div className="text-muted-foreground">Job Type</div>
-              <div className="font-medium">{jobTypeLabels[data.jobType] || "-"}</div>
-            </div>
             <div>
               <div className="text-muted-foreground">Valid Until</div>
               <div className="font-medium">{data.validUntil || "Not specified"}</div>

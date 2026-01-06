@@ -33,7 +33,7 @@ import {
   List,
 } from "lucide-react";
 import type { Job } from "@shared/schema";
-import { jobStatuses, jobTypes } from "@shared/schema";
+import { jobStatuses } from "@shared/schema";
 
 function getStatusColor(status: string): string {
   const colors: Record<string, string> = {
@@ -47,19 +47,6 @@ function getStatusColor(status: string): string {
   return colors[status] || "bg-muted text-muted-foreground";
 }
 
-function getJobTypeColor(type: string): string {
-  const colors: Record<string, string> = {
-    plumbing: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-    renovation: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
-    waterproofing: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",
-    tiling: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    electrical: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
-    carpentry: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
-    general: "bg-gray-500/10 text-gray-600 dark:text-gray-400",
-  };
-  return colors[type] || "bg-muted text-muted-foreground";
-}
-
 function formatStatus(status: string): string {
   return status
     .split("_")
@@ -67,15 +54,10 @@ function formatStatus(status: string): string {
     .join(" ");
 }
 
-function formatJobType(type: string): string {
-  return type.charAt(0).toUpperCase() + type.slice(1);
-}
-
 export default function Jobs() {
   const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
 
   const { data: jobs, isLoading } = useQuery<Job[]>({
@@ -90,9 +72,8 @@ export default function Jobs() {
       (job.description?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
     
     const matchesStatus = statusFilter === "all" || job.status === statusFilter;
-    const matchesType = typeFilter === "all" || job.jobType === typeFilter;
     
-    return matchesSearch && matchesStatus && matchesType;
+    return matchesSearch && matchesStatus;
   });
 
   return (
@@ -136,20 +117,6 @@ export default function Jobs() {
                   {jobStatuses.map((status) => (
                     <SelectItem key={status} value={status}>
                       {formatStatus(status)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-[140px]" data-testid="select-type-filter">
-                  <Filter className="mr-2 h-4 w-4" />
-                  <SelectValue placeholder="Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  {jobTypes.map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {formatJobType(type)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -206,11 +173,11 @@ export default function Jobs() {
               <Briefcase className="h-12 w-12 text-muted-foreground/50" />
               <h3 className="mt-4 text-lg font-medium">No jobs found</h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                {searchQuery || statusFilter !== "all" || typeFilter !== "all"
+                {searchQuery || statusFilter !== "all"
                   ? "Try adjusting your search or filters"
                   : "Create your first job to get started"}
               </p>
-              {!searchQuery && statusFilter === "all" && typeFilter === "all" && (
+              {!searchQuery && statusFilter === "all" && (
                 <Button className="mt-4" asChild>
                   <Link href="/jobs/new">
                     <Plus className="mr-2 h-4 w-4" />
@@ -245,17 +212,12 @@ export default function Jobs() {
                           {job.description}
                         </p>
                       )}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline" className={getJobTypeColor(job.jobType)}>
-                          {formatJobType(job.jobType)}
-                        </Badge>
-                        {job.clientPhone && (
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Phone className="h-3 w-3" />
-                            <span>{job.clientPhone}</span>
-                          </div>
-                        )}
-                      </div>
+                      {job.clientPhone && (
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Phone className="h-3 w-3" />
+                          <span>{job.clientPhone}</span>
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -268,7 +230,6 @@ export default function Jobs() {
                   <TableRow>
                     <TableHead>Client</TableHead>
                     <TableHead>Address</TableHead>
-                    <TableHead>Type</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Created</TableHead>
                   </TableRow>
@@ -292,11 +253,6 @@ export default function Jobs() {
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate">
                         {job.address}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={getJobTypeColor(job.jobType)}>
-                          {formatJobType(job.jobType)}
-                        </Badge>
                       </TableCell>
                       <TableCell>
                         <Badge variant="secondary" className={getStatusColor(job.status)}>

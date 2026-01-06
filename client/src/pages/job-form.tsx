@@ -60,14 +60,13 @@ import {
   XCircle,
   User
 } from "lucide-react";
-import { jobTypes, jobStatuses, pcItemStatuses, type Job, type PCItem, type ClientAccessToken, type JobPhoto, type ScheduleEntry, type StaffProfile } from "@shared/schema";
+import { jobStatuses, pcItemStatuses, type Job, type PCItem, type ClientAccessToken, type JobPhoto, type ScheduleEntry, type StaffProfile } from "@shared/schema";
 
 const formSchema = z.object({
   clientName: z.string().min(1, "Client name is required"),
   clientEmail: z.string().email("Invalid email").optional().or(z.literal("")),
   clientPhone: z.string().optional(),
   address: z.string().min(1, "Address is required"),
-  jobType: z.enum(jobTypes),
   description: z.string().optional(),
   status: z.enum(jobStatuses),
   priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
@@ -954,7 +953,6 @@ export default function JobForm() {
       clientEmail: "",
       clientPhone: "",
       address: "",
-      jobType: "plumbing",
       description: "",
       status: "pending",
       priority: "normal",
@@ -970,7 +968,6 @@ export default function JobForm() {
         clientEmail: job.clientEmail || "",
         clientPhone: job.clientPhone || "",
         address: job.address,
-        jobType: job.jobType as typeof jobTypes[number],
         description: job.description || "",
         status: job.status as typeof jobStatuses[number],
         priority: (job.priority as "low" | "normal" | "high" | "urgent") || "normal",
@@ -1168,39 +1165,11 @@ export default function JobForm() {
             <CardHeader>
               <CardTitle>Job Details</CardTitle>
               <CardDescription>
-                Specify the type of work and current status
+                Specify the job status and details
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="jobType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Job Type *</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        defaultValue={field.value}
-                        value={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-job-type">
-                            <SelectValue placeholder="Select job type" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {jobTypes.map((type) => (
-                            <SelectItem key={type} value={type}>
-                              {formatLabel(type)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
                 <FormField
                   control={form.control}
                   name="status"

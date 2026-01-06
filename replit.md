@@ -25,6 +25,12 @@ Key features include:
 - **Time Tracking**: Detailed time logging and billable hours tracking.
 - **Workforce Management**: Staff capacity planning, time-off management, and enhanced staff profiles with compensation and working hours configuration.
 - **Performance Monitoring**: KPI dashboard with real-time tracking, traffic light indicators, daily/weekly/monthly snapshots, configurable targets, alerts, and bonus tracking based on sales phase progression.
+- **Email Integration**: Resend integration for transactional emails (quote notifications, invoices, OTP login, job completion).
+
+## Recent Changes
+- Removed job type as a user input from all forms (job form, quote form, jobs list filters) - field kept in schema for backward compatibility
+- Added inline client creation dialog in quote wizard - users can create new clients without leaving the wizard
+- Integrated Resend email service with pre-built templates
 
 ## External Dependencies
 - **Database**: PostgreSQL
