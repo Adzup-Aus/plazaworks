@@ -847,6 +847,7 @@ export async function registerRoutes(
   };
 
   // Middleware to get organization context for authenticated users
+  // Auto-creates a default organization for users without one
   const withOrganization = async (req: any, res: any, next: any) => {
     try {
       const userId = req.user?.claims?.sub || req.session?.userId;
@@ -854,7 +855,43 @@ export async function registerRoutes(
         return next(); // Not authenticated
       }
 
-      const memberships = await storage.getUserMemberships(userId);
+      let memberships = await storage.getUserMemberships(userId);
+      
+      // Auto-create default organization if user has no memberships
+      if (memberships.length === 0) {
+        const user = await storage.getUser(userId);
+        const orgName = user?.firstName && user?.lastName 
+          ? `${user.firstName} ${user.lastName}'s Organization`
+          : `Organization ${userId.substring(0, 8)}`;
+        
+        // Create default organization
+        const newOrg = await storage.createOrganization({
+          name: orgName,
+          slug: `org-${userId.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8)}-${Date.now()}`,
+          isOwner: false,
+        });
+        
+        // Create owner membership for this user
+        await storage.createOrganizationMembership({
+          organizationId: newOrg.id,
+          userId: userId,
+          role: "owner",
+          isActive: true,
+        });
+        
+        // Create starter subscription
+        await storage.createOrganizationSubscription({
+          organizationId: newOrg.id,
+          tier: "starter",
+          status: "active",
+          features: [],
+        });
+        
+        // Refresh memberships
+        memberships = await storage.getUserMemberships(userId);
+        console.log(`Auto-created organization "${orgName}" for user ${userId}`);
+      }
+      
       if (memberships.length > 0) {
         const membership = memberships.find(m => m.isActive) || memberships[0];
         req.organizationId = membership.organizationId;
@@ -3813,7 +3850,7 @@ export async function registerRoutes(
     try {
       const organizationId = req.organizationId;
       if (!organizationId) {
-        return res.status(400).json({ message: "Organization context required" });
+        return res.status(400).json({ message: "Organization context required. Please set up your organization first." });
       }
       const clientList = await storage.getClients(organizationId);
       res.json(clientList);
@@ -3842,7 +3879,7 @@ export async function registerRoutes(
     try {
       const organizationId = req.organizationId;
       if (!organizationId) {
-        return res.status(400).json({ message: "Organization context required" });
+        return res.status(400).json({ message: "Organization context required. Please set up your organization first." });
       }
       
       const parsed = insertClientSchema.safeParse({ ...req.body, organizationId });
