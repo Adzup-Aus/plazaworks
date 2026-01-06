@@ -116,9 +116,9 @@ function PublicRouter() {
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
       <Route path="/invite/:code" component={AcceptInvite} />
-      <Route path="/portal/:token" component={ClientPortal} />
       <Route path="/portal/login" component={ClientPortalLogin} />
       <Route path="/portal/dashboard" component={ClientPortalDashboard} />
+      <Route path="/portal/:token" component={ClientPortal} />
       <Route component={NotFound} />
     </Switch>
   );
