@@ -310,7 +310,7 @@ function MilestoneCard({ milestone, jobId, onApprovePayment }: {
 }
 
 function JobTimeline({ jobId }: { jobId: string }) {
-  const clientId = localStorage.getItem("clientPortalId");
+  const token = localStorage.getItem("clientPortalToken");
   const { toast } = useToast();
   const [selectedPayment, setSelectedPayment] = useState<MilestonePayment | null>(null);
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
@@ -319,12 +319,12 @@ function JobTimeline({ jobId }: { jobId: string }) {
     queryKey: ["/api/client-portal/jobs", jobId, "timeline"],
     queryFn: async () => {
       const response = await fetch(`/api/client-portal/jobs/${jobId}/timeline`, {
-        headers: { "X-Client-Id": clientId || "" },
+        headers: { "Authorization": `Bearer ${token}` },
       });
       if (!response.ok) throw new Error("Failed to fetch timeline");
       return response.json();
     },
-    enabled: !!clientId,
+    enabled: !!token,
   });
 
   const approveMutation = useMutation({
@@ -333,7 +333,7 @@ function JobTimeline({ jobId }: { jobId: string }) {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "X-Client-Id": clientId || "" 
+          "Authorization": `Bearer ${token}` 
         },
       });
       if (!response.ok) throw new Error("Failed to approve payment");
@@ -472,36 +472,47 @@ function JobTimeline({ jobId }: { jobId: string }) {
 
 export default function ClientPortalDashboard() {
   const [, setLocation] = useLocation();
-  const clientId = localStorage.getItem("clientPortalId");
+  const token = localStorage.getItem("clientPortalToken");
   const clientName = localStorage.getItem("clientPortalName") || "Client";
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!clientId) {
+    if (!token) {
       setLocation("/portal/login");
     }
-  }, [clientId, setLocation]);
+  }, [token, setLocation]);
 
   const { data: jobs, isLoading } = useQuery<Job[]>({
     queryKey: ["/api/client-portal/jobs"],
     queryFn: async () => {
       const response = await fetch("/api/client-portal/jobs", {
-        headers: { "X-Client-Id": clientId || "" },
+        headers: { "Authorization": `Bearer ${token}` },
       });
       if (!response.ok) throw new Error("Failed to fetch jobs");
       return response.json();
     },
-    enabled: !!clientId,
+    enabled: !!token,
   });
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Call backend to revoke the session
+    try {
+      await fetch("/api/client-portal/auth/logout", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+    } catch {
+      // Continue with logout even if API call fails
+    }
+    // Clear local storage
+    localStorage.removeItem("clientPortalToken");
     localStorage.removeItem("clientPortalId");
     localStorage.removeItem("clientPortalEmail");
     localStorage.removeItem("clientPortalName");
     setLocation("/portal/login");
   };
 
-  if (!clientId) {
+  if (!token) {
     return null;
   }
 

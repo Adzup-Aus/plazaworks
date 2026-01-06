@@ -1,7 +1,106 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
+import { createHmac, randomBytes } from "crypto";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
+
+// Client portal session token utilities
+// Require SESSION_SECRET in production; allow fallback only in development
+const CLIENT_PORTAL_SECRET = process.env.SESSION_SECRET;
+if (!CLIENT_PORTAL_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('SESSION_SECRET environment variable is required in production');
+}
+const PORTAL_SECRET = CLIENT_PORTAL_SECRET || 'dev-secret-not-for-production';
+const TOKEN_EXPIRY_HOURS = 24 * 7; // 7 days
+
+interface ClientPortalTokenPayload {
+  sessionId: string; // Unique session ID for server-side validation
+  clientId: string;
+  portalAccountId: string;
+  email: string;
+  exp: number;
+}
+
+async function createClientPortalToken(
+  payload: Omit<ClientPortalTokenPayload, 'exp' | 'sessionId'>,
+  userAgent?: string,
+  ipAddress?: string
+): Promise<{ token: string; sessionId: string }> {
+  const sessionId = randomBytes(32).toString('hex');
+  const exp = Date.now() + (TOKEN_EXPIRY_HOURS * 60 * 60 * 1000);
+  const expiresAt = new Date(exp);
+  const data = JSON.stringify({ ...payload, sessionId, exp });
+  const signature = createHmac('sha256', PORTAL_SECRET)
+    .update(data)
+    .digest('base64url');
+  
+  // Store session in database for validation and revocation
+  await storage.createPortalSession(
+    sessionId,
+    payload.clientId,
+    payload.portalAccountId,
+    expiresAt,
+    userAgent,
+    ipAddress
+  );
+  
+  return { token: Buffer.from(data).toString('base64url') + '.' + signature, sessionId };
+}
+
+function parseClientPortalToken(token: string): ClientPortalTokenPayload | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 2) return null;
+    
+    const data = Buffer.from(parts[0], 'base64url').toString('utf8');
+    const expectedSig = createHmac('sha256', PORTAL_SECRET)
+      .update(data)
+      .digest('base64url');
+    
+    if (parts[1] !== expectedSig) return null;
+    
+    const payload = JSON.parse(data) as ClientPortalTokenPayload;
+    if (Date.now() > payload.exp) return null;
+    
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+async function verifyClientPortalToken(token: string): Promise<ClientPortalTokenPayload | null> {
+  const payload = parseClientPortalToken(token);
+  if (!payload) return null;
+  
+  // Verify session exists in database and is not revoked
+  const session = await storage.getPortalSession(payload.sessionId);
+  if (!session) return null;
+  if (session.revokedAt) return null;
+  if (new Date() > session.expiresAt) return null;
+  
+  return payload;
+}
+
+interface ClientPortalRequest extends Request {
+  clientPortal?: ClientPortalTokenPayload;
+}
+
+async function clientPortalAuth(req: ClientPortalRequest, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: "Unauthorized - missing token" });
+  }
+  
+  const token = authHeader.substring(7);
+  const payload = await verifyClientPortalToken(token);
+  
+  if (!payload) {
+    return res.status(401).json({ message: "Unauthorized - invalid or expired token" });
+  }
+  
+  req.clientPortal = payload;
+  next();
+}
 import { 
   insertJobSchema, 
   insertScheduleEntrySchema, 
@@ -3954,10 +4053,18 @@ export async function registerRoutes(
         lastLoginAt: new Date(),
       });
 
-      // Create session (simplified - in production use proper session management)
-      // For now, return client info that frontend can store
+      // Create signed session token with server-side session tracking
+      const userAgent = req.headers['user-agent'] || undefined;
+      const ipAddress = req.ip || req.headers['x-forwarded-for']?.toString() || undefined;
+      const { token } = await createClientPortalToken({
+        clientId: client.id,
+        portalAccountId: portalAccount.id,
+        email: client.email || email,
+      }, userAgent, ipAddress);
+
       res.json({
         success: true,
+        token,
         client: {
           id: client.id,
           firstName: client.firstName,
@@ -3973,23 +4080,20 @@ export async function registerRoutes(
   });
 
   // =====================
-  // CLIENT PORTAL - CLIENT-FACING API
+  // CLIENT PORTAL - CLIENT-FACING API (Protected by token authentication)
   // =====================
 
   // Get client's jobs (for portal view)
-  app.get("/api/client-portal/jobs", async (req: any, res) => {
+  app.get("/api/client-portal/jobs", clientPortalAuth, async (req: ClientPortalRequest, res) => {
     try {
-      const clientId = req.headers['x-client-id'];
-      if (!clientId) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
+      const clientId = req.clientPortal!.clientId;
 
-      const client = await storage.getClient(clientId as string);
+      const client = await storage.getClient(clientId);
       if (!client?.portalEnabled) {
         return res.status(403).json({ message: "Portal access not enabled" });
       }
 
-      const jobs = await storage.getClientJobsForPortal(clientId as string);
+      const jobs = await storage.getClientJobsForPortal(clientId);
       res.json(jobs);
     } catch (err: any) {
       console.error("Error fetching client portal jobs:", err);
@@ -3998,12 +4102,9 @@ export async function registerRoutes(
   });
 
   // Get job timeline with milestones (for portal view)
-  app.get("/api/client-portal/jobs/:jobId/timeline", async (req: any, res) => {
+  app.get("/api/client-portal/jobs/:jobId/timeline", clientPortalAuth, async (req: ClientPortalRequest, res) => {
     try {
-      const clientId = req.headers['x-client-id'];
-      if (!clientId) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
+      const clientId = req.clientPortal!.clientId;
 
       // Verify job belongs to client
       const job = await storage.getJob(req.params.jobId);
@@ -4036,12 +4137,9 @@ export async function registerRoutes(
   });
 
   // Client approves a payment request
-  app.post("/api/client-portal/payments/:id/approve", async (req: any, res) => {
+  app.post("/api/client-portal/payments/:id/approve", clientPortalAuth, async (req: ClientPortalRequest, res) => {
     try {
-      const clientId = req.headers['x-client-id'];
-      if (!clientId) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
+      const clientId = req.clientPortal!.clientId;
 
       // Verify payment belongs to client's job
       const payment = await storage.getMilestonePayment(req.params.id);
@@ -4064,6 +4162,17 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("Error approving payment:", err);
       res.status(500).json({ message: "Failed to approve payment" });
+    }
+  });
+
+  // Client logout - revoke session
+  app.post("/api/client-portal/auth/logout", clientPortalAuth, async (req: ClientPortalRequest, res) => {
+    try {
+      await storage.revokePortalSession(req.clientPortal!.sessionId);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error logging out:", err);
+      res.status(500).json({ message: "Failed to logout" });
     }
   });
 

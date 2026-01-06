@@ -45,6 +45,12 @@ interface ClientInfo {
   portalAccountId: string;
 }
 
+interface VerifyOTPResponse {
+  success: boolean;
+  token: string;
+  client: ClientInfo;
+}
+
 export default function ClientPortalLogin() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -103,7 +109,8 @@ export default function ClientPortalLogin() {
       }
       return response.json();
     },
-    onSuccess: (data: { success: boolean; client: ClientInfo }) => {
+    onSuccess: (data: VerifyOTPResponse) => {
+      localStorage.setItem("clientPortalToken", data.token);
       localStorage.setItem("clientPortalId", data.client.id);
       localStorage.setItem("clientPortalEmail", data.client.email || "");
       localStorage.setItem("clientPortalName", 

@@ -145,12 +145,13 @@ import {
   clients,
   clientPortalAccounts,
   clientPortalVerificationCodes,
+  clientPortalSessions,
   jobMilestones,
   milestonePayments,
   milestoneMedia,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, lte, sql, inArray } from "drizzle-orm";
+import { eq, desc, and, gte, lte, lt, sql, inArray, isNull } from "drizzle-orm";
 import crypto from "crypto";
 
 export interface IStorage {
@@ -405,6 +406,13 @@ export interface IStorage {
   // Client portal verification operations
   createClientPortalVerificationCode(portalAccountId: string | null, email: string, purpose: string): Promise<ClientPortalVerificationCode>;
   verifyClientPortalCode(email: string, code: string, purpose: string): Promise<ClientPortalVerificationCode | undefined>;
+
+  // Client portal session operations
+  createPortalSession(id: string, clientId: string, portalAccountId: string, expiresAt: Date, userAgent?: string, ipAddress?: string): Promise<void>;
+  getPortalSession(id: string): Promise<{ clientId: string; expiresAt: Date; revokedAt: Date | null } | undefined>;
+  revokePortalSession(id: string): Promise<void>;
+  revokeAllPortalSessions(clientId: string): Promise<void>;
+  cleanupExpiredPortalSessions(): Promise<void>;
 
   // Job milestone operations
   getJobMilestones(jobId: string): Promise<JobMilestone[]>;
@@ -2545,6 +2553,48 @@ export class DatabaseStorage implements IStorage {
       return result;
     }
     return undefined;
+  }
+
+  // Client portal session operations
+  async createPortalSession(id: string, clientId: string, portalAccountId: string, expiresAt: Date, userAgent?: string, ipAddress?: string): Promise<void> {
+    await db.insert(clientPortalSessions).values({
+      id,
+      clientId,
+      portalAccountId,
+      expiresAt,
+      userAgent: userAgent || null,
+      ipAddress: ipAddress || null,
+    });
+  }
+
+  async getPortalSession(id: string): Promise<{ clientId: string; expiresAt: Date; revokedAt: Date | null } | undefined> {
+    const [session] = await db.select({
+      clientId: clientPortalSessions.clientId,
+      expiresAt: clientPortalSessions.expiresAt,
+      revokedAt: clientPortalSessions.revokedAt,
+    }).from(clientPortalSessions)
+      .where(eq(clientPortalSessions.id, id));
+    return session;
+  }
+
+  async revokePortalSession(id: string): Promise<void> {
+    await db.update(clientPortalSessions)
+      .set({ revokedAt: new Date() })
+      .where(eq(clientPortalSessions.id, id));
+  }
+
+  async revokeAllPortalSessions(clientId: string): Promise<void> {
+    await db.update(clientPortalSessions)
+      .set({ revokedAt: new Date() })
+      .where(and(
+        eq(clientPortalSessions.clientId, clientId),
+        isNull(clientPortalSessions.revokedAt)
+      ));
+  }
+
+  async cleanupExpiredPortalSessions(): Promise<void> {
+    await db.delete(clientPortalSessions)
+      .where(lt(clientPortalSessions.expiresAt, new Date()));
   }
 
   // Job milestone operations

@@ -1965,6 +1965,21 @@ export const clientPortalVerificationCodes = pgTable("client_portal_verification
   index("idx_client_verify_email").on(table.email),
 ]);
 
+// Client portal sessions - for token validation and revocation
+export const clientPortalSessions = pgTable("client_portal_sessions", {
+  id: varchar("id").primaryKey(), // Session ID from token
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  portalAccountId: varchar("portal_account_id").notNull().references(() => clientPortalAccounts.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at").notNull(),
+  revokedAt: timestamp("revoked_at"),
+  userAgent: text("user_agent"),
+  ipAddress: varchar("ip_address", { length: 45 }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_portal_session_client").on(table.clientId),
+  index("idx_portal_session_expires").on(table.expiresAt),
+]);
+
 // Job milestones - based on scope of works from invoices
 export const jobMilestones = pgTable("job_milestones", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
