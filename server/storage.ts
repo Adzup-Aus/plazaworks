@@ -100,6 +100,9 @@ import {
   type MilestoneMedia,
   type InsertMilestoneMedia,
   type JobMilestoneWithDetails,
+  // Quote milestone types
+  type QuoteMilestone,
+  type InsertQuoteMilestone,
   // Quote payment schedule types
   type QuotePaymentSchedule,
   type InsertQuotePaymentSchedule,
@@ -159,6 +162,7 @@ import {
   // Quote payment schedules and workflow
   quotePaymentSchedules,
   quoteWorkflowEvents,
+  quoteMilestones,
   organizationSettings,
 } from "@shared/schema";
 import { db } from "./db";
@@ -257,12 +261,21 @@ export interface IStorage {
   updatePayment(id: string, payment: Partial<InsertPayment>): Promise<Payment | undefined>;
   completePayment(id: string): Promise<Payment | undefined>;
 
+  // Quote milestone operations
+  getQuoteMilestones(quoteId: string): Promise<QuoteMilestone[]>;
+  getQuoteMilestone(id: string): Promise<QuoteMilestone | undefined>;
+  createQuoteMilestone(milestone: InsertQuoteMilestone): Promise<QuoteMilestone>;
+  updateQuoteMilestone(id: string, milestone: Partial<InsertQuoteMilestone>): Promise<QuoteMilestone | undefined>;
+  deleteQuoteMilestone(id: string): Promise<boolean>;
+  deleteQuoteMilestonesByQuote(quoteId: string): Promise<boolean>;
+
   // Quote payment schedule operations
   getQuotePaymentSchedules(quoteId: string): Promise<QuotePaymentSchedule[]>;
   getQuotePaymentSchedule(id: string): Promise<QuotePaymentSchedule | undefined>;
   createQuotePaymentSchedule(schedule: InsertQuotePaymentSchedule): Promise<QuotePaymentSchedule>;
   updateQuotePaymentSchedule(id: string, schedule: Partial<InsertQuotePaymentSchedule>): Promise<QuotePaymentSchedule | undefined>;
   deleteQuotePaymentSchedule(id: string): Promise<boolean>;
+  deleteQuotePaymentSchedulesByQuote(quoteId: string): Promise<boolean>;
   markPaymentSchedulePaid(id: string, paidAmount: string): Promise<QuotePaymentSchedule | undefined>;
 
   // Quote workflow event operations
@@ -1061,6 +1074,47 @@ export class DatabaseStorage implements IStorage {
   }
 
   // =====================
+  // Quote Milestones
+  // =====================
+
+  async getQuoteMilestones(quoteId: string): Promise<QuoteMilestone[]> {
+    return await db.select().from(quoteMilestones)
+      .where(eq(quoteMilestones.quoteId, quoteId))
+      .orderBy(quoteMilestones.sequence);
+  }
+
+  async getQuoteMilestone(id: string): Promise<QuoteMilestone | undefined> {
+    const [milestone] = await db.select().from(quoteMilestones)
+      .where(eq(quoteMilestones.id, id));
+    return milestone;
+  }
+
+  async createQuoteMilestone(milestone: InsertQuoteMilestone): Promise<QuoteMilestone> {
+    const [created] = await db.insert(quoteMilestones).values(milestone).returning();
+    return created;
+  }
+
+  async updateQuoteMilestone(id: string, milestone: Partial<InsertQuoteMilestone>): Promise<QuoteMilestone | undefined> {
+    const [updated] = await db.update(quoteMilestones)
+      .set(milestone)
+      .where(eq(quoteMilestones.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteQuoteMilestone(id: string): Promise<boolean> {
+    await db.delete(quoteMilestones)
+      .where(eq(quoteMilestones.id, id));
+    return true;
+  }
+
+  async deleteQuoteMilestonesByQuote(quoteId: string): Promise<boolean> {
+    await db.delete(quoteMilestones)
+      .where(eq(quoteMilestones.quoteId, quoteId));
+    return true;
+  }
+
+  // =====================
   // Quote Payment Schedules
   // =====================
 
@@ -1090,8 +1144,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteQuotePaymentSchedule(id: string): Promise<boolean> {
-    const result = await db.delete(quotePaymentSchedules)
+    await db.delete(quotePaymentSchedules)
       .where(eq(quotePaymentSchedules.id, id));
+    return true;
+  }
+
+  async deleteQuotePaymentSchedulesByQuote(quoteId: string): Promise<boolean> {
+    await db.delete(quotePaymentSchedules)
+      .where(eq(quotePaymentSchedules.quoteId, quoteId));
     return true;
   }
 

@@ -827,11 +827,27 @@ export const invoices = pgTable("invoices", {
   index("idx_invoices_due").on(table.dueDate),
 ]);
 
+// Quote milestones - for organizing line items into phases/stages
+export const quoteMilestones = pgTable("quote_milestones", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").notNull().references(() => quotes.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  sequence: integer("sequence").notNull().default(1),
+  expectedStartDate: date("expected_start_date"),
+  expectedEndDate: date("expected_end_date"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_quote_milestones_quote").on(table.quoteId),
+]);
+
 // Line items - shared between quotes and invoices
 export const lineItems = pgTable("line_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   quoteId: varchar("quote_id").references(() => quotes.id, { onDelete: "cascade" }),
   invoiceId: varchar("invoice_id").references(() => invoices.id, { onDelete: "cascade" }),
+  // Optional milestone reference for quote line items
+  quoteMilestoneId: varchar("quote_milestone_id").references(() => quoteMilestones.id, { onDelete: "set null" }),
   // Heading for the line item (e.g., "Kitchen Renovation", "Bathroom Plumbing")
   heading: varchar("heading", { length: 255 }),
   // Short description for the line item
@@ -846,6 +862,7 @@ export const lineItems = pgTable("line_items", {
 }, (table) => [
   index("idx_line_items_quote").on(table.quoteId),
   index("idx_line_items_invoice").on(table.invoiceId),
+  index("idx_line_items_milestone").on(table.quoteMilestoneId),
 ]);
 
 // Quote payment schedules - for split payments (deposit, progress, final)
@@ -860,7 +877,8 @@ export const quotePaymentSchedules = pgTable("quote_payment_schedules", {
   fixedAmount: decimal("fixed_amount", { precision: 10, scale: 2 }),
   // Calculated amount from quote total
   calculatedAmount: decimal("calculated_amount", { precision: 10, scale: 2 }),
-  // Optional milestone link
+  // Optional milestone reference for milestone-based payments
+  quoteMilestoneId: varchar("quote_milestone_id").references(() => quoteMilestones.id, { onDelete: "set null" }),
   milestoneDescription: varchar("milestone_description", { length: 255 }),
   // Due date offset from quote acceptance (in days)
   dueDaysFromAcceptance: integer("due_days_from_acceptance").default(0),
@@ -874,6 +892,7 @@ export const quotePaymentSchedules = pgTable("quote_payment_schedules", {
 }, (table) => [
   index("idx_payment_schedule_quote").on(table.quoteId),
   index("idx_payment_schedule_type").on(table.type),
+  index("idx_payment_schedule_milestone").on(table.quoteMilestoneId),
 ]);
 
 // Quote workflow events - audit trail for client interactions
@@ -913,6 +932,7 @@ export const payments = pgTable("payments", {
 // Phase 3 Relations
 export const quotesRelations = relations(quotes, ({ many, one }) => ({
   lineItems: many(lineItems),
+  milestones: many(quoteMilestones),
   paymentSchedules: many(quotePaymentSchedules),
   workflowEvents: many(quoteWorkflowEvents),
   client: one(clients, {
@@ -927,6 +947,15 @@ export const quotesRelations = relations(quotes, ({ many, one }) => ({
     fields: [quotes.convertedToInvoiceId],
     references: [invoices.id],
   }),
+}));
+
+export const quoteMilestonesRelations = relations(quoteMilestones, ({ one, many }) => ({
+  quote: one(quotes, {
+    fields: [quoteMilestones.quoteId],
+    references: [quotes.id],
+  }),
+  lineItems: many(lineItems),
+  paymentSchedules: many(quotePaymentSchedules),
 }));
 
 export const invoicesRelations = relations(invoices, ({ many, one }) => ({
@@ -951,6 +980,10 @@ export const lineItemsRelations = relations(lineItems, ({ one }) => ({
     fields: [lineItems.invoiceId],
     references: [invoices.id],
   }),
+  quoteMilestone: one(quoteMilestones, {
+    fields: [lineItems.quoteMilestoneId],
+    references: [quoteMilestones.id],
+  }),
 }));
 
 export const paymentsRelations = relations(payments, ({ one }) => ({
@@ -968,6 +1001,10 @@ export const quotePaymentSchedulesRelations = relations(quotePaymentSchedules, (
   invoice: one(invoices, {
     fields: [quotePaymentSchedules.invoiceId],
     references: [invoices.id],
+  }),
+  quoteMilestone: one(quoteMilestones, {
+    fields: [quotePaymentSchedules.quoteMilestoneId],
+    references: [quoteMilestones.id],
   }),
 }));
 
@@ -1064,6 +1101,17 @@ export const insertQuoteWorkflowEventSchema = createInsertSchema(quoteWorkflowEv
   createdAt: true,
 });
 
+export const insertQuoteMilestoneSchema = createInsertSchema(quoteMilestones).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  title: z.string().min(1, "Milestone title is required"),
+  description: z.string().optional(),
+  sequence: z.number().optional(),
+  expectedStartDate: z.string().optional(),
+  expectedEndDate: z.string().optional(),
+});
+
 // Phase 3 Types
 export type Quote = typeof quotes.$inferSelect;
 export type InsertQuote = z.infer<typeof insertQuoteSchema>;
@@ -1083,13 +1131,21 @@ export type InsertQuotePaymentSchedule = z.infer<typeof insertQuotePaymentSchedu
 export type QuoteWorkflowEvent = typeof quoteWorkflowEvents.$inferSelect;
 export type InsertQuoteWorkflowEvent = z.infer<typeof insertQuoteWorkflowEventSchema>;
 
+export type QuoteMilestone = typeof quoteMilestones.$inferSelect;
+export type InsertQuoteMilestone = z.infer<typeof insertQuoteMilestoneSchema>;
+
 // Helper types
 export type QuoteWithLineItems = Quote & {
   lineItems: LineItem[];
 };
 
+export type QuoteMilestoneWithLineItems = QuoteMilestone & {
+  lineItems: LineItem[];
+};
+
 export type QuoteWithDetails = Quote & {
   lineItems: LineItem[];
+  milestones: QuoteMilestone[];
   paymentSchedules: QuotePaymentSchedule[];
   workflowEvents: QuoteWorkflowEvent[];
 };

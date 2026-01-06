@@ -2330,6 +2330,71 @@ export async function registerRoutes(
   });
 
   // =====================
+  // QUOTE MILESTONES
+  // =====================
+
+  // Get milestones for quote
+  app.get("/api/quotes/:quoteId/milestones", isAuthenticated, async (req, res) => {
+    try {
+      const milestones = await storage.getQuoteMilestones(req.params.quoteId);
+      res.json(milestones);
+    } catch (err: any) {
+      console.error("Error fetching quote milestones:", err);
+      res.status(500).json({ message: "Failed to fetch quote milestones" });
+    }
+  });
+
+  // Create milestone for quote
+  app.post("/api/quotes/:quoteId/milestones", isAuthenticated, async (req, res) => {
+    try {
+      const milestone = await storage.createQuoteMilestone({
+        ...req.body,
+        quoteId: req.params.quoteId,
+      });
+      res.status(201).json(milestone);
+    } catch (err: any) {
+      console.error("Error creating quote milestone:", err);
+      res.status(500).json({ message: "Failed to create quote milestone" });
+    }
+  });
+
+  // Update quote milestone
+  app.patch("/api/quote-milestones/:id", isAuthenticated, async (req, res) => {
+    try {
+      const updated = await storage.updateQuoteMilestone(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ message: "Quote milestone not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating quote milestone:", err);
+      res.status(500).json({ message: "Failed to update quote milestone" });
+    }
+  });
+
+  // Delete quote milestone
+  app.delete("/api/quote-milestones/:id", isAuthenticated, async (req, res) => {
+    try {
+      await storage.deleteQuoteMilestone(req.params.id);
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting quote milestone:", err);
+      res.status(500).json({ message: "Failed to delete quote milestone" });
+    }
+  });
+
+  // Delete all milestones for a quote (for replacing milestones)
+  app.delete("/api/quotes/:quoteId/milestones", isAuthenticated, async (req, res) => {
+    try {
+      await storage.deleteQuoteMilestonesByQuote(req.params.quoteId);
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting quote milestones:", err);
+      res.status(500).json({ message: "Failed to delete quote milestones" });
+    }
+  });
+
+  // =====================
   // QUOTE PAYMENT SCHEDULES
   // =====================
 
