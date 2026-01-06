@@ -4,9 +4,10 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { format } from "date-fns";
 import { 
   ArrowLeft, ArrowRight, Check, User, DollarSign, 
-  FileText, Plus, Trash2, UserPlus
+  FileText, Plus, Trash2, UserPlus, CalendarIcon, ListOrdered
 } from "lucide-react";
 
 const COUNTRIES = [
@@ -33,12 +34,17 @@ const COUNTRIES = [
   { code: "IE", name: "Ireland", dialCode: "+353" },
   { code: "AE", name: "United Arab Emirates", dialCode: "+971" },
 ] as const;
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -121,13 +127,11 @@ const depositTypes = [
   { id: "fixed", label: "Fixed Deposit", description: "Fixed amount upfront" },
 ] as const;
 
-const lineItemSchema = z.object({
+const milestoneSchema = z.object({
   id: z.string().optional(),
   heading: z.string().min(1, "Heading is required"),
-  description: z.string().min(1, "Description is required"),
   richDescription: z.string().optional(),
-  quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
-  unitPrice: z.coerce.number().min(0, "Unit price must be non-negative"),
+  price: z.coerce.number().min(0).optional(),
 });
 
 const quoteWizardSchema = z.object({
@@ -137,13 +141,15 @@ const quoteWizardSchema = z.object({
   clientPhone: z.string().optional(),
   clientAddress: z.string().min(1, "Address is required"),
   description: z.string().optional(),
-  validUntil: z.string().optional(),
+  validUntil: z.date().optional(),
   notes: z.string().optional(),
   taxRate: z.coerce.number().min(0).max(100).optional(),
   depositType: z.enum(["none", "percentage", "fixed"]).default("none"),
   depositPercentage: z.coerce.number().min(0).max(100).optional(),
   depositAmount: z.coerce.number().min(0).optional(),
-  lineItems: z.array(lineItemSchema).min(1, "At least one line item is required"),
+  useSinglePrice: z.boolean().default(false),
+  singleTotalPrice: z.coerce.number().min(0).optional(),
+  milestones: z.array(milestoneSchema).min(1, "At least one milestone is required"),
 });
 
 type QuoteWizardValues = z.infer<typeof quoteWizardSchema>;
@@ -151,7 +157,7 @@ type QuoteWizardValues = z.infer<typeof quoteWizardSchema>;
 const STEPS = [
   { id: 1, title: "Select Client", icon: User },
   { id: 2, title: "Payment Structure", icon: DollarSign },
-  { id: 3, title: "Line Items", icon: FileText },
+  { id: 3, title: "Milestones", icon: ListOrdered },
   { id: 4, title: "Review", icon: Check },
 ];
 
@@ -212,21 +218,23 @@ export default function QuoteWizard() {
       clientPhone: "",
       clientAddress: "",
       description: "",
-      validUntil: "",
+      validUntil: undefined,
       notes: "",
       taxRate: 10,
       depositType: "none",
       depositPercentage: 20,
       depositAmount: 0,
-      lineItems: [
-        { heading: "", description: "", richDescription: "", quantity: 1, unitPrice: 0 }
+      useSinglePrice: false,
+      singleTotalPrice: 0,
+      milestones: [
+        { heading: "", richDescription: "", price: 0 }
       ],
     },
   });
 
-  const { fields: lineItemFields, append, remove } = useFieldArray({
+  const { fields: milestoneFields, append, remove, replace } = useFieldArray({
     control: form.control,
-    name: "lineItems",
+    name: "milestones",
   });
 
   const handleClientSelect = (clientId: string) => {
@@ -254,7 +262,7 @@ export default function QuoteWizard() {
         fields = ["depositType"];
         break;
       case 3:
-        fields = ["lineItems"];
+        fields = ["milestones"];
         break;
     }
     
@@ -275,9 +283,27 @@ export default function QuoteWizard() {
     }
   };
 
+  const handleMilestoneCountChange = (count: number) => {
+    const currentMilestones = form.getValues("milestones");
+    const newMilestones = [];
+    
+    for (let i = 0; i < count; i++) {
+      if (currentMilestones[i]) {
+        newMilestones.push(currentMilestones[i]);
+      } else {
+        newMilestones.push({ heading: "", richDescription: "", price: 0 });
+      }
+    }
+    
+    replace(newMilestones);
+  };
+
   const createMutation = useMutation({
     mutationFn: async (data: QuoteWizardValues) => {
-      const subtotal = data.lineItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+      const useSinglePrice = data.useSinglePrice;
+      const subtotal = useSinglePrice 
+        ? (data.singleTotalPrice || 0)
+        : data.milestones.reduce((sum, m) => sum + (m.price || 0), 0);
       const taxAmount = subtotal * ((data.taxRate || 0) / 100);
       const total = subtotal + taxAmount;
 
@@ -289,7 +315,7 @@ export default function QuoteWizard() {
         clientAddress: data.clientAddress,
         jobType: "general",
         description: data.description || null,
-        validUntil: data.validUntil || null,
+        validUntil: data.validUntil ? format(data.validUntil, "yyyy-MM-dd") : null,
         notes: data.notes || null,
         taxRate: (data.taxRate || 10).toString(),
         subtotal: subtotal.toFixed(2),
@@ -298,25 +324,30 @@ export default function QuoteWizard() {
       });
       const newQuote = await response.json();
 
-      const milestoneResponse = await apiRequest("POST", `/api/quotes/${newQuote.id}/milestones`, {
-        title: "Work Items",
-        description: null,
-        sequence: 1,
-      });
-      const milestone = await milestoneResponse.json();
+      for (let milestoneIndex = 0; milestoneIndex < data.milestones.length; milestoneIndex++) {
+        const milestone = data.milestones[milestoneIndex];
+        
+        const milestoneResponse = await apiRequest("POST", `/api/quotes/${newQuote.id}/milestones`, {
+          title: milestone.heading,
+          description: milestone.richDescription || null,
+          sequence: milestoneIndex + 1,
+        });
+        const savedMilestone = await milestoneResponse.json();
 
-      for (let itemIndex = 0; itemIndex < data.lineItems.length; itemIndex++) {
-        const item = data.lineItems[itemIndex];
-        if (item.description.trim()) {
+        const itemPrice = useSinglePrice 
+          ? (milestoneIndex === data.milestones.length - 1 ? (data.singleTotalPrice || 0) : 0)
+          : (milestone.price || 0);
+        
+        if (milestone.heading.trim()) {
           await apiRequest("POST", `/api/quotes/${newQuote.id}/line-items`, {
-            quoteMilestoneId: milestone.id,
-            heading: item.heading || null,
-            description: item.description,
-            richDescription: item.richDescription || null,
-            quantity: item.quantity.toString(),
-            unitPrice: item.unitPrice.toFixed(2),
-            amount: (item.quantity * item.unitPrice).toFixed(2),
-            sortOrder: itemIndex,
+            quoteMilestoneId: savedMilestone.id,
+            heading: milestone.heading,
+            description: milestone.heading,
+            richDescription: milestone.richDescription || null,
+            quantity: "1",
+            unitPrice: itemPrice.toFixed(2),
+            amount: itemPrice.toFixed(2),
+            sortOrder: 0,
           });
         }
       }
@@ -386,11 +417,14 @@ export default function QuoteWizard() {
   };
 
   const calculateTotals = () => {
-    const lineItems = form.watch("lineItems");
-    const taxRate = form.watch("taxRate") || 10;
-    const subtotal = lineItems.reduce(
-      (sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0), 0
-    );
+    const milestones = form.watch("milestones");
+    const useSinglePrice = form.watch("useSinglePrice");
+    const singleTotalPrice = parseFloat(String(form.watch("singleTotalPrice"))) || 0;
+    const taxRate = parseFloat(String(form.watch("taxRate"))) || 10;
+    
+    const subtotal = useSinglePrice 
+      ? singleTotalPrice
+      : milestones.reduce((sum, m) => sum + (parseFloat(String(m.price)) || 0), 0);
     const taxAmount = subtotal * (taxRate / 100);
     const total = subtotal + taxAmount;
     return { subtotal, taxAmount, total };
@@ -424,10 +458,11 @@ export default function QuoteWizard() {
             )}
 
             {currentStep === 3 && (
-              <Step3LineItems 
+              <Step3Milestones 
                 form={form} 
-                lineItemFields={lineItemFields}
-                onAppend={() => append({ heading: "", description: "", richDescription: "", quantity: 1, unitPrice: 0 })}
+                milestoneFields={milestoneFields}
+                onMilestoneCountChange={handleMilestoneCountChange}
+                onAppend={() => append({ heading: "", richDescription: "", price: 0 })}
                 onRemove={remove}
               />
             )}
@@ -524,29 +559,22 @@ function Step1ClientSelector({
       form.setValue("clientPhone", newClient.phone || newClient.mobilePhone || "");
       form.setValue("clientAddress", fullAddress);
       
-      toast({
-        title: "Client created",
-        description: "The new client has been added and selected.",
-      });
       setIsNewClientDialogOpen(false);
       newClientForm.reset();
+      toast({ title: "Client created successfully" });
     },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create client",
-        variant: "destructive",
-      });
+    onError: () => {
+      toast({ title: "Failed to create client", variant: "destructive" });
     },
   });
 
-  const handleCreateClient = (data: NewClientFormValues) => {
-    const formattedData = {
+  const handleNewClientSubmit = (data: NewClientFormValues) => {
+    const submitData = {
       ...data,
       phone: formatPhoneWithCountryCode(data.phone || "", data.country),
       mobilePhone: formatPhoneWithCountryCode(data.mobilePhone || "", data.country),
     };
-    createClientMutation.mutate(formattedData);
+    createClientMutation.mutate(submitData);
   };
 
   const newClientType = newClientForm.watch("type");
@@ -561,98 +589,97 @@ function Step1ClientSelector({
       </div>
 
       <Card>
-        <CardContent className="pt-6">
-          <div className="space-y-4">
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex items-center gap-4">
             <FormField
               control={form.control}
               name="clientId"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="flex-1">
                   <FormLabel>Client</FormLabel>
-                  <div className="flex gap-2">
-                    <Select value={field.value} onValueChange={(value) => {
+                  <Select
+                    value={field.value}
+                    onValueChange={(value) => {
                       field.onChange(value);
                       onClientSelect(value);
-                    }}>
-                      <FormControl>
-                        <SelectTrigger className="flex-1" data-testid="select-client">
-                          <SelectValue placeholder="Select a client..." />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {clientsLoading ? (
-                          <SelectItem value="loading" disabled>Loading...</SelectItem>
-                        ) : clients.length === 0 ? (
-                          <SelectItem value="none" disabled>No clients found</SelectItem>
-                        ) : (
-                          clients.map((client) => (
-                            <SelectItem key={client.id} value={client.id}>
-                              {client.firstName} {client.lastName}
-                              {client.company && ` (${client.company})`}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setIsNewClientDialogOpen(true)}
-                      data-testid="button-new-client"
-                    >
-                      <UserPlus className="h-4 w-4 mr-2" />
-                      New
-                    </Button>
-                  </div>
+                    }}
+                    disabled={clientsLoading}
+                  >
+                    <FormControl>
+                      <SelectTrigger data-testid="select-client">
+                        <SelectValue placeholder={clientsLoading ? "Loading..." : "Select a client"} />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {clients.map((client) => (
+                        <SelectItem key={client.id} value={client.id}>
+                          {client.firstName} {client.lastName} {client.company ? `(${client.company})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}
             />
-
-            {selectedClient && (
-              <div className="p-4 bg-muted/50 rounded-md space-y-2">
-                <div className="font-medium">{selectedClient.firstName} {selectedClient.lastName}</div>
-                {selectedClient.email && <div className="text-sm text-muted-foreground">{selectedClient.email}</div>}
-                {(selectedClient.phone || selectedClient.mobilePhone) && (
-                  <div className="text-sm text-muted-foreground">{selectedClient.phone || selectedClient.mobilePhone}</div>
-                )}
-                {selectedClient.streetAddress && (
-                  <div className="text-sm text-muted-foreground">
-                    {[selectedClient.streetAddress, selectedClient.city, selectedClient.state, selectedClient.postalCode].filter(Boolean).join(", ")}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <FormField
-              control={form.control}
-              name="clientAddress"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Job Address</FormLabel>
-                  <FormControl>
-                    <Input {...field} placeholder="Enter job site address" data-testid="input-job-address" />
-                  </FormControl>
-                  <FormDescription>The address where the work will be performed</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Job Description (Optional)</FormLabel>
-                  <FormControl>
-                    <Textarea {...field} placeholder="Brief description of the work..." data-testid="input-job-description" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsNewClientDialogOpen(true)}
+              className="mt-6"
+              data-testid="button-new-client"
+            >
+              <UserPlus className="mr-2 h-4 w-4" />
+              New Client
+            </Button>
           </div>
+
+          {selectedClient && (
+            <div className="p-4 bg-muted/50 rounded-md space-y-3">
+              <div className="text-sm font-medium">Selected Client Details</div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Name: </span>
+                  {selectedClient.firstName} {selectedClient.lastName}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Email: </span>
+                  {selectedClient.email || "-"}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Phone: </span>
+                  {selectedClient.phone || selectedClient.mobilePhone || "-"}
+                </div>
+                <div className="col-span-2">
+                  <span className="text-muted-foreground">Address: </span>
+                  {[selectedClient.streetAddress, selectedClient.city, selectedClient.state, selectedClient.postalCode]
+                    .filter(Boolean).join(", ") || "-"}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <FormField
+            control={form.control}
+            name="clientAddress"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Job Address</FormLabel>
+                <FormControl>
+                  <Textarea 
+                    {...field} 
+                    placeholder="Enter the job site address"
+                    className="min-h-[80px]"
+                    data-testid="input-job-address"
+                  />
+                </FormControl>
+                <FormDescription>
+                  This may differ from the client's address
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </CardContent>
       </Card>
 
@@ -663,14 +690,13 @@ function Step1ClientSelector({
             <DialogDescription>Add a new client to your database</DialogDescription>
           </DialogHeader>
           
-          <form onSubmit={newClientForm.handleSubmit(handleCreateClient)} className="space-y-6">
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Client Type</label>
+          <form onSubmit={newClientForm.handleSubmit(handleNewClientSubmit)}>
+            <div className="space-y-4 py-4">
+              <div className="flex gap-4">
                 <RadioGroup
                   value={newClientType}
-                  onValueChange={(value) => newClientForm.setValue("type", value as "individual" | "company")}
-                  className="flex gap-4 mt-2"
+                  onValueChange={(value: "individual" | "company") => newClientForm.setValue("type", value)}
+                  className="flex gap-4"
                 >
                   <label className="flex items-center gap-2 cursor-pointer">
                     <RadioGroupItem value="individual" />
@@ -981,11 +1007,31 @@ function Step2PaymentStructure({
             control={form.control}
             name="validUntil"
             render={({ field }) => (
-              <FormItem>
+              <FormItem className="flex flex-col">
                 <FormLabel>Quote Valid Until</FormLabel>
-                <FormControl>
-                  <Input type="date" {...field} data-testid="input-valid-until" />
-                </FormControl>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <FormControl>
+                      <Button
+                        variant="outline"
+                        className={`w-[280px] justify-start text-left font-normal ${!field.value && "text-muted-foreground"}`}
+                        data-testid="button-valid-until"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {field.value ? format(field.value, "PPP") : "Select a date"}
+                      </Button>
+                    </FormControl>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={field.value}
+                      onSelect={field.onChange}
+                      disabled={(date) => date < new Date()}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
                 <FormMessage />
               </FormItem>
             )}
@@ -996,180 +1042,222 @@ function Step2PaymentStructure({
   );
 }
 
-function Step3LineItems({ 
+function Step3Milestones({ 
   form,
-  lineItemFields,
+  milestoneFields,
+  onMilestoneCountChange,
   onAppend,
   onRemove
 }: { 
   form: ReturnType<typeof useForm<QuoteWizardValues>>;
-  lineItemFields: { id: string }[];
+  milestoneFields: { id: string }[];
+  onMilestoneCountChange: (count: number) => void;
   onAppend: () => void;
   onRemove: (index: number) => void;
 }) {
-  const lineItems = form.watch("lineItems");
-  const total = lineItems.reduce(
-    (sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0), 0
-  );
+  const milestones = form.watch("milestones");
+  const useSinglePrice = form.watch("useSinglePrice");
+  const singleTotalPrice = parseFloat(String(form.watch("singleTotalPrice"))) || 0;
+  
+  const itemizedTotal = milestones.reduce((sum, m) => sum + (parseFloat(String(m.price)) || 0), 0);
+  const displayTotal = useSinglePrice ? singleTotalPrice : itemizedTotal;
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold mb-2">Add Line Items</h2>
-        <p className="text-muted-foreground">Add detailed line items for the quote</p>
+        <h2 className="text-xl font-semibold mb-2">Milestones</h2>
+        <p className="text-muted-foreground">Define the work milestones and their pricing</p>
       </div>
 
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-4">
             <div>
-              <CardTitle className="text-lg">Work Items</CardTitle>
-              <CardDescription>Add line items with detailed descriptions</CardDescription>
+              <CardTitle className="text-lg">Number of Milestones</CardTitle>
+              <CardDescription>How many milestones does this project have?</CardDescription>
             </div>
-            <div className="text-right">
-              <div className="text-sm text-muted-foreground">Total (excl. tax)</div>
-              <div className="text-lg font-semibold">
-                ${total.toLocaleString("en-AU", { minimumFractionDigits: 2 })}
-              </div>
+            <Select
+              value={milestoneFields.length.toString()}
+              onValueChange={(value) => onMilestoneCountChange(parseInt(value))}
+            >
+              <SelectTrigger className="w-24" data-testid="select-milestone-count">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                  <SelectItem key={num} value={num.toString()}>
+                    {num}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <CardTitle className="text-lg">Pricing Option</CardTitle>
+              <CardDescription>Choose how to display pricing</CardDescription>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="single-price-toggle"
+                checked={useSinglePrice}
+                onCheckedChange={(checked) => form.setValue("useSinglePrice", checked)}
+                data-testid="switch-single-price"
+              />
+              <Label htmlFor="single-price-toggle">
+                {useSinglePrice ? "Single total price" : "Itemized pricing per milestone"}
+              </Label>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {lineItemFields.map((field, itemIndex) => (
-            <div key={field.id} className="p-4 border rounded-md space-y-4">
-              <div className="flex items-center justify-between gap-4">
-                <Badge variant="outline">Item {itemIndex + 1}</Badge>
-                {lineItemFields.length > 1 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => onRemove(itemIndex)}
-                    data-testid={`button-remove-item-${itemIndex}`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
+        <CardContent>
+          <div className="text-right mb-4">
+            <div className="text-sm text-muted-foreground">Total (excl. tax)</div>
+            <div className="text-lg font-semibold" data-testid="text-subtotal">
+              ${displayTotal.toLocaleString("en-AU", { minimumFractionDigits: 2 })}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
+      {milestoneFields.map((field, index) => (
+        <Card key={field.id}>
+          <CardHeader className="pb-4">
+            <div className="flex items-center justify-between gap-4">
+              <Badge variant="outline">Milestone {index + 1}</Badge>
+              {milestoneFields.length > 1 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onRemove(index)}
+                  data-testid={`button-remove-milestone-${index}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <FormField
+              control={form.control}
+              name={`milestones.${index}.heading`}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Heading</FormLabel>
+                  <FormControl>
+                    <Input 
+                      {...field} 
+                      placeholder="e.g., Kitchen Renovation Phase 1"
+                      data-testid={`input-milestone-heading-${index}`}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name={`milestones.${index}.richDescription`}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description (Rich Text)</FormLabel>
+                  <FormControl>
+                    <Textarea 
+                      {...field} 
+                      placeholder="Detailed description of the work included in this milestone..."
+                      className="min-h-[120px]"
+                      data-testid={`input-milestone-desc-${index}`}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {!useSinglePrice && (
               <FormField
                 control={form.control}
-                name={`lineItems.${itemIndex}.heading`}
+                name={`milestones.${index}.price`}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Heading</FormLabel>
+                    <FormLabel>Price (Optional)</FormLabel>
                     <FormControl>
-                      <Input 
-                        {...field} 
-                        placeholder="e.g., Kitchen Sink Installation"
-                        data-testid={`input-item-heading-${itemIndex}`}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name={`lineItems.${itemIndex}.description`}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Short Description</FormLabel>
-                    <FormControl>
-                      <Input 
-                        {...field} 
-                        placeholder="Brief description of the work"
-                        data-testid={`input-item-desc-${itemIndex}`}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name={`lineItems.${itemIndex}.richDescription`}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Detailed Specifications (Optional)</FormLabel>
-                    <FormControl>
-                      <Textarea 
-                        {...field} 
-                        placeholder="Detailed scope of work, materials, specifications..."
-                        className="min-h-[100px]"
-                        data-testid={`input-item-rich-${itemIndex}`}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-3 gap-4">
-                <FormField
-                  control={form.control}
-                  name={`lineItems.${itemIndex}.quantity`}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Quantity</FormLabel>
-                      <FormControl>
-                        <Input 
-                          {...field}
-                          type="number"
-                          min={0.01}
-                          step={0.01}
-                          data-testid={`input-item-qty-${itemIndex}`}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name={`lineItems.${itemIndex}.unitPrice`}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Rate ($)</FormLabel>
-                      <FormControl>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">$</span>
                         <Input 
                           {...field}
                           type="number"
                           min={0}
                           step={0.01}
-                          data-testid={`input-item-rate-${itemIndex}`}
+                          className="w-40"
+                          placeholder="0.00"
+                          data-testid={`input-milestone-price-${index}`}
                         />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                      </div>
+                    </FormControl>
+                    <FormDescription>
+                      Leave blank or 0 if not priced separately
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+          </CardContent>
+        </Card>
+      ))}
 
-                <div>
-                  <FormLabel>Amount</FormLabel>
-                  <div className="h-9 flex items-center px-3 bg-muted rounded-md text-sm font-medium">
-                    ${((lineItems[itemIndex]?.quantity || 0) * (lineItems[itemIndex]?.unitPrice || 0)).toFixed(2)}
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
+      {useSinglePrice && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Total Price</CardTitle>
+            <CardDescription>Enter the single total price for all work</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FormField
+              control={form.control}
+              name="singleTotalPrice"
+              render={({ field }) => (
+                <FormItem>
+                  <FormControl>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground text-lg">$</span>
+                      <Input 
+                        {...field}
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        className="w-48 text-lg"
+                        placeholder="0.00"
+                        data-testid="input-single-total-price"
+                      />
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </CardContent>
+        </Card>
+      )}
 
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onAppend}
-            className="w-full"
-            data-testid="button-add-item"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Add Line Item
-          </Button>
-        </CardContent>
-      </Card>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={onAppend}
+        className="w-full"
+        data-testid="button-add-milestone"
+      >
+        <Plus className="mr-2 h-4 w-4" />
+        Add Milestone
+      </Button>
     </div>
   );
 }
@@ -1202,7 +1290,7 @@ function Step4Review({
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <div className="text-muted-foreground">Client</div>
-              <div className="font-medium">{data.clientName}</div>
+              <div className="font-medium" data-testid="text-review-client">{data.clientName}</div>
             </div>
             <div>
               <div className="text-muted-foreground">Email</div>
@@ -1228,7 +1316,7 @@ function Step4Review({
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <div className="text-muted-foreground">Valid Until</div>
-              <div className="font-medium">{data.validUntil || "Not specified"}</div>
+              <div className="font-medium">{data.validUntil ? format(data.validUntil, "PPP") : "Not specified"}</div>
             </div>
             <div className="col-span-2">
               <div className="text-muted-foreground">Description</div>
@@ -1240,19 +1328,22 @@ function Step4Review({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Line Items</CardTitle>
+          <CardTitle className="text-lg">Milestones</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          {data.lineItems.map((item, iIndex) => (
-            <div key={iIndex} className="flex items-center justify-between text-sm py-2 border-b last:border-b-0">
-              <div>
-                <span className="font-medium">{item.heading}</span>
-                <span className="text-muted-foreground"> - {item.description}</span>
-                <span className="text-muted-foreground ml-2">
-                  ({item.quantity} x {formatCurrency(item.unitPrice || 0)})
-                </span>
+        <CardContent className="space-y-4">
+          {data.milestones.map((milestone, index) => (
+            <div key={index} className="p-4 border rounded-md">
+              <div className="flex items-center justify-between gap-4 mb-2">
+                <div className="font-medium">{milestone.heading || `Milestone ${index + 1}`}</div>
+                {!data.useSinglePrice && milestone.price && milestone.price > 0 && (
+                  <span className="font-medium">{formatCurrency(milestone.price)}</span>
+                )}
               </div>
-              <span className="font-medium">{formatCurrency((item.quantity || 0) * (item.unitPrice || 0))}</span>
+              {milestone.richDescription && (
+                <div className="text-sm text-muted-foreground whitespace-pre-wrap">
+                  {milestone.richDescription}
+                </div>
+              )}
             </div>
           ))}
         </CardContent>
@@ -1274,7 +1365,7 @@ function Step4Review({
             </div>
             <div className="flex justify-between font-semibold text-lg border-t pt-3">
               <span>Total</span>
-              <span>{formatCurrency(total)}</span>
+              <span data-testid="text-review-total">{formatCurrency(total)}</span>
             </div>
 
             {depositType !== "none" && (
