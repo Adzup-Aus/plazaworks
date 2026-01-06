@@ -87,6 +87,19 @@ import {
   type InsertVerificationCode,
   type OrganizationInvite,
   type InsertOrganizationInvite,
+  // Client Portal types
+  type Client,
+  type InsertClient,
+  type ClientPortalAccount,
+  type InsertClientPortalAccount,
+  type ClientPortalVerificationCode,
+  type JobMilestone,
+  type InsertJobMilestone,
+  type MilestonePayment,
+  type InsertMilestonePayment,
+  type MilestoneMedia,
+  type InsertMilestoneMedia,
+  type JobMilestoneWithDetails,
   staffProfiles,
   userWorkingHours,
   jobs,
@@ -128,6 +141,13 @@ import {
   authIdentities,
   verificationCodes,
   organizationInvites,
+  // Client Portal tables
+  clients,
+  clientPortalAccounts,
+  clientPortalVerificationCodes,
+  jobMilestones,
+  milestonePayments,
+  milestoneMedia,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
@@ -365,6 +385,56 @@ export interface IStorage {
   createOrganizationInvite(invite: InsertOrganizationInvite): Promise<OrganizationInvite>;
   acceptInvite(id: string, userId: string): Promise<OrganizationInvite | undefined>;
   deleteOrganizationInvite(id: string): Promise<boolean>;
+
+  // Client operations
+  getClients(organizationId: string): Promise<Client[]>;
+  getClient(id: string): Promise<Client | undefined>;
+  getClientByEmail(organizationId: string, email: string): Promise<Client | undefined>;
+  createClient(client: InsertClient): Promise<Client>;
+  updateClient(id: string, client: Partial<InsertClient>): Promise<Client | undefined>;
+  deleteClient(id: string): Promise<boolean>;
+
+  // Client portal account operations
+  getClientPortalAccount(id: string): Promise<ClientPortalAccount | undefined>;
+  getClientPortalAccountByEmail(email: string): Promise<ClientPortalAccount | undefined>;
+  getClientPortalAccountByClientId(clientId: string): Promise<ClientPortalAccount | undefined>;
+  createClientPortalAccount(account: InsertClientPortalAccount): Promise<ClientPortalAccount>;
+  updateClientPortalAccount(id: string, account: Partial<InsertClientPortalAccount>): Promise<ClientPortalAccount | undefined>;
+  deleteClientPortalAccount(id: string): Promise<boolean>;
+
+  // Client portal verification operations
+  createClientPortalVerificationCode(portalAccountId: string | null, email: string, purpose: string): Promise<ClientPortalVerificationCode>;
+  verifyClientPortalCode(email: string, code: string, purpose: string): Promise<ClientPortalVerificationCode | undefined>;
+
+  // Job milestone operations
+  getJobMilestones(jobId: string): Promise<JobMilestone[]>;
+  getMilestone(id: string): Promise<JobMilestone | undefined>;
+  getMilestoneWithDetails(id: string): Promise<JobMilestoneWithDetails | undefined>;
+  createMilestone(milestone: InsertJobMilestone): Promise<JobMilestone>;
+  updateMilestone(id: string, milestone: Partial<InsertJobMilestone>): Promise<JobMilestone | undefined>;
+  completeMilestone(id: string, completedById: string): Promise<JobMilestone | undefined>;
+  deleteMilestone(id: string): Promise<boolean>;
+
+  // Milestone payment operations
+  getMilestonePayments(milestoneId: string): Promise<MilestonePayment[]>;
+  getMilestonePayment(id: string): Promise<MilestonePayment | undefined>;
+  getPendingPaymentsByJob(jobId: string): Promise<MilestonePayment[]>;
+  createMilestonePayment(payment: InsertMilestonePayment): Promise<MilestonePayment>;
+  updateMilestonePayment(id: string, payment: Partial<InsertMilestonePayment>): Promise<MilestonePayment | undefined>;
+  approveMilestonePayment(id: string): Promise<MilestonePayment | undefined>;
+  recordMilestonePaymentPaid(id: string, paymentMethod: string, paymentReference?: string): Promise<MilestonePayment | undefined>;
+
+  // Milestone media operations
+  getMilestoneMedia(milestoneId: string): Promise<MilestoneMedia[]>;
+  getJobMedia(jobId: string): Promise<MilestoneMedia[]>;
+  getMediaByDate(jobId: string, workDate: string): Promise<MilestoneMedia[]>;
+  createMilestoneMedia(media: InsertMilestoneMedia): Promise<MilestoneMedia>;
+  updateMilestoneMedia(id: string, media: Partial<InsertMilestoneMedia>): Promise<MilestoneMedia | undefined>;
+  deleteMilestoneMedia(id: string): Promise<boolean>;
+
+  // Client portal specific operations
+  getClientJobsForPortal(clientId: string): Promise<Job[]>;
+  getJobMilestonesForPortal(jobId: string): Promise<JobMilestoneWithDetails[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2346,6 +2416,341 @@ export class DatabaseStorage implements IStorage {
   async deleteOrganizationInvite(id: string): Promise<boolean> {
     await db.delete(organizationInvites).where(eq(organizationInvites.id, id));
     return true;
+  }
+
+  // =====================
+  // CLIENT PORTAL METHODS
+  // =====================
+
+  // Client operations
+  async getClients(organizationId: string): Promise<Client[]> {
+    return db.select().from(clients)
+      .where(eq(clients.organizationId, organizationId))
+      .orderBy(clients.lastName, clients.firstName);
+  }
+
+  async getClient(id: string): Promise<Client | undefined> {
+    const [client] = await db.select().from(clients).where(eq(clients.id, id));
+    return client;
+  }
+
+  async getClientByEmail(organizationId: string, email: string): Promise<Client | undefined> {
+    const [client] = await db.select().from(clients)
+      .where(and(
+        eq(clients.organizationId, organizationId),
+        eq(clients.email, email.toLowerCase())
+      ));
+    return client;
+  }
+
+  async createClient(client: InsertClient): Promise<Client> {
+    const [created] = await db.insert(clients).values({
+      ...client,
+      email: client.email?.toLowerCase(),
+    }).returning();
+    return created;
+  }
+
+  async updateClient(id: string, client: Partial<InsertClient>): Promise<Client | undefined> {
+    const updateData: any = { ...client, updatedAt: new Date() };
+    if (client.email) {
+      updateData.email = client.email.toLowerCase();
+    }
+    const [updated] = await db.update(clients)
+      .set(updateData)
+      .where(eq(clients.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteClient(id: string): Promise<boolean> {
+    await db.delete(clients).where(eq(clients.id, id));
+    return true;
+  }
+
+  // Client portal account operations
+  async getClientPortalAccount(id: string): Promise<ClientPortalAccount | undefined> {
+    const [account] = await db.select().from(clientPortalAccounts)
+      .where(eq(clientPortalAccounts.id, id));
+    return account;
+  }
+
+  async getClientPortalAccountByEmail(email: string): Promise<ClientPortalAccount | undefined> {
+    const [account] = await db.select().from(clientPortalAccounts)
+      .where(eq(clientPortalAccounts.email, email.toLowerCase()));
+    return account;
+  }
+
+  async getClientPortalAccountByClientId(clientId: string): Promise<ClientPortalAccount | undefined> {
+    const [account] = await db.select().from(clientPortalAccounts)
+      .where(eq(clientPortalAccounts.clientId, clientId));
+    return account;
+  }
+
+  async createClientPortalAccount(account: InsertClientPortalAccount): Promise<ClientPortalAccount> {
+    const [created] = await db.insert(clientPortalAccounts).values({
+      ...account,
+      email: account.email.toLowerCase(),
+    }).returning();
+    return created;
+  }
+
+  async updateClientPortalAccount(id: string, account: Partial<InsertClientPortalAccount>): Promise<ClientPortalAccount | undefined> {
+    const updateData: any = { ...account, updatedAt: new Date() };
+    if (account.email) {
+      updateData.email = account.email.toLowerCase();
+    }
+    const [updated] = await db.update(clientPortalAccounts)
+      .set(updateData)
+      .where(eq(clientPortalAccounts.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteClientPortalAccount(id: string): Promise<boolean> {
+    await db.delete(clientPortalAccounts).where(eq(clientPortalAccounts.id, id));
+    return true;
+  }
+
+  // Client portal verification operations
+  async createClientPortalVerificationCode(portalAccountId: string | null, email: string, purpose: string): Promise<ClientPortalVerificationCode> {
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    const [created] = await db.insert(clientPortalVerificationCodes).values({
+      portalAccountId,
+      email: email.toLowerCase(),
+      code,
+      purpose,
+      expiresAt,
+    }).returning();
+
+    return created;
+  }
+
+  async verifyClientPortalCode(email: string, code: string, purpose: string): Promise<ClientPortalVerificationCode | undefined> {
+    const [result] = await db.select().from(clientPortalVerificationCodes)
+      .where(and(
+        eq(clientPortalVerificationCodes.email, email.toLowerCase()),
+        eq(clientPortalVerificationCodes.code, code),
+        eq(clientPortalVerificationCodes.purpose, purpose),
+        gte(clientPortalVerificationCodes.expiresAt, new Date())
+      ))
+      .orderBy(desc(clientPortalVerificationCodes.createdAt));
+
+    if (result && !result.usedAt) {
+      await db.update(clientPortalVerificationCodes)
+        .set({ usedAt: new Date() })
+        .where(eq(clientPortalVerificationCodes.id, result.id));
+      return result;
+    }
+    return undefined;
+  }
+
+  // Job milestone operations
+  async getJobMilestones(jobId: string): Promise<JobMilestone[]> {
+    return db.select().from(jobMilestones)
+      .where(eq(jobMilestones.jobId, jobId))
+      .orderBy(jobMilestones.sortOrder);
+  }
+
+  async getMilestone(id: string): Promise<JobMilestone | undefined> {
+    const [milestone] = await db.select().from(jobMilestones)
+      .where(eq(jobMilestones.id, id));
+    return milestone;
+  }
+
+  async getMilestoneWithDetails(id: string): Promise<JobMilestoneWithDetails | undefined> {
+    const milestone = await this.getMilestone(id);
+    if (!milestone) return undefined;
+
+    const payments = await db.select().from(milestonePayments)
+      .where(eq(milestonePayments.milestoneId, id))
+      .orderBy(desc(milestonePayments.createdAt));
+
+    const media = await db.select().from(milestoneMedia)
+      .where(eq(milestoneMedia.milestoneId, id))
+      .orderBy(desc(milestoneMedia.createdAt));
+
+    return { ...milestone, payments, media };
+  }
+
+  async createMilestone(milestone: InsertJobMilestone): Promise<JobMilestone> {
+    const [created] = await db.insert(jobMilestones).values(milestone).returning();
+    return created;
+  }
+
+  async updateMilestone(id: string, milestone: Partial<InsertJobMilestone>): Promise<JobMilestone | undefined> {
+    const [updated] = await db.update(jobMilestones)
+      .set({ ...milestone, updatedAt: new Date() })
+      .where(eq(jobMilestones.id, id))
+      .returning();
+    return updated;
+  }
+
+  async completeMilestone(id: string, completedById: string): Promise<JobMilestone | undefined> {
+    const [updated] = await db.update(jobMilestones)
+      .set({
+        status: "completed",
+        progressPercent: 100,
+        completedAt: new Date(),
+        completedById,
+        updatedAt: new Date(),
+      })
+      .where(eq(jobMilestones.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteMilestone(id: string): Promise<boolean> {
+    await db.delete(jobMilestones).where(eq(jobMilestones.id, id));
+    return true;
+  }
+
+  // Milestone payment operations
+  async getMilestonePayments(milestoneId: string): Promise<MilestonePayment[]> {
+    return db.select().from(milestonePayments)
+      .where(eq(milestonePayments.milestoneId, milestoneId))
+      .orderBy(desc(milestonePayments.createdAt));
+  }
+
+  async getMilestonePayment(id: string): Promise<MilestonePayment | undefined> {
+    const [payment] = await db.select().from(milestonePayments)
+      .where(eq(milestonePayments.id, id));
+    return payment;
+  }
+
+  async getPendingPaymentsByJob(jobId: string): Promise<MilestonePayment[]> {
+    const milestonesForJob = await db.select({ id: jobMilestones.id })
+      .from(jobMilestones)
+      .where(eq(jobMilestones.jobId, jobId));
+
+    if (milestonesForJob.length === 0) return [];
+
+    const milestoneIds = milestonesForJob.map(m => m.id);
+
+    return db.select().from(milestonePayments)
+      .where(and(
+        sql`${milestonePayments.milestoneId} = ANY(${milestoneIds})`,
+        sql`${milestonePayments.status} IN ('pending', 'requested')`
+      ))
+      .orderBy(desc(milestonePayments.createdAt));
+  }
+
+  async createMilestonePayment(payment: InsertMilestonePayment): Promise<MilestonePayment> {
+    const [created] = await db.insert(milestonePayments).values(payment).returning();
+    return created;
+  }
+
+  async updateMilestonePayment(id: string, payment: Partial<InsertMilestonePayment>): Promise<MilestonePayment | undefined> {
+    const [updated] = await db.update(milestonePayments)
+      .set({ ...payment, updatedAt: new Date() })
+      .where(eq(milestonePayments.id, id))
+      .returning();
+    return updated;
+  }
+
+  async approveMilestonePayment(id: string): Promise<MilestonePayment | undefined> {
+    const [updated] = await db.update(milestonePayments)
+      .set({
+        status: "approved",
+        approvedByClientAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(milestonePayments.id, id))
+      .returning();
+    return updated;
+  }
+
+  async recordMilestonePaymentPaid(id: string, paymentMethod: string, paymentReference?: string): Promise<MilestonePayment | undefined> {
+    const [updated] = await db.update(milestonePayments)
+      .set({
+        status: "paid",
+        paidAt: new Date(),
+        paymentMethod,
+        paymentReference,
+        updatedAt: new Date(),
+      })
+      .where(eq(milestonePayments.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Milestone media operations
+  async getMilestoneMedia(milestoneId: string): Promise<MilestoneMedia[]> {
+    return db.select().from(milestoneMedia)
+      .where(eq(milestoneMedia.milestoneId, milestoneId))
+      .orderBy(desc(milestoneMedia.createdAt));
+  }
+
+  async getJobMedia(jobId: string): Promise<MilestoneMedia[]> {
+    return db.select().from(milestoneMedia)
+      .where(eq(milestoneMedia.jobId, jobId))
+      .orderBy(desc(milestoneMedia.createdAt));
+  }
+
+  async getMediaByDate(jobId: string, workDate: string): Promise<MilestoneMedia[]> {
+    return db.select().from(milestoneMedia)
+      .where(and(
+        eq(milestoneMedia.jobId, jobId),
+        eq(milestoneMedia.workDate, workDate)
+      ))
+      .orderBy(desc(milestoneMedia.createdAt));
+  }
+
+  async createMilestoneMedia(media: InsertMilestoneMedia): Promise<MilestoneMedia> {
+    const [created] = await db.insert(milestoneMedia).values(media).returning();
+    return created;
+  }
+
+  async updateMilestoneMedia(id: string, media: Partial<InsertMilestoneMedia>): Promise<MilestoneMedia | undefined> {
+    const [updated] = await db.select().from(milestoneMedia)
+      .where(eq(milestoneMedia.id, id));
+    
+    if (!updated) return undefined;
+
+    const [result] = await db.update(milestoneMedia)
+      .set(media)
+      .where(eq(milestoneMedia.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteMilestoneMedia(id: string): Promise<boolean> {
+    await db.delete(milestoneMedia).where(eq(milestoneMedia.id, id));
+    return true;
+  }
+
+  // Client portal specific operations
+  async getClientJobsForPortal(clientId: string): Promise<Job[]> {
+    return db.select().from(jobs)
+      .where(eq(jobs.clientId, clientId))
+      .orderBy(desc(jobs.createdAt));
+  }
+
+  async getJobMilestonesForPortal(jobId: string): Promise<JobMilestoneWithDetails[]> {
+    const milestoneList = await db.select().from(jobMilestones)
+      .where(eq(jobMilestones.jobId, jobId))
+      .orderBy(jobMilestones.sortOrder);
+
+    const milestonesWithDetails: JobMilestoneWithDetails[] = await Promise.all(
+      milestoneList.map(async (milestone) => {
+        const payments = await db.select().from(milestonePayments)
+          .where(eq(milestonePayments.milestoneId, milestone.id))
+          .orderBy(desc(milestonePayments.createdAt));
+
+        const media = await db.select().from(milestoneMedia)
+          .where(and(
+            eq(milestoneMedia.milestoneId, milestone.id),
+            eq(milestoneMedia.visibleToClient, true)
+          ))
+          .orderBy(desc(milestoneMedia.createdAt));
+
+        return { ...milestone, payments, media };
+      })
+    );
+
+    return milestonesWithDetails;
   }
 }
 
