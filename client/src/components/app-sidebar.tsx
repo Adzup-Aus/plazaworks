@@ -23,10 +23,8 @@ import {
   Wrench,
   FileText,
   Receipt,
-  Truck,
   ClipboardCheck,
   Clock,
-  DollarSign,
   BarChart3,
   Target,
   Shield,
@@ -61,11 +59,6 @@ const mainNavItems = [
     icon: Calendar,
   },
   {
-    title: "Fleet",
-    url: "/fleet",
-    icon: Truck,
-  },
-  {
     title: "Checklists",
     url: "/checklists",
     icon: ClipboardCheck,
@@ -74,11 +67,6 @@ const mainNavItems = [
     title: "Time Tracking",
     url: "/productivity",
     icon: Clock,
-  },
-  {
-    title: "Backcosting",
-    url: "/backcosting",
-    icon: DollarSign,
   },
   {
     title: "Capacity",
