@@ -34,6 +34,8 @@ import Capacity from "@/pages/capacity";
 import KpiDashboard from "@/pages/kpi-dashboard";
 import Admin from "@/pages/admin";
 import Clients from "@/pages/clients";
+import ClientPortalLogin from "@/pages/client-portal-login";
+import ClientPortalDashboard from "@/pages/client-portal-dashboard";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -115,6 +117,8 @@ function PublicRouter() {
       <Route path="/register" component={Register} />
       <Route path="/invite/:code" component={AcceptInvite} />
       <Route path="/portal/:token" component={ClientPortal} />
+      <Route path="/portal/login" component={ClientPortalLogin} />
+      <Route path="/portal/dashboard" component={ClientPortalDashboard} />
       <Route component={NotFound} />
     </Switch>
   );
