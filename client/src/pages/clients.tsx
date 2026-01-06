@@ -58,6 +58,65 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
+const COUNTRIES = [
+  { code: "AU", name: "Australia", dialCode: "+61" },
+  { code: "NZ", name: "New Zealand", dialCode: "+64" },
+  { code: "US", name: "United States", dialCode: "+1" },
+  { code: "GB", name: "United Kingdom", dialCode: "+44" },
+  { code: "CA", name: "Canada", dialCode: "+1" },
+  { code: "SG", name: "Singapore", dialCode: "+65" },
+  { code: "HK", name: "Hong Kong", dialCode: "+852" },
+  { code: "JP", name: "Japan", dialCode: "+81" },
+  { code: "KR", name: "South Korea", dialCode: "+82" },
+  { code: "CN", name: "China", dialCode: "+86" },
+  { code: "IN", name: "India", dialCode: "+91" },
+  { code: "PH", name: "Philippines", dialCode: "+63" },
+  { code: "MY", name: "Malaysia", dialCode: "+60" },
+  { code: "ID", name: "Indonesia", dialCode: "+62" },
+  { code: "TH", name: "Thailand", dialCode: "+66" },
+  { code: "VN", name: "Vietnam", dialCode: "+84" },
+  { code: "DE", name: "Germany", dialCode: "+49" },
+  { code: "FR", name: "France", dialCode: "+33" },
+  { code: "IT", name: "Italy", dialCode: "+39" },
+  { code: "ES", name: "Spain", dialCode: "+34" },
+  { code: "NL", name: "Netherlands", dialCode: "+31" },
+  { code: "IE", name: "Ireland", dialCode: "+353" },
+] as const;
+
+function stripDialCode(phone: string): string {
+  if (!phone) return "";
+  for (const country of COUNTRIES) {
+    if (phone.startsWith(country.dialCode + " ") || phone.startsWith(country.dialCode)) {
+      const stripped = phone.replace(country.dialCode, "").trim();
+      return stripped.replace(/^0+/, "");
+    }
+  }
+  return phone.replace(/^0+/, "");
+}
+
+function formatPhoneWithCountryCode(phone: string, countryCode: string): string {
+  if (!phone) return "";
+  const country = COUNTRIES.find(c => c.code === countryCode);
+  if (!country) return phone;
+  const localNumber = stripDialCode(phone);
+  if (!localNumber) return "";
+  return `${country.dialCode} ${localNumber}`;
+}
+
+function getDialCodeFromCountry(countryCode: string): string {
+  const country = COUNTRIES.find(c => c.code === countryCode);
+  return country?.dialCode || "+61";
+}
+
+function normalizeCountryCode(country: string | null): string {
+  if (!country) return "AU";
+  const foundByCode = COUNTRIES.find(c => c.code === country);
+  if (foundByCode) return foundByCode.code;
+  const foundByName = COUNTRIES.find(c => c.name.toLowerCase() === country.toLowerCase());
+  if (foundByName) return foundByName.code;
+  return "AU";
+}
+
 interface Client {
   id: string;
   organizationId: string;
@@ -135,7 +194,7 @@ export default function Clients() {
       city: "",
       state: "",
       postalCode: "",
-      country: "Australia",
+      country: "AU",
       notes: "",
     },
   });
@@ -210,14 +269,14 @@ export default function Clients() {
         lastName: client.lastName || "",
         companyName: client.companyName || "",
         email: client.email || "",
-        phone: client.phone || "",
-        mobilePhone: client.mobilePhone || "",
+        phone: stripDialCode(client.phone || ""),
+        mobilePhone: stripDialCode(client.mobilePhone || ""),
         addressLine1: client.addressLine1 || "",
         addressLine2: client.addressLine2 || "",
         city: client.city || "",
         state: client.state || "",
         postalCode: client.postalCode || "",
-        country: client.country || "Australia",
+        country: normalizeCountryCode(client.country),
         notes: client.notes || "",
       });
     } else {
@@ -228,10 +287,15 @@ export default function Clients() {
   };
 
   const onSubmit = (data: ClientFormValues) => {
+    const formattedData = {
+      ...data,
+      phone: data.phone ? formatPhoneWithCountryCode(data.phone, data.country || "AU") : "",
+      mobilePhone: data.mobilePhone ? formatPhoneWithCountryCode(data.mobilePhone, data.country || "AU") : "",
+    };
     if (editingClient) {
-      updateMutation.mutate({ id: editingClient.id, data });
+      updateMutation.mutate({ id: editingClient.id, data: formattedData });
     } else {
-      createMutation.mutate(data);
+      createMutation.mutate(formattedData);
     }
   };
 
@@ -559,11 +623,17 @@ export default function Clients() {
                     <FormItem>
                       <FormLabel>Phone</FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="+61 2 1234 5678"
-                          {...field}
-                          data-testid="input-phone"
-                        />
+                        <div className="flex gap-2">
+                          <div className="flex items-center px-3 border rounded-md bg-muted text-muted-foreground text-sm min-w-[60px] justify-center select-none">
+                            {getDialCodeFromCountry(form.watch("country") || "AU")}
+                          </div>
+                          <Input
+                            placeholder="2 1234 5678"
+                            {...field}
+                            data-testid="input-phone"
+                            className="flex-1"
+                          />
+                        </div>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -578,11 +648,17 @@ export default function Clients() {
                   <FormItem>
                     <FormLabel>Mobile Phone</FormLabel>
                     <FormControl>
-                      <Input
-                        placeholder="+61 400 123 456"
-                        {...field}
-                        data-testid="input-mobile"
-                      />
+                      <div className="flex gap-2">
+                        <div className="flex items-center px-3 border rounded-md bg-muted text-muted-foreground text-sm min-w-[60px] justify-center select-none">
+                          {getDialCodeFromCountry(form.watch("country") || "AU")}
+                        </div>
+                        <Input
+                          placeholder="400 123 456"
+                          {...field}
+                          data-testid="input-mobile"
+                          className="flex-1"
+                        />
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -689,13 +765,23 @@ export default function Clients() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Country</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Australia"
-                          {...field}
-                          data-testid="input-country"
-                        />
-                      </FormControl>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-country">
+                            <SelectValue placeholder="Select country" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {COUNTRIES.map((country) => (
+                            <SelectItem key={country.code} value={country.code}>
+                              {country.name} ({country.dialCode})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
