@@ -1,6 +1,7 @@
 import { db } from "../db";
 import { organizationCounters, organizationSettings } from "@shared/schema";
 import { eq, and, sql } from "drizzle-orm";
+import crypto from "crypto";
 
 const COUNTER_KEY = "job_invoice";
 
@@ -18,47 +19,23 @@ export async function reserveNextNumber(organizationId: string): Promise<NumberR
   const jobPrefix = settings?.jobNumberPrefix || "J-";
   const invoicePrefix = settings?.invoiceNumberPrefix || "INV-";
 
-  let counter = await db.query.organizationCounters.findFirst({
-    where: and(
-      eq(organizationCounters.organizationId, organizationId),
-      eq(organizationCounters.counterKey, COUNTER_KEY)
-    ),
-  });
+  const result = await db.execute(sql`
+    INSERT INTO organization_counters (organization_id, counter_key, next_value, prefix, pad_length, created_at, updated_at)
+    VALUES (${organizationId}, ${COUNTER_KEY}, 2, '', 4, NOW(), NOW())
+    ON CONFLICT (organization_id, counter_key)
+    DO UPDATE SET 
+      next_value = organization_counters.next_value + 1,
+      updated_at = NOW()
+    RETURNING next_value - 1 as reserved_value, pad_length
+  `);
 
-  if (!counter) {
-    const [newCounter] = await db
-      .insert(organizationCounters)
-      .values({
-        organizationId,
-        counterKey: COUNTER_KEY,
-        nextValue: 1,
-        prefix: "",
-        padLength: 4,
-      })
-      .returning();
-    counter = newCounter;
-  }
-
-  const currentValue = counter.nextValue;
-
-  await db
-    .update(organizationCounters)
-    .set({
-      nextValue: currentValue + 1,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(organizationCounters.organizationId, organizationId),
-        eq(organizationCounters.counterKey, COUNTER_KEY)
-      )
-    );
-
-  const padLength = counter.padLength || 4;
-  const paddedNumber = String(currentValue).padStart(padLength, "0");
+  const row = result.rows[0] as { reserved_value: number; pad_length: number };
+  const reservedValue = row.reserved_value;
+  const padLength = row.pad_length || 4;
+  const paddedNumber = String(reservedValue).padStart(padLength, "0");
 
   return {
-    referenceNumber: currentValue,
+    referenceNumber: reservedValue,
     jobNumber: `${jobPrefix}${paddedNumber}`,
     invoiceNumber: `${invoicePrefix}${paddedNumber}`,
   };
@@ -102,10 +79,5 @@ export function extractSuburbFromAddress(address: string): string | null {
 }
 
 export function generatePaymentLinkToken(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let token = '';
-  for (let i = 0; i < 32; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return token;
+  return crypto.randomBytes(32).toString('hex');
 }
