@@ -10,8 +10,17 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarFooter,
 } from "@/components/ui/sidebar";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { ChevronRight } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,21 +73,6 @@ const mainNavItems = [
     icon: ClipboardCheck,
   },
   {
-    title: "Time Tracking",
-    url: "/productivity",
-    icon: Clock,
-  },
-  {
-    title: "Capacity",
-    url: "/capacity",
-    icon: BarChart3,
-  },
-  {
-    title: "KPI Dashboard",
-    url: "/kpi",
-    icon: Target,
-  },
-  {
     title: "Team",
     url: "/team",
     icon: Users,
@@ -87,6 +81,24 @@ const mainNavItems = [
     title: "Clients",
     url: "/clients",
     icon: UserCircle,
+  },
+];
+
+const dashboardsNavItems = [
+  {
+    title: "KPI",
+    url: "/kpi",
+    icon: Target,
+  },
+  {
+    title: "Time Tracking",
+    url: "/productivity",
+    icon: Clock,
+  },
+  {
+    title: "Capacity",
+    url: "/capacity",
+    icon: BarChart3,
   },
 ];
 
@@ -147,6 +159,38 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+              <Collapsible
+                defaultOpen={dashboardsNavItems.some(item => location === item.url)}
+                className="group/collapsible"
+              >
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton data-testid="nav-dashboards">
+                      <BarChart3 className="h-4 w-4" />
+                      <span>Dashboards</span>
+                      <ChevronRight className="ml-auto h-4 w-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      {dashboardsNavItems.map((item) => (
+                        <SidebarMenuSubItem key={item.title}>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={location === item.url}
+                            data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                          >
+                            <Link href={item.url}>
+                              <item.icon className="h-4 w-4" />
+                              <span>{item.title}</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </SidebarMenuItem>
+              </Collapsible>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
