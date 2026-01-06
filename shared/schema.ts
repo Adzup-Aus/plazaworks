@@ -1,10 +1,263 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, boolean, date, index, integer, decimal, json } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, boolean, date, index, integer, decimal, json, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // Re-export auth models
 export * from "./models/auth";
+
+// =====================
+// MULTI-TENANT ACCESS CONTROL
+// =====================
+
+// Organization types
+export const organizationTypes = ["owner", "primary", "customer"] as const;
+export type OrganizationType = typeof organizationTypes[number];
+
+// Subscription tiers
+export const subscriptionTiers = ["starter", "professional", "scale"] as const;
+export type SubscriptionTier = typeof subscriptionTiers[number];
+
+// Subscription statuses
+export const subscriptionStatuses = ["active", "cancelled", "past_due", "trialing"] as const;
+export type SubscriptionStatus = typeof subscriptionStatuses[number];
+
+// Organization member roles
+export const orgMemberRoles = ["owner", "admin", "manager", "staff", "contractor"] as const;
+export type OrgMemberRole = typeof orgMemberRoles[number];
+
+// Auth identity types
+export const authIdentityTypes = ["replit", "email", "phone"] as const;
+export type AuthIdentityType = typeof authIdentityTypes[number];
+
+// Organizations table
+export const organizations = pgTable("organizations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 255 }).notNull(),
+  slug: varchar("slug", { length: 100 }).notNull().unique(),
+  type: varchar("type", { length: 20 }).notNull().default("customer"),
+  isOwner: boolean("is_owner").notNull().default(false),
+  logoUrl: varchar("logo_url", { length: 500 }),
+  address: text("address"),
+  phone: varchar("phone", { length: 50 }),
+  email: varchar("email", { length: 255 }),
+  website: varchar("website", { length: 255 }),
+  timezone: varchar("timezone", { length: 50 }).default("Australia/Brisbane"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_org_slug").on(table.slug),
+  index("idx_org_type").on(table.type),
+  index("idx_org_active").on(table.isActive),
+]);
+
+// Organization subscriptions table
+export const organizationSubscriptions = pgTable("organization_subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  tier: varchar("tier", { length: 20 }).notNull().default("starter"),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  maxUsers: integer("max_users").default(3),
+  maxJobs: integer("max_jobs"),
+  features: text("features").array().default(sql`ARRAY[]::text[]`),
+  startDate: timestamp("start_date").defaultNow(),
+  endDate: timestamp("end_date"),
+  renewalDate: timestamp("renewal_date"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  unique("uniq_sub_org").on(table.organizationId),
+  index("idx_sub_org").on(table.organizationId),
+  index("idx_sub_tier").on(table.tier),
+  index("idx_sub_status").on(table.status),
+]);
+
+// Organization members table - links users to organizations
+export const organizationMembers = pgTable("organization_members", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull(),
+  role: varchar("role", { length: 20 }).notNull().default("staff"),
+  isLocked: boolean("is_locked").notNull().default(false),
+  invitedBy: varchar("invited_by"),
+  invitedAt: timestamp("invited_at"),
+  joinedAt: timestamp("joined_at").defaultNow(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  unique("uniq_member_org_user").on(table.organizationId, table.userId),
+  index("idx_member_org").on(table.organizationId),
+  index("idx_member_user").on(table.userId),
+  index("idx_member_role").on(table.role),
+]);
+
+// Auth identities table - supports multiple auth methods per user
+export const authIdentities = pgTable("auth_identities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  type: varchar("type", { length: 20 }).notNull(),
+  identifier: varchar("identifier", { length: 255 }).notNull(),
+  passwordHash: varchar("password_hash", { length: 255 }),
+  isVerified: boolean("is_verified").notNull().default(false),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  lastUsedAt: timestamp("last_used_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  unique("uniq_identity_type_identifier").on(table.type, table.identifier),
+  index("idx_identity_user").on(table.userId),
+  index("idx_identity_type").on(table.type),
+  index("idx_identity_identifier").on(table.identifier),
+]);
+
+// Verification codes table - for OTP
+export const verificationCodes = pgTable("verification_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  identityId: varchar("identity_id").references(() => authIdentities.id, { onDelete: "cascade" }),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 50 }),
+  code: varchar("code", { length: 10 }).notNull(),
+  purpose: varchar("purpose", { length: 20 }).notNull().default("login"),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_verify_identity").on(table.identityId),
+  index("idx_verify_email").on(table.email),
+  index("idx_verify_phone").on(table.phone),
+  index("idx_verify_code").on(table.code),
+]);
+
+// Organization invites table
+export const organizationInvites = pgTable("organization_invites", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 50 }),
+  role: varchar("role", { length: 20 }).notNull().default("staff"),
+  inviteCode: varchar("invite_code", { length: 20 }).notNull().unique(),
+  invitedBy: varchar("invited_by").notNull(),
+  expiresAt: timestamp("expires_at"),
+  acceptedAt: timestamp("accepted_at"),
+  acceptedBy: varchar("accepted_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_invite_org").on(table.organizationId),
+  index("idx_invite_code").on(table.inviteCode),
+  index("idx_invite_email").on(table.email),
+]);
+
+// Multi-tenant relations
+export const organizationsRelations = relations(organizations, ({ many, one }) => ({
+  subscription: one(organizationSubscriptions, {
+    fields: [organizations.id],
+    references: [organizationSubscriptions.organizationId],
+  }),
+  members: many(organizationMembers),
+  invites: many(organizationInvites),
+}));
+
+export const organizationSubscriptionsRelations = relations(organizationSubscriptions, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [organizationSubscriptions.organizationId],
+    references: [organizations.id],
+  }),
+}));
+
+export const organizationMembersRelations = relations(organizationMembers, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [organizationMembers.organizationId],
+    references: [organizations.id],
+  }),
+}));
+
+export const organizationInvitesRelations = relations(organizationInvites, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [organizationInvites.organizationId],
+    references: [organizations.id],
+  }),
+}));
+
+// Multi-tenant insert schemas
+export const insertOrganizationSchema = createInsertSchema(organizations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertOrganizationSubscriptionSchema = createInsertSchema(organizationSubscriptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertOrganizationMemberSchema = createInsertSchema(organizationMembers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAuthIdentitySchema = createInsertSchema(authIdentities).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertVerificationCodeSchema = createInsertSchema(verificationCodes).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertOrganizationInviteSchema = createInsertSchema(organizationInvites).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Multi-tenant types
+export type Organization = typeof organizations.$inferSelect;
+export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
+
+export type OrganizationSubscription = typeof organizationSubscriptions.$inferSelect;
+export type InsertOrganizationSubscription = z.infer<typeof insertOrganizationSubscriptionSchema>;
+
+export type OrganizationMember = typeof organizationMembers.$inferSelect;
+export type InsertOrganizationMember = z.infer<typeof insertOrganizationMemberSchema>;
+
+export type AuthIdentity = typeof authIdentities.$inferSelect;
+export type InsertAuthIdentity = z.infer<typeof insertAuthIdentitySchema>;
+
+export type VerificationCode = typeof verificationCodes.$inferSelect;
+export type InsertVerificationCode = z.infer<typeof insertVerificationCodeSchema>;
+
+export type OrganizationInvite = typeof organizationInvites.$inferSelect;
+export type InsertOrganizationInvite = z.infer<typeof insertOrganizationInviteSchema>;
+
+// Tier configuration - defines feature limits per tier
+export const TIER_CONFIG = {
+  starter: {
+    name: "Starter",
+    price: 0,
+    maxUsers: 3,
+    maxJobs: 50,
+    features: ["jobs", "schedule", "basic_reports"],
+  },
+  professional: {
+    name: "Professional",
+    price: 99,
+    maxUsers: 15,
+    maxJobs: 500,
+    features: ["jobs", "schedule", "quotes", "invoices", "vehicles", "checklists", "time_tracking", "reports"],
+  },
+  scale: {
+    name: "Scale",
+    price: 249,
+    maxUsers: null,
+    maxJobs: null,
+    features: ["jobs", "schedule", "quotes", "invoices", "vehicles", "checklists", "time_tracking", "backcosting", "kpi", "capacity_planning", "api_access", "priority_support", "reports"],
+  },
+} as const;
 
 // User roles enum
 export const userRoles = [
@@ -75,6 +328,7 @@ export type SalaryType = typeof salaryTypes[number];
 export const staffProfiles = pgTable("staff_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().unique(),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   roles: text("roles").array().notNull().default(sql`ARRAY['plumber']::text[]`),
   employmentType: varchar("employment_type", { length: 20 }).notNull().default("permanent"),
   permissions: text("permissions").array().notNull().default(sql`ARRAY[]::text[]`),
@@ -103,12 +357,14 @@ export const staffProfiles = pgTable("staff_profiles", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("idx_staff_user_id").on(table.userId),
+  index("idx_staff_org").on(table.organizationId),
   index("idx_staff_active").on(table.isActive),
 ]);
 
 // Jobs table
 export const jobs = pgTable("jobs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   clientName: varchar("client_name", { length: 255 }).notNull(),
   clientEmail: varchar("client_email", { length: 255 }),
   clientPhone: varchar("client_phone", { length: 50 }),
@@ -123,6 +379,7 @@ export const jobs = pgTable("jobs", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
+  index("idx_jobs_org").on(table.organizationId),
   index("idx_jobs_status").on(table.status),
   index("idx_jobs_type").on(table.jobType),
   index("idx_jobs_created").on(table.createdAt),
@@ -427,6 +684,7 @@ export type PaymentMethod = typeof paymentMethods[number];
 // Quotes table
 export const quotes = pgTable("quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   quoteNumber: varchar("quote_number", { length: 50 }).notNull().unique(),
   clientName: varchar("client_name", { length: 255 }).notNull(),
   clientEmail: varchar("client_email", { length: 255 }),
@@ -458,6 +716,7 @@ export const quotes = pgTable("quotes", {
 // Invoices table
 export const invoices = pgTable("invoices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   invoiceNumber: varchar("invoice_number", { length: 50 }).notNull().unique(),
   jobId: varchar("job_id").references(() => jobs.id, { onDelete: "set null" }),
   quoteId: varchar("quote_id").references(() => quotes.id, { onDelete: "set null" }),
@@ -668,6 +927,7 @@ export type MaintenanceStatus = typeof maintenanceStatuses[number];
 // Vehicles table
 export const vehicles = pgTable("vehicles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   registrationNumber: varchar("registration_number", { length: 20 }).notNull().unique(),
   make: varchar("make", { length: 100 }).notNull(),
   model: varchar("model", { length: 100 }).notNull(),
@@ -704,6 +964,7 @@ export const vehicleAssignments = pgTable("vehicle_assignments", {
 // Checklist templates - reusable checklist definitions
 export const checklistTemplates = pgTable("checklist_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 200 }).notNull(),
   description: text("description"),
   target: varchar("target", { length: 50 }).notNull().default("vehicle"),
