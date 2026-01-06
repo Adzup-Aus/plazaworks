@@ -150,7 +150,7 @@ import {
   milestoneMedia,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sql, inArray } from "drizzle-orm";
 import crypto from "crypto";
 
 export interface IStorage {
@@ -2446,15 +2446,15 @@ export class DatabaseStorage implements IStorage {
   async createClient(client: InsertClient): Promise<Client> {
     const [created] = await db.insert(clients).values({
       ...client,
-      email: client.email?.toLowerCase(),
+      email: client.email ? client.email.toLowerCase() : null,
     }).returning();
     return created;
   }
 
   async updateClient(id: string, client: Partial<InsertClient>): Promise<Client | undefined> {
     const updateData: any = { ...client, updatedAt: new Date() };
-    if (client.email) {
-      updateData.email = client.email.toLowerCase();
+    if (client.email !== undefined) {
+      updateData.email = client.email ? client.email.toLowerCase() : null;
     }
     const [updated] = await db.update(clients)
       .set(updateData)
@@ -2631,8 +2631,8 @@ export class DatabaseStorage implements IStorage {
 
     return db.select().from(milestonePayments)
       .where(and(
-        sql`${milestonePayments.milestoneId} = ANY(${milestoneIds})`,
-        sql`${milestonePayments.status} IN ('pending', 'requested')`
+        inArray(milestonePayments.milestoneId, milestoneIds),
+        inArray(milestonePayments.status, ["pending", "requested"])
       ))
       .orderBy(desc(milestonePayments.createdAt));
   }

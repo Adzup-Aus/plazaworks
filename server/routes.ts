@@ -24,6 +24,13 @@ import {
   insertJobCostEntrySchema,
   insertStaffCapacityRuleSchema,
   insertStaffTimeOffSchema,
+  insertClientSchema,
+  insertJobMilestoneSchema,
+  insertMilestonePaymentSchema,
+  insertMilestoneMediaSchema,
+  clientTypes,
+  milestoneStatuses,
+  milestonePaymentStatuses,
   userRoles, 
   employmentTypes, 
   userPermissions,
@@ -3506,6 +3513,557 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("Error toggling checklist item:", err);
       res.status(500).json({ message: "Failed to toggle checklist item" });
+    }
+  });
+
+  // =====================
+  // CLIENT PORTAL - CLIENT MANAGEMENT (Staff Side)
+  // =====================
+
+  // Get all clients for the organization
+  app.get("/api/clients", isAuthenticated, async (req: any, res) => {
+    try {
+      const organizationId = req.organizationId;
+      if (!organizationId) {
+        return res.status(400).json({ message: "Organization context required" });
+      }
+      const clientList = await storage.getClients(organizationId);
+      res.json(clientList);
+    } catch (err: any) {
+      console.error("Error fetching clients:", err);
+      res.status(500).json({ message: "Failed to fetch clients" });
+    }
+  });
+
+  // Get single client
+  app.get("/api/clients/:id", isAuthenticated, async (req, res) => {
+    try {
+      const client = await storage.getClient(req.params.id);
+      if (!client) {
+        return res.status(404).json({ message: "Client not found" });
+      }
+      res.json(client);
+    } catch (err: any) {
+      console.error("Error fetching client:", err);
+      res.status(500).json({ message: "Failed to fetch client" });
+    }
+  });
+
+  // Create client
+  app.post("/api/clients", isAuthenticated, async (req: any, res) => {
+    try {
+      const organizationId = req.organizationId;
+      if (!organizationId) {
+        return res.status(400).json({ message: "Organization context required" });
+      }
+      
+      const parsed = insertClientSchema.safeParse({ ...req.body, organizationId });
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid client data", errors: parsed.error.issues });
+      }
+      
+      const client = await storage.createClient(parsed.data);
+      res.status(201).json(client);
+    } catch (err: any) {
+      console.error("Error creating client:", err);
+      res.status(500).json({ message: "Failed to create client" });
+    }
+  });
+
+  // Update client
+  app.patch("/api/clients/:id", isAuthenticated, async (req, res) => {
+    try {
+      const updated = await storage.updateClient(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ message: "Client not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating client:", err);
+      res.status(500).json({ message: "Failed to update client" });
+    }
+  });
+
+  // Delete client
+  app.delete("/api/clients/:id", isAuthenticated, async (req, res) => {
+    try {
+      await storage.deleteClient(req.params.id);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error deleting client:", err);
+      res.status(500).json({ message: "Failed to delete client" });
+    }
+  });
+
+  // Enable/disable portal access for a client
+  app.post("/api/clients/:id/portal-access", isAuthenticated, async (req, res) => {
+    try {
+      const { enabled } = req.body;
+      const client = await storage.getClient(req.params.id);
+      if (!client) {
+        return res.status(404).json({ message: "Client not found" });
+      }
+
+      // If enabling, ensure client has an email and create portal account if needed
+      if (enabled) {
+        if (!client.email) {
+          return res.status(400).json({ message: "Client must have an email to enable portal access" });
+        }
+        
+        // Check if portal account exists
+        let portalAccount = await storage.getClientPortalAccountByClientId(client.id);
+        if (!portalAccount) {
+          portalAccount = await storage.createClientPortalAccount({
+            clientId: client.id,
+            email: client.email,
+          });
+        }
+      }
+
+      const updated = await storage.updateClient(req.params.id, { portalEnabled: enabled });
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating portal access:", err);
+      res.status(500).json({ message: "Failed to update portal access" });
+    }
+  });
+
+  // =====================
+  // CLIENT PORTAL - JOB MILESTONES
+  // =====================
+
+  // Get milestones for a job
+  app.get("/api/jobs/:jobId/milestones", isAuthenticated, async (req, res) => {
+    try {
+      const milestones = await storage.getJobMilestones(req.params.jobId);
+      res.json(milestones);
+    } catch (err: any) {
+      console.error("Error fetching milestones:", err);
+      res.status(500).json({ message: "Failed to fetch milestones" });
+    }
+  });
+
+  // Get milestone with details
+  app.get("/api/milestones/:id", isAuthenticated, async (req, res) => {
+    try {
+      const milestone = await storage.getMilestoneWithDetails(req.params.id);
+      if (!milestone) {
+        return res.status(404).json({ message: "Milestone not found" });
+      }
+      res.json(milestone);
+    } catch (err: any) {
+      console.error("Error fetching milestone:", err);
+      res.status(500).json({ message: "Failed to fetch milestone" });
+    }
+  });
+
+  // Create milestone
+  app.post("/api/jobs/:jobId/milestones", isAuthenticated, async (req, res) => {
+    try {
+      const parsed = insertJobMilestoneSchema.safeParse({ ...req.body, jobId: req.params.jobId });
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid milestone data", errors: parsed.error.issues });
+      }
+      
+      const milestone = await storage.createMilestone(parsed.data);
+      res.status(201).json(milestone);
+    } catch (err: any) {
+      console.error("Error creating milestone:", err);
+      res.status(500).json({ message: "Failed to create milestone" });
+    }
+  });
+
+  // Update milestone
+  app.patch("/api/milestones/:id", isAuthenticated, async (req, res) => {
+    try {
+      const updated = await storage.updateMilestone(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ message: "Milestone not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating milestone:", err);
+      res.status(500).json({ message: "Failed to update milestone" });
+    }
+  });
+
+  // Complete milestone
+  app.post("/api/milestones/:id/complete", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const staffProfile = await storage.getStaffProfileByUserId(userId);
+      
+      const updated = await storage.completeMilestone(req.params.id, staffProfile?.id || userId);
+      if (!updated) {
+        return res.status(404).json({ message: "Milestone not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error completing milestone:", err);
+      res.status(500).json({ message: "Failed to complete milestone" });
+    }
+  });
+
+  // Delete milestone
+  app.delete("/api/milestones/:id", isAuthenticated, async (req, res) => {
+    try {
+      await storage.deleteMilestone(req.params.id);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error deleting milestone:", err);
+      res.status(500).json({ message: "Failed to delete milestone" });
+    }
+  });
+
+  // =====================
+  // CLIENT PORTAL - MILESTONE PAYMENTS
+  // =====================
+
+  // Get payments for a milestone
+  app.get("/api/milestones/:milestoneId/payments", isAuthenticated, async (req, res) => {
+    try {
+      const payments = await storage.getMilestonePayments(req.params.milestoneId);
+      res.json(payments);
+    } catch (err: any) {
+      console.error("Error fetching payments:", err);
+      res.status(500).json({ message: "Failed to fetch payments" });
+    }
+  });
+
+  // Get pending payments for a job
+  app.get("/api/jobs/:jobId/pending-payments", isAuthenticated, async (req, res) => {
+    try {
+      const payments = await storage.getPendingPaymentsByJob(req.params.jobId);
+      res.json(payments);
+    } catch (err: any) {
+      console.error("Error fetching pending payments:", err);
+      res.status(500).json({ message: "Failed to fetch pending payments" });
+    }
+  });
+
+  // Create milestone payment
+  app.post("/api/milestones/:milestoneId/payments", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const staffProfile = await storage.getStaffProfileByUserId(userId);
+      
+      const parsed = insertMilestonePaymentSchema.safeParse({
+        ...req.body,
+        milestoneId: req.params.milestoneId,
+        requestedAt: new Date(),
+        requestedById: staffProfile?.id,
+      });
+      
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid payment data", errors: parsed.error.issues });
+      }
+      
+      const payment = await storage.createMilestonePayment(parsed.data);
+      res.status(201).json(payment);
+    } catch (err: any) {
+      console.error("Error creating payment:", err);
+      res.status(500).json({ message: "Failed to create payment" });
+    }
+  });
+
+  // Update milestone payment
+  app.patch("/api/milestone-payments/:id", isAuthenticated, async (req, res) => {
+    try {
+      const updated = await storage.updateMilestonePayment(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ message: "Payment not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating payment:", err);
+      res.status(500).json({ message: "Failed to update payment" });
+    }
+  });
+
+  // Record payment as paid (staff marks payment received)
+  app.post("/api/milestone-payments/:id/paid", isAuthenticated, async (req, res) => {
+    try {
+      const { paymentMethod, paymentReference } = req.body;
+      const updated = await storage.recordMilestonePaymentPaid(req.params.id, paymentMethod, paymentReference);
+      if (!updated) {
+        return res.status(404).json({ message: "Payment not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error recording payment:", err);
+      res.status(500).json({ message: "Failed to record payment" });
+    }
+  });
+
+  // =====================
+  // CLIENT PORTAL - MILESTONE MEDIA
+  // =====================
+
+  // Get media for a milestone
+  app.get("/api/milestones/:milestoneId/media", isAuthenticated, async (req, res) => {
+    try {
+      const media = await storage.getMilestoneMedia(req.params.milestoneId);
+      res.json(media);
+    } catch (err: any) {
+      console.error("Error fetching media:", err);
+      res.status(500).json({ message: "Failed to fetch media" });
+    }
+  });
+
+  // Get all media for a job
+  app.get("/api/jobs/:jobId/media", isAuthenticated, async (req, res) => {
+    try {
+      const media = await storage.getJobMedia(req.params.jobId);
+      res.json(media);
+    } catch (err: any) {
+      console.error("Error fetching job media:", err);
+      res.status(500).json({ message: "Failed to fetch job media" });
+    }
+  });
+
+  // Create milestone media (photo or note)
+  app.post("/api/milestones/:milestoneId/media", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const staffProfile = await storage.getStaffProfileByUserId(userId);
+      
+      // Get the milestone to find the jobId
+      const milestone = await storage.getMilestone(req.params.milestoneId);
+      if (!milestone) {
+        return res.status(404).json({ message: "Milestone not found" });
+      }
+      
+      const parsed = insertMilestoneMediaSchema.safeParse({
+        ...req.body,
+        milestoneId: req.params.milestoneId,
+        jobId: milestone.jobId,
+        uploadedById: staffProfile?.id,
+        workDate: req.body.workDate || new Date().toISOString().split('T')[0],
+      });
+      
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid media data", errors: parsed.error.issues });
+      }
+      
+      const media = await storage.createMilestoneMedia(parsed.data);
+      res.status(201).json(media);
+    } catch (err: any) {
+      console.error("Error creating media:", err);
+      res.status(500).json({ message: "Failed to create media" });
+    }
+  });
+
+  // Update media visibility
+  app.patch("/api/milestone-media/:id", isAuthenticated, async (req, res) => {
+    try {
+      const updated = await storage.updateMilestoneMedia(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ message: "Media not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating media:", err);
+      res.status(500).json({ message: "Failed to update media" });
+    }
+  });
+
+  // Delete media
+  app.delete("/api/milestone-media/:id", isAuthenticated, async (req, res) => {
+    try {
+      await storage.deleteMilestoneMedia(req.params.id);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error deleting media:", err);
+      res.status(500).json({ message: "Failed to delete media" });
+    }
+  });
+
+  // =====================
+  // CLIENT PORTAL - CLIENT AUTHENTICATION
+  // =====================
+
+  // Client portal login - request OTP
+  app.post("/api/client-portal/auth/request-otp", async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+
+      // Check if client portal account exists
+      const portalAccount = await storage.getClientPortalAccountByEmail(email);
+      if (!portalAccount) {
+        // Don't reveal if account exists for security
+        console.log(`Client portal OTP requested for unknown email: ${email}`);
+        return res.json({ success: true, message: "If this email is registered, you will receive a login code" });
+      }
+
+      // Check if portal access is enabled
+      const client = await storage.getClient(portalAccount.clientId);
+      if (!client?.portalEnabled) {
+        console.log(`Client portal OTP requested for disabled portal: ${email}`);
+        return res.json({ success: true, message: "If this email is registered, you will receive a login code" });
+      }
+
+      // Create verification code
+      const verificationCode = await storage.createClientPortalVerificationCode(
+        portalAccount.id,
+        email,
+        "login"
+      );
+
+      // Log the code (in production, this would be sent via email/SMS)
+      console.log(`[CLIENT PORTAL] OTP code for ${email}: ${verificationCode.code}`);
+
+      res.json({ success: true, message: "If this email is registered, you will receive a login code" });
+    } catch (err: any) {
+      console.error("Error requesting client portal OTP:", err);
+      res.status(500).json({ message: "Failed to request login code" });
+    }
+  });
+
+  // Client portal login - verify OTP
+  app.post("/api/client-portal/auth/verify-otp", async (req, res) => {
+    try {
+      const { email, code } = req.body;
+      if (!email || !code) {
+        return res.status(400).json({ message: "Email and code are required" });
+      }
+
+      // Verify the code
+      const verification = await storage.verifyClientPortalCode(email, code, "login");
+      if (!verification) {
+        return res.status(401).json({ message: "Invalid or expired code" });
+      }
+
+      // Get portal account
+      const portalAccount = await storage.getClientPortalAccountByEmail(email);
+      if (!portalAccount) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      // Get client
+      const client = await storage.getClient(portalAccount.clientId);
+      if (!client?.portalEnabled) {
+        return res.status(403).json({ message: "Portal access is not enabled" });
+      }
+
+      // Update last login
+      await storage.updateClientPortalAccount(portalAccount.id, {
+        isVerified: true,
+        lastLoginAt: new Date(),
+      });
+
+      // Create session (simplified - in production use proper session management)
+      // For now, return client info that frontend can store
+      res.json({
+        success: true,
+        client: {
+          id: client.id,
+          firstName: client.firstName,
+          lastName: client.lastName,
+          email: client.email,
+          portalAccountId: portalAccount.id,
+        },
+      });
+    } catch (err: any) {
+      console.error("Error verifying client portal OTP:", err);
+      res.status(500).json({ message: "Failed to verify login code" });
+    }
+  });
+
+  // =====================
+  // CLIENT PORTAL - CLIENT-FACING API
+  // =====================
+
+  // Get client's jobs (for portal view)
+  app.get("/api/client-portal/jobs", async (req: any, res) => {
+    try {
+      const clientId = req.headers['x-client-id'];
+      if (!clientId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const client = await storage.getClient(clientId as string);
+      if (!client?.portalEnabled) {
+        return res.status(403).json({ message: "Portal access not enabled" });
+      }
+
+      const jobs = await storage.getClientJobsForPortal(clientId as string);
+      res.json(jobs);
+    } catch (err: any) {
+      console.error("Error fetching client portal jobs:", err);
+      res.status(500).json({ message: "Failed to fetch jobs" });
+    }
+  });
+
+  // Get job timeline with milestones (for portal view)
+  app.get("/api/client-portal/jobs/:jobId/timeline", async (req: any, res) => {
+    try {
+      const clientId = req.headers['x-client-id'];
+      if (!clientId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      // Verify job belongs to client
+      const job = await storage.getJob(req.params.jobId);
+      if (!job || job.clientId !== clientId) {
+        return res.status(404).json({ message: "Job not found" });
+      }
+
+      const milestones = await storage.getJobMilestonesForPortal(req.params.jobId);
+      
+      // Format timeline data
+      const timeline = milestones.map(m => ({
+        id: m.id,
+        title: m.title,
+        description: m.description,
+        status: m.status,
+        progressPercent: m.progressPercent,
+        scheduledStartDate: m.scheduledStartDate,
+        scheduledEndDate: m.scheduledEndDate,
+        completedAt: m.completedAt,
+        payments: m.payments,
+        mediaCount: m.media.length,
+        recentMedia: m.media.slice(0, 4),
+      }));
+
+      res.json({ job, timeline });
+    } catch (err: any) {
+      console.error("Error fetching client portal timeline:", err);
+      res.status(500).json({ message: "Failed to fetch timeline" });
+    }
+  });
+
+  // Client approves a payment request
+  app.post("/api/client-portal/payments/:id/approve", async (req: any, res) => {
+    try {
+      const clientId = req.headers['x-client-id'];
+      if (!clientId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      // Verify payment belongs to client's job
+      const payment = await storage.getMilestonePayment(req.params.id);
+      if (!payment) {
+        return res.status(404).json({ message: "Payment not found" });
+      }
+
+      const milestone = await storage.getMilestone(payment.milestoneId);
+      if (!milestone) {
+        return res.status(404).json({ message: "Milestone not found" });
+      }
+
+      const job = await storage.getJob(milestone.jobId);
+      if (!job || job.clientId !== clientId) {
+        return res.status(403).json({ message: "Not authorized to approve this payment" });
+      }
+
+      const updated = await storage.approveMilestonePayment(req.params.id);
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error approving payment:", err);
+      res.status(500).json({ message: "Failed to approve payment" });
     }
   });
 
