@@ -144,10 +144,11 @@ const quoteWizardSchema = z.object({
   validUntil: z.date().optional(),
   notes: z.string().optional(),
   taxRate: z.coerce.number().min(0).max(100).optional(),
+  isPriceInclusive: z.boolean().default(false),
   depositType: z.enum(["none", "percentage", "fixed"]).default("none"),
   depositPercentage: z.coerce.number().min(0).max(100).optional(),
   depositAmount: z.coerce.number().min(0).optional(),
-  useSinglePrice: z.boolean().default(false),
+  useSinglePrice: z.boolean().default(true),
   singleTotalPrice: z.coerce.number().min(0).optional(),
   milestones: z.array(milestoneSchema).min(1, "At least one milestone is required"),
 });
@@ -221,10 +222,11 @@ export default function QuoteWizard() {
       validUntil: undefined,
       notes: "",
       taxRate: 10,
+      isPriceInclusive: false,
       depositType: "none",
       depositPercentage: 20,
       depositAmount: 0,
-      useSinglePrice: false,
+      useSinglePrice: true,
       singleTotalPrice: 0,
       milestones: [
         { heading: "", richDescription: "", price: 0 }
@@ -301,11 +303,26 @@ export default function QuoteWizard() {
   const createMutation = useMutation({
     mutationFn: async (data: QuoteWizardValues) => {
       const useSinglePrice = data.useSinglePrice;
-      const subtotal = useSinglePrice 
+      const isPriceInclusive = data.isPriceInclusive;
+      const taxRate = data.taxRate || 10;
+      
+      const enteredPrice = useSinglePrice 
         ? (data.singleTotalPrice || 0)
         : data.milestones.reduce((sum, m) => sum + (m.price || 0), 0);
-      const taxAmount = subtotal * ((data.taxRate || 0) / 100);
-      const total = subtotal + taxAmount;
+      
+      let subtotal: number;
+      let taxAmount: number;
+      let total: number;
+      
+      if (isPriceInclusive) {
+        total = enteredPrice;
+        subtotal = total / (1 + taxRate / 100);
+        taxAmount = total - subtotal;
+      } else {
+        subtotal = enteredPrice;
+        taxAmount = subtotal * (taxRate / 100);
+        total = subtotal + taxAmount;
+      }
 
       const response = await apiRequest("POST", "/api/quotes", {
         clientId: data.clientId,
@@ -421,13 +438,27 @@ export default function QuoteWizard() {
     const useSinglePrice = form.watch("useSinglePrice");
     const singleTotalPrice = parseFloat(String(form.watch("singleTotalPrice"))) || 0;
     const taxRate = parseFloat(String(form.watch("taxRate"))) || 10;
+    const isPriceInclusive = form.watch("isPriceInclusive");
     
-    const subtotal = useSinglePrice 
+    const enteredPrice = useSinglePrice 
       ? singleTotalPrice
       : milestones.reduce((sum, m) => sum + (parseFloat(String(m.price)) || 0), 0);
-    const taxAmount = subtotal * (taxRate / 100);
-    const total = subtotal + taxAmount;
-    return { subtotal, taxAmount, total };
+    
+    let subtotal: number;
+    let taxAmount: number;
+    let total: number;
+    
+    if (isPriceInclusive) {
+      total = enteredPrice;
+      subtotal = total / (1 + taxRate / 100);
+      taxAmount = total - subtotal;
+    } else {
+      subtotal = enteredPrice;
+      taxAmount = subtotal * (taxRate / 100);
+      total = subtotal + taxAmount;
+    }
+    
+    return { subtotal, taxAmount, total, isPriceInclusive };
   };
 
   return (
@@ -1102,22 +1133,37 @@ function Step3Milestones({
               <CardTitle className="text-lg">Pricing Option</CardTitle>
               <CardDescription>Choose how to display pricing</CardDescription>
             </div>
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="single-price-toggle"
-                checked={useSinglePrice}
-                onCheckedChange={(checked) => form.setValue("useSinglePrice", checked)}
-                data-testid="switch-single-price"
-              />
-              <Label htmlFor="single-price-toggle">
-                {useSinglePrice ? "Single total price" : "Itemized pricing per milestone"}
-              </Label>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="single-price-toggle"
+                  checked={useSinglePrice}
+                  onCheckedChange={(checked) => form.setValue("useSinglePrice", checked)}
+                  data-testid="switch-single-price"
+                />
+                <Label htmlFor="single-price-toggle">
+                  {useSinglePrice ? "Single total price" : "Itemized pricing per milestone"}
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="tax-inclusive-toggle"
+                  checked={form.watch("isPriceInclusive")}
+                  onCheckedChange={(checked) => form.setValue("isPriceInclusive", checked)}
+                  data-testid="switch-tax-inclusive"
+                />
+                <Label htmlFor="tax-inclusive-toggle">
+                  {form.watch("isPriceInclusive") ? "Price includes tax" : "Price excludes tax"}
+                </Label>
+              </div>
             </div>
           </div>
         </CardHeader>
         <CardContent>
           <div className="text-right mb-4">
-            <div className="text-sm text-muted-foreground">Total (excl. tax)</div>
+            <div className="text-sm text-muted-foreground">
+              {form.watch("isPriceInclusive") ? "Total (incl. tax)" : "Total (excl. tax)"}
+            </div>
             <div className="text-lg font-semibold" data-testid="text-subtotal">
               ${displayTotal.toLocaleString("en-AU", { minimumFractionDigits: 2 })}
             </div>
@@ -1268,11 +1314,11 @@ function Step4Review({
   formatCurrency
 }: { 
   form: ReturnType<typeof useForm<QuoteWizardValues>>;
-  calculateTotals: () => { subtotal: number; taxAmount: number; total: number };
+  calculateTotals: () => { subtotal: number; taxAmount: number; total: number; isPriceInclusive: boolean };
   formatCurrency: (value: number) => string;
 }) {
   const data = form.watch();
-  const { subtotal, taxAmount, total } = calculateTotals();
+  const { subtotal, taxAmount, total, isPriceInclusive } = calculateTotals();
   const depositType = data.depositType;
 
   return (
@@ -1355,8 +1401,13 @@ function Step4Review({
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
+            {isPriceInclusive && (
+              <div className="text-xs text-muted-foreground mb-2 p-2 bg-muted/50 rounded">
+                Prices entered include GST - amounts below have been calculated
+              </div>
+            )}
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Subtotal</span>
+              <span className="text-muted-foreground">Subtotal (excl. GST)</span>
               <span>{formatCurrency(subtotal)}</span>
             </div>
             <div className="flex justify-between text-sm">
@@ -1364,7 +1415,7 @@ function Step4Review({
               <span>{formatCurrency(taxAmount)}</span>
             </div>
             <div className="flex justify-between font-semibold text-lg border-t pt-3">
-              <span>Total</span>
+              <span>Total (incl. GST)</span>
               <span data-testid="text-review-total">{formatCurrency(total)}</span>
             </div>
 
