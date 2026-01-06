@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { 
   ArrowLeft, ArrowRight, Check, User, DollarSign, 
-  Milestone, FileText, Plus, Trash2, ChevronRight, UserPlus
+  FileText, Plus, Trash2, UserPlus
 } from "lucide-react";
 
 const COUNTRIES = [
@@ -119,7 +119,6 @@ const depositTypes = [
   { id: "none", label: "No Deposit", description: "Full payment on completion" },
   { id: "percentage", label: "Percentage Deposit", description: "Percentage of total upfront" },
   { id: "fixed", label: "Fixed Deposit", description: "Fixed amount upfront" },
-  { id: "milestone", label: "Milestone Payments", description: "Pay as milestones complete" },
 ] as const;
 
 const lineItemSchema = z.object({
@@ -129,12 +128,6 @@ const lineItemSchema = z.object({
   richDescription: z.string().optional(),
   quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
   unitPrice: z.coerce.number().min(0, "Unit price must be non-negative"),
-});
-
-const milestoneSchema = z.object({
-  title: z.string().min(1, "Milestone title is required"),
-  description: z.string().optional(),
-  lineItems: z.array(lineItemSchema).min(1, "At least one line item required"),
 });
 
 const quoteWizardSchema = z.object({
@@ -147,11 +140,10 @@ const quoteWizardSchema = z.object({
   validUntil: z.string().optional(),
   notes: z.string().optional(),
   taxRate: z.coerce.number().min(0).max(100).optional(),
-  depositType: z.enum(["none", "percentage", "fixed", "milestone"]).default("none"),
+  depositType: z.enum(["none", "percentage", "fixed"]).default("none"),
   depositPercentage: z.coerce.number().min(0).max(100).optional(),
   depositAmount: z.coerce.number().min(0).optional(),
-  milestoneCount: z.coerce.number().min(1).max(10).default(1),
-  milestones: z.array(milestoneSchema),
+  lineItems: z.array(lineItemSchema).min(1, "At least one line item is required"),
 });
 
 type QuoteWizardValues = z.infer<typeof quoteWizardSchema>;
@@ -159,9 +151,8 @@ type QuoteWizardValues = z.infer<typeof quoteWizardSchema>;
 const STEPS = [
   { id: 1, title: "Select Client", icon: User },
   { id: 2, title: "Payment Structure", icon: DollarSign },
-  { id: 3, title: "Milestones", icon: Milestone },
-  { id: 4, title: "Line Items", icon: FileText },
-  { id: 5, title: "Review", icon: Check },
+  { id: 3, title: "Line Items", icon: FileText },
+  { id: 4, title: "Review", icon: Check },
 ];
 
 function StepIndicator({ currentStep }: { currentStep: number }) {
@@ -227,20 +218,15 @@ export default function QuoteWizard() {
       depositType: "none",
       depositPercentage: 20,
       depositAmount: 0,
-      milestoneCount: 1,
-      milestones: [
-        { 
-          title: "Phase 1", 
-          description: "", 
-          lineItems: [{ heading: "", description: "", richDescription: "", quantity: 1, unitPrice: 0 }] 
-        }
+      lineItems: [
+        { heading: "", description: "", richDescription: "", quantity: 1, unitPrice: 0 }
       ],
     },
   });
 
-  const { fields: milestoneFields, replace: replaceMilestones } = useFieldArray({
+  const { fields: lineItemFields, append, remove } = useFieldArray({
     control: form.control,
-    name: "milestones",
+    name: "lineItems",
   });
 
   const handleClientSelect = (clientId: string) => {
@@ -257,26 +243,6 @@ export default function QuoteWizard() {
     }
   };
 
-  const handleMilestoneCountChange = (count: number) => {
-    const currentMilestones = form.getValues("milestones");
-    const newMilestones = [];
-    
-    for (let i = 0; i < count; i++) {
-      if (i < currentMilestones.length) {
-        newMilestones.push(currentMilestones[i]);
-      } else {
-        newMilestones.push({
-          title: `Phase ${i + 1}`,
-          description: "",
-          lineItems: [{ heading: "", description: "", richDescription: "", quantity: 1, unitPrice: 0 }],
-        });
-      }
-    }
-    
-    form.setValue("milestoneCount", count);
-    replaceMilestones(newMilestones);
-  };
-
   const validateStep = async (step: number): Promise<boolean> => {
     let fields: (keyof QuoteWizardValues)[] = [];
     
@@ -288,10 +254,7 @@ export default function QuoteWizard() {
         fields = ["depositType"];
         break;
       case 3:
-        fields = ["milestoneCount"];
-        break;
-      case 4:
-        fields = ["milestones"];
+        fields = ["lineItems"];
         break;
     }
     
@@ -314,8 +277,7 @@ export default function QuoteWizard() {
 
   const createMutation = useMutation({
     mutationFn: async (data: QuoteWizardValues) => {
-      const allLineItems = data.milestones.flatMap(m => m.lineItems);
-      const subtotal = allLineItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+      const subtotal = data.lineItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
       const taxAmount = subtotal * ((data.taxRate || 0) / 100);
       const total = subtotal + taxAmount;
 
@@ -325,6 +287,7 @@ export default function QuoteWizard() {
         clientEmail: data.clientEmail || null,
         clientPhone: data.clientPhone || null,
         clientAddress: data.clientAddress,
+        jobType: "general",
         description: data.description || null,
         validUntil: data.validUntil || null,
         notes: data.notes || null,
@@ -335,30 +298,26 @@ export default function QuoteWizard() {
       });
       const newQuote = await response.json();
 
-      for (let milestoneIndex = 0; milestoneIndex < data.milestones.length; milestoneIndex++) {
-        const milestone = data.milestones[milestoneIndex];
-        
-        const milestoneResponse = await apiRequest("POST", `/api/quotes/${newQuote.id}/milestones`, {
-          title: milestone.title,
-          description: milestone.description || null,
-          sequence: milestoneIndex + 1,
-        });
-        const newMilestone = await milestoneResponse.json();
+      const milestoneResponse = await apiRequest("POST", `/api/quotes/${newQuote.id}/milestones`, {
+        title: "Work Items",
+        description: null,
+        sequence: 1,
+      });
+      const milestone = await milestoneResponse.json();
 
-        for (let itemIndex = 0; itemIndex < milestone.lineItems.length; itemIndex++) {
-          const item = milestone.lineItems[itemIndex];
-          if (item.description.trim()) {
-            await apiRequest("POST", `/api/quotes/${newQuote.id}/line-items`, {
-              quoteMilestoneId: newMilestone.id,
-              heading: item.heading || null,
-              description: item.description,
-              richDescription: item.richDescription || null,
-              quantity: item.quantity.toString(),
-              unitPrice: item.unitPrice.toFixed(2),
-              amount: (item.quantity * item.unitPrice).toFixed(2),
-              sortOrder: itemIndex,
-            });
-          }
+      for (let itemIndex = 0; itemIndex < data.lineItems.length; itemIndex++) {
+        const item = data.lineItems[itemIndex];
+        if (item.description.trim()) {
+          await apiRequest("POST", `/api/quotes/${newQuote.id}/line-items`, {
+            quoteMilestoneId: milestone.id,
+            heading: item.heading || null,
+            description: item.description,
+            richDescription: item.richDescription || null,
+            quantity: item.quantity.toString(),
+            unitPrice: item.unitPrice.toFixed(2),
+            amount: (item.quantity * item.unitPrice).toFixed(2),
+            sortOrder: itemIndex,
+          });
         }
       }
 
@@ -399,21 +358,6 @@ export default function QuoteWizard() {
             calculatedAmount: (total - (data.depositAmount || 0)).toFixed(2),
             sortOrder: 1,
           });
-        } else if (data.depositType === "milestone") {
-          for (let i = 0; i < data.milestones.length; i++) {
-            const milestoneTotal = data.milestones[i].lineItems.reduce(
-              (sum, item) => sum + item.quantity * item.unitPrice, 0
-            );
-            schedules.push({
-              type: i === 0 ? "deposit" : i === data.milestones.length - 1 ? "final" : "progress",
-              name: data.milestones[i].title,
-              isPercentage: false,
-              fixedAmount: milestoneTotal.toFixed(2),
-              calculatedAmount: milestoneTotal.toFixed(2),
-              milestoneDescription: data.milestones[i].title,
-              sortOrder: i,
-            });
-          }
         }
 
         for (const schedule of schedules) {
@@ -442,9 +386,9 @@ export default function QuoteWizard() {
   };
 
   const calculateTotals = () => {
-    const milestones = form.watch("milestones");
+    const lineItems = form.watch("lineItems");
     const taxRate = form.watch("taxRate") || 10;
-    const subtotal = milestones.flatMap(m => m.lineItems).reduce(
+    const subtotal = lineItems.reduce(
       (sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0), 0
     );
     const taxAmount = subtotal * (taxRate / 100);
@@ -476,23 +420,20 @@ export default function QuoteWizard() {
             )}
 
             {currentStep === 2 && (
-              <Step2PaymentStructure form={form} calculateTotals={calculateTotals} />
+              <Step2PaymentStructure form={form} />
             )}
 
             {currentStep === 3 && (
-              <Step3Milestones 
+              <Step3LineItems 
                 form={form} 
-                milestoneFields={milestoneFields}
-                onMilestoneCountChange={handleMilestoneCountChange}
+                lineItemFields={lineItemFields}
+                onAppend={() => append({ heading: "", description: "", richDescription: "", quantity: 1, unitPrice: 0 })}
+                onRemove={remove}
               />
             )}
 
             {currentStep === 4 && (
-              <Step4LineItems form={form} />
-            )}
-
-            {currentStep === 5 && (
-              <Step5Review form={form} calculateTotals={calculateTotals} formatCurrency={formatCurrency} />
+              <Step4Review form={form} calculateTotals={calculateTotals} formatCurrency={formatCurrency} />
             )}
 
             <div className="flex justify-between mt-8">
@@ -573,7 +514,7 @@ function Step1ClientSelector({
     onSuccess: (newClient: Client) => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       
-      const fullName = `${newClient.firstName || ""} ${newClient.lastName || ""}`.trim() || newClient.companyName || "";
+      const fullName = `${newClient.firstName || ""} ${newClient.lastName || ""}`.trim() || newClient.company || "";
       const fullAddress = [newClient.streetAddress, newClient.streetAddress2, newClient.city, newClient.state, newClient.postalCode]
         .filter(Boolean).join(", ");
       
@@ -609,6 +550,8 @@ function Step1ClientSelector({
   };
 
   const newClientType = newClientForm.watch("type");
+  const selectedCountry = newClientForm.watch("country");
+  const dialCode = COUNTRIES.find(c => c.code === selectedCountry)?.dialCode || "+61";
 
   return (
     <div className="space-y-6">
@@ -627,34 +570,38 @@ function Step1ClientSelector({
                 <FormItem>
                   <FormLabel>Client</FormLabel>
                   <div className="flex gap-2">
-                    <Select 
-                      value={field.value} 
-                      onValueChange={(value) => {
-                        field.onChange(value);
-                        onClientSelect(value);
-                      }}
-                    >
+                    <Select value={field.value} onValueChange={(value) => {
+                      field.onChange(value);
+                      onClientSelect(value);
+                    }}>
                       <FormControl>
-                        <SelectTrigger data-testid="select-client" className="flex-1">
-                          <SelectValue placeholder={clientsLoading ? "Loading clients..." : "Select a client"} />
+                        <SelectTrigger className="flex-1" data-testid="select-client">
+                          <SelectValue placeholder="Select a client..." />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {clients.map((client) => (
-                          <SelectItem key={client.id} value={client.id}>
-                            {client.firstName} {client.lastName} - {client.email || client.phone}
-                          </SelectItem>
-                        ))}
+                        {clientsLoading ? (
+                          <SelectItem value="loading" disabled>Loading...</SelectItem>
+                        ) : clients.length === 0 ? (
+                          <SelectItem value="none" disabled>No clients found</SelectItem>
+                        ) : (
+                          clients.map((client) => (
+                            <SelectItem key={client.id} value={client.id}>
+                              {client.firstName} {client.lastName}
+                              {client.company && ` (${client.company})`}
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
-                    <Button 
+                    <Button
                       type="button"
                       variant="outline"
                       onClick={() => setIsNewClientDialogOpen(true)}
                       data-testid="button-new-client"
                     >
                       <UserPlus className="h-4 w-4 mr-2" />
-                      New Client
+                      New
                     </Button>
                   </div>
                   <FormMessage />
@@ -663,125 +610,108 @@ function Step1ClientSelector({
             />
 
             {selectedClient && (
-              <div className="p-4 rounded-md bg-muted/50 space-y-3">
-                <div className="flex items-center gap-2">
-                  <User className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-medium" data-testid="text-client-name">
-                    {selectedClient.firstName} {selectedClient.lastName}
-                  </span>
-                </div>
-                {selectedClient.email && (
-                  <div className="text-sm text-muted-foreground">{selectedClient.email}</div>
-                )}
+              <div className="p-4 bg-muted/50 rounded-md space-y-2">
+                <div className="font-medium">{selectedClient.firstName} {selectedClient.lastName}</div>
+                {selectedClient.email && <div className="text-sm text-muted-foreground">{selectedClient.email}</div>}
                 {(selectedClient.phone || selectedClient.mobilePhone) && (
-                  <div className="text-sm text-muted-foreground">
-                    {selectedClient.phone || selectedClient.mobilePhone}
-                  </div>
+                  <div className="text-sm text-muted-foreground">{selectedClient.phone || selectedClient.mobilePhone}</div>
                 )}
                 {selectedClient.streetAddress && (
                   <div className="text-sm text-muted-foreground">
-                    {[selectedClient.streetAddress, selectedClient.city, selectedClient.state, selectedClient.postalCode]
-                      .filter(Boolean).join(", ")}
+                    {[selectedClient.streetAddress, selectedClient.city, selectedClient.state, selectedClient.postalCode].filter(Boolean).join(", ")}
                   </div>
                 )}
               </div>
             )}
+
+            <FormField
+              control={form.control}
+              name="clientAddress"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Job Address</FormLabel>
+                  <FormControl>
+                    <Input {...field} placeholder="Enter job site address" data-testid="input-job-address" />
+                  </FormControl>
+                  <FormDescription>The address where the work will be performed</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Job Description (Optional)</FormLabel>
+                  <FormControl>
+                    <Textarea {...field} placeholder="Brief description of the work..." data-testid="input-job-description" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="pt-6 space-y-4">
-          <FormField
-            control={form.control}
-            name="description"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Job Description</FormLabel>
-                <FormControl>
-                  <Textarea 
-                    {...field} 
-                    placeholder="Brief description of the work to be done"
-                    className="min-h-[100px]"
-                    data-testid="input-description"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </CardContent>
-      </Card>
-
       <Dialog open={isNewClientDialogOpen} onOpenChange={setIsNewClientDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create New Client</DialogTitle>
-            <DialogDescription>
-              Add a new client to use for this quote
-            </DialogDescription>
+            <DialogDescription>Add a new client to your database</DialogDescription>
           </DialogHeader>
-          <form onSubmit={newClientForm.handleSubmit(handleCreateClient)} className="space-y-4">
+          
+          <form onSubmit={newClientForm.handleSubmit(handleCreateClient)} className="space-y-6">
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium">Client Type</label>
-                <Select
+                <RadioGroup
                   value={newClientType}
-                  onValueChange={(value: "individual" | "company") => {
-                    newClientForm.setValue("type", value);
-                  }}
+                  onValueChange={(value) => newClientForm.setValue("type", value as "individual" | "company")}
+                  className="flex gap-4 mt-2"
                 >
-                  <SelectTrigger data-testid="select-client-type">
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="individual">Individual</SelectItem>
-                    <SelectItem value="company">Company</SelectItem>
-                  </SelectContent>
-                </Select>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <RadioGroupItem value="individual" />
+                    <span>Individual</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <RadioGroupItem value="company" />
+                    <span>Company</span>
+                  </label>
+                </RadioGroup>
               </div>
 
-              {newClientType === "company" && (
+              {newClientType === "individual" ? (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium">First Name *</label>
+                    <Input
+                      {...newClientForm.register("firstName")}
+                      placeholder="First name"
+                      data-testid="input-new-first-name"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Last Name</label>
+                    <Input
+                      {...newClientForm.register("lastName")}
+                      placeholder="Last name"
+                      data-testid="input-new-last-name"
+                    />
+                  </div>
+                </div>
+              ) : (
                 <div>
                   <label className="text-sm font-medium">Company Name *</label>
                   <Input
                     {...newClientForm.register("companyName")}
                     placeholder="Company name"
-                    data-testid="input-company-name"
+                    data-testid="input-new-company-name"
                   />
-                  {newClientForm.formState.errors.companyName && (
-                    <p className="text-sm text-destructive mt-1">
-                      {newClientForm.formState.errors.companyName.message}
-                    </p>
-                  )}
                 </div>
               )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium">
-                    First Name {newClientType === "individual" ? "*" : ""}
-                  </label>
-                  <Input
-                    {...newClientForm.register("firstName")}
-                    placeholder="First name"
-                    data-testid="input-first-name"
-                  />
-                  {newClientForm.formState.errors.firstName && (
-                    <p className="text-sm text-destructive mt-1">
-                      {newClientForm.formState.errors.firstName.message}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Last Name</label>
-                  <Input
-                    {...newClientForm.register("lastName")}
-                    placeholder="Last name"
-                    data-testid="input-last-name"
-                  />
-                </div>
-              </div>
 
               <div>
                 <label className="text-sm font-medium">Email</label>
@@ -789,23 +719,18 @@ function Step1ClientSelector({
                   {...newClientForm.register("email")}
                   type="email"
                   placeholder="email@example.com"
-                  data-testid="input-email"
+                  data-testid="input-new-email"
                 />
-                {newClientForm.formState.errors.email && (
-                  <p className="text-sm text-destructive mt-1">
-                    {newClientForm.formState.errors.email.message}
-                  </p>
-                )}
               </div>
 
               <div>
                 <label className="text-sm font-medium">Country</label>
                 <Select
-                  value={newClientForm.watch("country")}
+                  value={selectedCountry}
                   onValueChange={(value) => newClientForm.setValue("country", value)}
                 >
-                  <SelectTrigger data-testid="select-country">
-                    <SelectValue placeholder="Select country" />
+                  <SelectTrigger data-testid="select-new-country">
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {COUNTRIES.map((country) => (
@@ -820,29 +745,29 @@ function Step1ClientSelector({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium">Phone</label>
-                  <div className="flex gap-2">
-                    <div className="flex items-center px-3 border rounded-md bg-muted text-muted-foreground text-sm min-w-[60px] justify-center">
-                      {COUNTRIES.find(c => c.code === newClientForm.watch("country"))?.dialCode || "+61"}
+                  <div className="flex">
+                    <div className="flex items-center justify-center px-3 bg-muted border border-r-0 rounded-l-md text-sm text-muted-foreground select-none min-w-[60px]">
+                      {dialCode}
                     </div>
                     <Input
                       {...newClientForm.register("phone")}
                       placeholder="Phone number"
-                      data-testid="input-phone"
-                      className="flex-1"
+                      className="rounded-l-none"
+                      data-testid="input-new-phone"
                     />
                   </div>
                 </div>
                 <div>
                   <label className="text-sm font-medium">Mobile</label>
-                  <div className="flex gap-2">
-                    <div className="flex items-center px-3 border rounded-md bg-muted text-muted-foreground text-sm min-w-[60px] justify-center">
-                      {COUNTRIES.find(c => c.code === newClientForm.watch("country"))?.dialCode || "+61"}
+                  <div className="flex">
+                    <div className="flex items-center justify-center px-3 bg-muted border border-r-0 rounded-l-md text-sm text-muted-foreground select-none min-w-[60px]">
+                      {dialCode}
                     </div>
                     <Input
                       {...newClientForm.register("mobilePhone")}
                       placeholder="Mobile number"
-                      data-testid="input-mobile"
-                      className="flex-1"
+                      className="rounded-l-none"
+                      data-testid="input-new-mobile"
                     />
                   </div>
                 </div>
@@ -853,16 +778,7 @@ function Step1ClientSelector({
                 <Input
                   {...newClientForm.register("streetAddress")}
                   placeholder="Street address"
-                  data-testid="input-street-address"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium">Address Line 2</label>
-                <Input
-                  {...newClientForm.register("streetAddress2")}
-                  placeholder="Apartment, suite, etc."
-                  data-testid="input-street-address-2"
+                  data-testid="input-new-street"
                 />
               </div>
 
@@ -872,7 +788,7 @@ function Step1ClientSelector({
                   <Input
                     {...newClientForm.register("city")}
                     placeholder="City"
-                    data-testid="input-city"
+                    data-testid="input-new-city"
                   />
                 </div>
                 <div>
@@ -880,7 +796,7 @@ function Step1ClientSelector({
                   <Input
                     {...newClientForm.register("state")}
                     placeholder="State"
-                    data-testid="input-state"
+                    data-testid="input-new-state"
                   />
                 </div>
                 <div>
@@ -888,7 +804,7 @@ function Step1ClientSelector({
                   <Input
                     {...newClientForm.register("postalCode")}
                     placeholder="Postal code"
-                    data-testid="input-postal-code"
+                    data-testid="input-new-postal"
                   />
                 </div>
               </div>
@@ -922,11 +838,9 @@ function Step1ClientSelector({
 }
 
 function Step2PaymentStructure({ 
-  form,
-  calculateTotals
+  form
 }: { 
   form: ReturnType<typeof useForm<QuoteWizardValues>>;
-  calculateTotals: () => { subtotal: number; taxAmount: number; total: number };
 }) {
   const depositType = form.watch("depositType");
 
@@ -1033,14 +947,6 @@ function Step2PaymentStructure({
               />
             </div>
           )}
-
-          {depositType === "milestone" && (
-            <div className="mt-6 p-4 rounded-md bg-muted/50">
-              <p className="text-sm text-muted-foreground">
-                Payment will be split across milestones. Configure milestones in the next step.
-              </p>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -1090,323 +996,185 @@ function Step2PaymentStructure({
   );
 }
 
-function Step3Milestones({ 
+function Step3LineItems({ 
   form,
-  milestoneFields,
-  onMilestoneCountChange
+  lineItemFields,
+  onAppend,
+  onRemove
 }: { 
   form: ReturnType<typeof useForm<QuoteWizardValues>>;
-  milestoneFields: { id: string }[];
-  onMilestoneCountChange: (count: number) => void;
+  lineItemFields: { id: string }[];
+  onAppend: () => void;
+  onRemove: (index: number) => void;
 }) {
-  const milestoneCount = form.watch("milestoneCount");
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold mb-2">Define Milestones</h2>
-        <p className="text-muted-foreground">Break the project into phases or milestones</p>
-      </div>
-
-      <Card>
-        <CardContent className="pt-6">
-          <FormField
-            control={form.control}
-            name="milestoneCount"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Number of Milestones</FormLabel>
-                <Select 
-                  value={field.value?.toString()} 
-                  onValueChange={(value) => onMilestoneCountChange(parseInt(value))}
-                >
-                  <FormControl>
-                    <SelectTrigger className="w-40" data-testid="select-milestone-count">
-                      <SelectValue />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
-                      <SelectItem key={num} value={num.toString()}>
-                        {num} {num === 1 ? "Milestone" : "Milestones"}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormDescription>
-                  Each milestone will have its own set of line items
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </CardContent>
-      </Card>
-
-      <div className="space-y-4">
-        {milestoneFields.map((field, index) => (
-          <Card key={field.id}>
-            <CardHeader className="pb-4">
-              <div className="flex items-center gap-2">
-                <Badge variant="outline">Phase {index + 1}</Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <FormField
-                control={form.control}
-                name={`milestones.${index}.title`}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Milestone Title</FormLabel>
-                    <FormControl>
-                      <Input 
-                        {...field} 
-                        placeholder={`e.g., Phase ${index + 1} - Preparation`}
-                        data-testid={`input-milestone-title-${index}`}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name={`milestones.${index}.description`}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description (Optional)</FormLabel>
-                    <FormControl>
-                      <Textarea 
-                        {...field} 
-                        placeholder="Brief description of this milestone"
-                        data-testid={`input-milestone-desc-${index}`}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </div>
+  const lineItems = form.watch("lineItems");
+  const total = lineItems.reduce(
+    (sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0), 0
   );
-}
-
-function Step4LineItems({ form }: { form: ReturnType<typeof useForm<QuoteWizardValues>> }) {
-  const milestones = form.watch("milestones");
-  const [activeMilestone, setActiveMilestone] = useState(0);
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold mb-2">Add Line Items</h2>
-        <p className="text-muted-foreground">Add detailed line items for each milestone</p>
+        <p className="text-muted-foreground">Add detailed line items for the quote</p>
       </div>
 
-      {milestones.length > 1 && (
-        <div className="flex flex-wrap gap-2">
-          {milestones.map((milestone, index) => (
-            <Button
-              key={index}
-              type="button"
-              variant={activeMilestone === index ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveMilestone(index)}
-              data-testid={`button-milestone-tab-${index}`}
-            >
-              {milestone.title || `Phase ${index + 1}`}
-            </Button>
-          ))}
-        </div>
-      )}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-lg">Work Items</CardTitle>
+              <CardDescription>Add line items with detailed descriptions</CardDescription>
+            </div>
+            <div className="text-right">
+              <div className="text-sm text-muted-foreground">Total (excl. tax)</div>
+              <div className="text-lg font-semibold">
+                ${total.toLocaleString("en-AU", { minimumFractionDigits: 2 })}
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {lineItemFields.map((field, itemIndex) => (
+            <div key={field.id} className="p-4 border rounded-md space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <Badge variant="outline">Item {itemIndex + 1}</Badge>
+                {lineItemFields.length > 1 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => onRemove(itemIndex)}
+                    data-testid={`button-remove-item-${itemIndex}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
 
-      <MilestoneLineItems 
-        form={form} 
-        milestoneIndex={activeMilestone}
-        milestoneTitle={milestones[activeMilestone]?.title || `Phase ${activeMilestone + 1}`}
-      />
+              <FormField
+                control={form.control}
+                name={`lineItems.${itemIndex}.heading`}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Heading</FormLabel>
+                    <FormControl>
+                      <Input 
+                        {...field} 
+                        placeholder="e.g., Kitchen Sink Installation"
+                        data-testid={`input-item-heading-${itemIndex}`}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name={`lineItems.${itemIndex}.description`}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Short Description</FormLabel>
+                    <FormControl>
+                      <Input 
+                        {...field} 
+                        placeholder="Brief description of the work"
+                        data-testid={`input-item-desc-${itemIndex}`}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name={`lineItems.${itemIndex}.richDescription`}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Detailed Specifications (Optional)</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        {...field} 
+                        placeholder="Detailed scope of work, materials, specifications..."
+                        className="min-h-[100px]"
+                        data-testid={`input-item-rich-${itemIndex}`}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="grid grid-cols-3 gap-4">
+                <FormField
+                  control={form.control}
+                  name={`lineItems.${itemIndex}.quantity`}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Quantity</FormLabel>
+                      <FormControl>
+                        <Input 
+                          {...field}
+                          type="number"
+                          min={0.01}
+                          step={0.01}
+                          data-testid={`input-item-qty-${itemIndex}`}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name={`lineItems.${itemIndex}.unitPrice`}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Rate ($)</FormLabel>
+                      <FormControl>
+                        <Input 
+                          {...field}
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          data-testid={`input-item-rate-${itemIndex}`}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div>
+                  <FormLabel>Amount</FormLabel>
+                  <div className="h-9 flex items-center px-3 bg-muted rounded-md text-sm font-medium">
+                    ${((lineItems[itemIndex]?.quantity || 0) * (lineItems[itemIndex]?.unitPrice || 0)).toFixed(2)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onAppend}
+            className="w-full"
+            data-testid="button-add-item"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add Line Item
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-function MilestoneLineItems({ 
-  form, 
-  milestoneIndex,
-  milestoneTitle
-}: { 
-  form: ReturnType<typeof useForm<QuoteWizardValues>>;
-  milestoneIndex: number;
-  milestoneTitle: string;
-}) {
-  const { fields, append, remove } = useFieldArray({
-    control: form.control,
-    name: `milestones.${milestoneIndex}.lineItems`,
-  });
-
-  const lineItems = form.watch(`milestones.${milestoneIndex}.lineItems`);
-  const milestoneTotal = lineItems.reduce(
-    (sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0), 0
-  );
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <CardTitle className="text-lg">{milestoneTitle}</CardTitle>
-            <CardDescription>Add line items with detailed descriptions</CardDescription>
-          </div>
-          <div className="text-right">
-            <div className="text-sm text-muted-foreground">Milestone Total</div>
-            <div className="text-lg font-semibold">
-              ${milestoneTotal.toLocaleString("en-AU", { minimumFractionDigits: 2 })}
-            </div>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {fields.map((field, itemIndex) => (
-          <div key={field.id} className="p-4 border rounded-md space-y-4">
-            <div className="flex items-center justify-between gap-4">
-              <Badge variant="outline">Item {itemIndex + 1}</Badge>
-              {fields.length > 1 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => remove(itemIndex)}
-                  data-testid={`button-remove-item-${milestoneIndex}-${itemIndex}`}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-
-            <FormField
-              control={form.control}
-              name={`milestones.${milestoneIndex}.lineItems.${itemIndex}.heading`}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Heading</FormLabel>
-                  <FormControl>
-                    <Input 
-                      {...field} 
-                      placeholder="e.g., Kitchen Sink Installation"
-                      data-testid={`input-item-heading-${milestoneIndex}-${itemIndex}`}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name={`milestones.${milestoneIndex}.lineItems.${itemIndex}.description`}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Short Description</FormLabel>
-                  <FormControl>
-                    <Input 
-                      {...field} 
-                      placeholder="Brief description of the work"
-                      data-testid={`input-item-desc-${milestoneIndex}-${itemIndex}`}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name={`milestones.${milestoneIndex}.lineItems.${itemIndex}.richDescription`}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Detailed Specifications (Optional)</FormLabel>
-                  <FormControl>
-                    <Textarea 
-                      {...field} 
-                      placeholder="Detailed scope of work, materials, specifications..."
-                      className="min-h-[100px]"
-                      data-testid={`input-item-rich-${milestoneIndex}-${itemIndex}`}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="grid grid-cols-3 gap-4">
-              <FormField
-                control={form.control}
-                name={`milestones.${milestoneIndex}.lineItems.${itemIndex}.quantity`}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Quantity</FormLabel>
-                    <FormControl>
-                      <Input 
-                        {...field}
-                        type="number"
-                        min={0.01}
-                        step={0.01}
-                        data-testid={`input-item-qty-${milestoneIndex}-${itemIndex}`}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name={`milestones.${milestoneIndex}.lineItems.${itemIndex}.unitPrice`}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Rate ($)</FormLabel>
-                    <FormControl>
-                      <Input 
-                        {...field}
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        data-testid={`input-item-rate-${milestoneIndex}-${itemIndex}`}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div>
-                <FormLabel>Amount</FormLabel>
-                <div className="h-9 flex items-center px-3 bg-muted rounded-md text-sm font-medium">
-                  ${((lineItems[itemIndex]?.quantity || 0) * (lineItems[itemIndex]?.unitPrice || 0)).toFixed(2)}
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => append({ heading: "", description: "", richDescription: "", quantity: 1, unitPrice: 0 })}
-          className="w-full"
-          data-testid={`button-add-item-${milestoneIndex}`}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Add Line Item
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function Step5Review({ 
+function Step4Review({ 
   form, 
   calculateTotals,
   formatCurrency
@@ -1472,39 +1240,21 @@ function Step5Review({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Milestones & Line Items</CardTitle>
+          <CardTitle className="text-lg">Line Items</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {data.milestones.map((milestone, mIndex) => {
-            const milestoneTotal = milestone.lineItems.reduce(
-              (sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0), 0
-            );
-            return (
-              <div key={mIndex} className="space-y-3">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline">Phase {mIndex + 1}</Badge>
-                    <span className="font-medium">{milestone.title}</span>
-                  </div>
-                  <span className="font-medium">{formatCurrency(milestoneTotal)}</span>
-                </div>
-                <div className="ml-4 space-y-2">
-                  {milestone.lineItems.map((item, iIndex) => (
-                    <div key={iIndex} className="flex items-center justify-between text-sm">
-                      <div>
-                        <span className="font-medium">{item.heading}</span>
-                        <span className="text-muted-foreground"> - {item.description}</span>
-                        <span className="text-muted-foreground ml-2">
-                          ({item.quantity} x {formatCurrency(item.unitPrice || 0)})
-                        </span>
-                      </div>
-                      <span>{formatCurrency((item.quantity || 0) * (item.unitPrice || 0))}</span>
-                    </div>
-                  ))}
-                </div>
+        <CardContent className="space-y-3">
+          {data.lineItems.map((item, iIndex) => (
+            <div key={iIndex} className="flex items-center justify-between text-sm py-2 border-b last:border-b-0">
+              <div>
+                <span className="font-medium">{item.heading}</span>
+                <span className="text-muted-foreground"> - {item.description}</span>
+                <span className="text-muted-foreground ml-2">
+                  ({item.quantity} x {formatCurrency(item.unitPrice || 0)})
+                </span>
               </div>
-            );
-          })}
+              <span className="font-medium">{formatCurrency((item.quantity || 0) * (item.unitPrice || 0))}</span>
+            </div>
+          ))}
         </CardContent>
       </Card>
 
@@ -1552,21 +1302,6 @@ function Step5Review({
                       <span>Final Payment</span>
                       <span>{formatCurrency(total - (data.depositAmount || 0))}</span>
                     </div>
-                  </>
-                )}
-                {depositType === "milestone" && (
-                  <>
-                    {data.milestones.map((milestone, index) => {
-                      const milestoneTotal = milestone.lineItems.reduce(
-                        (sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0), 0
-                      );
-                      return (
-                        <div key={index} className="flex justify-between text-sm">
-                          <span>{milestone.title}</span>
-                          <span>{formatCurrency(milestoneTotal)}</span>
-                        </div>
-                      );
-                    })}
                   </>
                 )}
               </div>
