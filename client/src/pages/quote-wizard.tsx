@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -8,6 +8,31 @@ import {
   ArrowLeft, ArrowRight, Check, User, DollarSign, 
   Milestone, FileText, Plus, Trash2, ChevronRight, UserPlus
 } from "lucide-react";
+
+const COUNTRIES = [
+  { code: "AU", name: "Australia", dialCode: "+61" },
+  { code: "NZ", name: "New Zealand", dialCode: "+64" },
+  { code: "US", name: "United States", dialCode: "+1" },
+  { code: "GB", name: "United Kingdom", dialCode: "+44" },
+  { code: "CA", name: "Canada", dialCode: "+1" },
+  { code: "SG", name: "Singapore", dialCode: "+65" },
+  { code: "HK", name: "Hong Kong", dialCode: "+852" },
+  { code: "MY", name: "Malaysia", dialCode: "+60" },
+  { code: "PH", name: "Philippines", dialCode: "+63" },
+  { code: "IN", name: "India", dialCode: "+91" },
+  { code: "ID", name: "Indonesia", dialCode: "+62" },
+  { code: "TH", name: "Thailand", dialCode: "+66" },
+  { code: "JP", name: "Japan", dialCode: "+81" },
+  { code: "KR", name: "South Korea", dialCode: "+82" },
+  { code: "CN", name: "China", dialCode: "+86" },
+  { code: "DE", name: "Germany", dialCode: "+49" },
+  { code: "FR", name: "France", dialCode: "+33" },
+  { code: "IT", name: "Italy", dialCode: "+39" },
+  { code: "ES", name: "Spain", dialCode: "+34" },
+  { code: "NL", name: "Netherlands", dialCode: "+31" },
+  { code: "IE", name: "Ireland", dialCode: "+353" },
+  { code: "AE", name: "United Arab Emirates", dialCode: "+971" },
+] as const;
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -49,6 +74,7 @@ const newClientFormSchema = z.object({
   lastName: z.string().optional(),
   companyName: z.string().optional(),
   email: z.string().email("Invalid email").optional().or(z.literal("")),
+  country: z.string().default("AU"),
   phone: z.string().optional(),
   mobilePhone: z.string().optional(),
   streetAddress: z.string().optional(),
@@ -68,6 +94,24 @@ const newClientFormSchema = z.object({
   message: "Individual clients require a first name. Company clients require a company name.",
   path: ["firstName"],
 });
+
+function formatPhoneWithCountryCode(phone: string, countryCode: string): string {
+  if (!phone) return "";
+  const country = COUNTRIES.find(c => c.code === countryCode);
+  const dialCode = country?.dialCode || "+61";
+  
+  let cleaned = phone.replace(/[^\d]/g, "");
+  
+  if (cleaned.startsWith("0")) {
+    cleaned = cleaned.substring(1);
+  }
+  
+  if (!phone.startsWith("+")) {
+    return `${dialCode} ${cleaned}`;
+  }
+  
+  return phone;
+}
 
 type NewClientFormValues = z.infer<typeof newClientFormSchema>;
 
@@ -510,6 +554,7 @@ function Step1ClientSelector({
       lastName: "",
       companyName: "",
       email: "",
+      country: "AU",
       phone: "",
       mobilePhone: "",
       streetAddress: "",
@@ -555,7 +600,12 @@ function Step1ClientSelector({
   });
 
   const handleCreateClient = (data: NewClientFormValues) => {
-    createClientMutation.mutate(data);
+    const formattedData = {
+      ...data,
+      phone: formatPhoneWithCountryCode(data.phone || "", data.country),
+      mobilePhone: formatPhoneWithCountryCode(data.mobilePhone || "", data.country),
+    };
+    createClientMutation.mutate(formattedData);
   };
 
   const newClientType = newClientForm.watch("type");
@@ -748,22 +798,53 @@ function Step1ClientSelector({
                 )}
               </div>
 
+              <div>
+                <label className="text-sm font-medium">Country</label>
+                <Select
+                  value={newClientForm.watch("country")}
+                  onValueChange={(value) => newClientForm.setValue("country", value)}
+                >
+                  <SelectTrigger data-testid="select-country">
+                    <SelectValue placeholder="Select country" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COUNTRIES.map((country) => (
+                      <SelectItem key={country.code} value={country.code}>
+                        {country.name} ({country.dialCode})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium">Phone</label>
-                  <Input
-                    {...newClientForm.register("phone")}
-                    placeholder="Phone number"
-                    data-testid="input-phone"
-                  />
+                  <div className="flex gap-2">
+                    <div className="flex items-center px-3 border rounded-md bg-muted text-muted-foreground text-sm min-w-[60px] justify-center">
+                      {COUNTRIES.find(c => c.code === newClientForm.watch("country"))?.dialCode || "+61"}
+                    </div>
+                    <Input
+                      {...newClientForm.register("phone")}
+                      placeholder="Phone number"
+                      data-testid="input-phone"
+                      className="flex-1"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="text-sm font-medium">Mobile</label>
-                  <Input
-                    {...newClientForm.register("mobilePhone")}
-                    placeholder="Mobile number"
-                    data-testid="input-mobile"
-                  />
+                  <div className="flex gap-2">
+                    <div className="flex items-center px-3 border rounded-md bg-muted text-muted-foreground text-sm min-w-[60px] justify-center">
+                      {COUNTRIES.find(c => c.code === newClientForm.watch("country"))?.dialCode || "+61"}
+                    </div>
+                    <Input
+                      {...newClientForm.register("mobilePhone")}
+                      placeholder="Mobile number"
+                      data-testid="input-mobile"
+                      className="flex-1"
+                    />
+                  </div>
                 </div>
               </div>
 
