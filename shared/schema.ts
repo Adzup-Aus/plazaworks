@@ -365,6 +365,7 @@ export const staffProfiles = pgTable("staff_profiles", {
 export const jobs = pgTable("jobs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id"),
   clientName: varchar("client_name", { length: 255 }).notNull(),
   clientEmail: varchar("client_email", { length: 255 }),
   clientPhone: varchar("client_phone", { length: 50 }),
@@ -1883,4 +1884,344 @@ export type TradesmanKpiSummary = {
   closeRate: number;
   streakDays: number;
   projectedBonus: number;
+};
+
+// =====================
+// CLIENT PORTAL SYSTEM
+// =====================
+
+// Client types
+export const clientTypes = ["residential", "commercial", "property_manager", "builder", "other"] as const;
+export type ClientType = typeof clientTypes[number];
+
+// Milestone statuses
+export const milestoneStatuses = ["pending", "in_progress", "completed", "cancelled"] as const;
+export type MilestoneStatus = typeof milestoneStatuses[number];
+
+// Milestone payment statuses
+export const milestonePaymentStatuses = ["pending", "requested", "approved", "paid", "overdue"] as const;
+export type MilestonePaymentStatus = typeof milestonePaymentStatuses[number];
+
+// Clients table - full contact and address details
+export const clients = pgTable("clients", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  // Contact details
+  firstName: varchar("first_name", { length: 100 }).notNull(),
+  lastName: varchar("last_name", { length: 100 }).notNull(),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 50 }),
+  mobilePhone: varchar("mobile_phone", { length: 50 }),
+  company: varchar("company", { length: 255 }),
+  clientType: varchar("client_type", { length: 50 }).default("residential"),
+  // Address
+  streetAddress: varchar("street_address", { length: 255 }),
+  streetAddress2: varchar("street_address_2", { length: 255 }),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 100 }),
+  postalCode: varchar("postal_code", { length: 20 }),
+  country: varchar("country", { length: 100 }).default("Australia"),
+  // Portal access
+  portalEnabled: boolean("portal_enabled").default(false),
+  // Notes
+  notes: text("notes"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_clients_org").on(table.organizationId),
+  index("idx_clients_email").on(table.email),
+  index("idx_clients_phone").on(table.phone),
+  index("idx_clients_name").on(table.lastName, table.firstName),
+]);
+
+// Client portal accounts - separate authentication for clients
+export const clientPortalAccounts = pgTable("client_portal_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  passwordHash: varchar("password_hash", { length: 255 }),
+  isVerified: boolean("is_verified").default(false),
+  lastLoginAt: timestamp("last_login_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_client_portal_client").on(table.clientId),
+  index("idx_client_portal_email").on(table.email),
+]);
+
+// Client portal verification codes
+export const clientPortalVerificationCodes = pgTable("client_portal_verification_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  portalAccountId: varchar("portal_account_id").references(() => clientPortalAccounts.id, { onDelete: "cascade" }),
+  email: varchar("email", { length: 255 }),
+  code: varchar("code", { length: 10 }).notNull(),
+  purpose: varchar("purpose", { length: 20 }).notNull().default("login"),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_client_verify_account").on(table.portalAccountId),
+  index("idx_client_verify_email").on(table.email),
+]);
+
+// Job milestones - based on scope of works from invoices
+export const jobMilestones = pgTable("job_milestones", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobId: varchar("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
+  invoiceId: varchar("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+  // Milestone details
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  sortOrder: integer("sort_order").default(0),
+  // Scheduling
+  scheduledStartDate: date("scheduled_start_date"),
+  scheduledEndDate: date("scheduled_end_date"),
+  estimatedDays: integer("estimated_days"),
+  // Progress
+  status: varchar("status", { length: 50 }).default("pending"),
+  progressPercent: integer("progress_percent").default(0),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  completedById: varchar("completed_by_id").references(() => staffProfiles.id),
+  // Payment requirement
+  requiresPayment: boolean("requires_payment").default(false),
+  paymentAmount: decimal("payment_amount", { precision: 12, scale: 2 }),
+  paymentPercentage: decimal("payment_percentage", { precision: 5, scale: 2 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_milestones_job").on(table.jobId),
+  index("idx_milestones_invoice").on(table.invoiceId),
+  index("idx_milestones_status").on(table.status),
+  index("idx_milestones_sort").on(table.sortOrder),
+]);
+
+// Milestone payments - progress payment tracking
+export const milestonePayments = pgTable("milestone_payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  milestoneId: varchar("milestone_id").notNull().references(() => jobMilestones.id, { onDelete: "cascade" }),
+  // Payment details
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  status: varchar("status", { length: 50 }).default("pending"),
+  // Request/approval tracking
+  requestedAt: timestamp("requested_at"),
+  requestedById: varchar("requested_by_id").references(() => staffProfiles.id),
+  approvedAt: timestamp("approved_at"),
+  approvedByClientAt: timestamp("approved_by_client_at"),
+  paidAt: timestamp("paid_at"),
+  // Payment reference
+  paymentMethod: varchar("payment_method", { length: 100 }),
+  paymentReference: varchar("payment_reference", { length: 255 }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_milestone_payments_milestone").on(table.milestoneId),
+  index("idx_milestone_payments_status").on(table.status),
+]);
+
+// Milestone media - photos and notes from tradesmen
+export const milestoneMedia = pgTable("milestone_media", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  milestoneId: varchar("milestone_id").notNull().references(() => jobMilestones.id, { onDelete: "cascade" }),
+  jobId: varchar("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
+  scheduleEntryId: varchar("schedule_entry_id").references(() => scheduleEntries.id, { onDelete: "set null" }),
+  uploadedById: varchar("uploaded_by_id").references(() => staffProfiles.id),
+  // Media type and content
+  mediaType: varchar("media_type", { length: 20 }).notNull().default("photo"),
+  // Photo fields
+  filename: varchar("filename", { length: 255 }),
+  url: varchar("url", { length: 1000 }),
+  thumbnailUrl: varchar("thumbnail_url", { length: 1000 }),
+  caption: varchar("caption", { length: 500 }),
+  // Note fields
+  noteContent: text("note_content"),
+  // Date of work
+  workDate: date("work_date"),
+  // Client visibility
+  visibleToClient: boolean("visible_to_client").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_milestone_media_milestone").on(table.milestoneId),
+  index("idx_milestone_media_job").on(table.jobId),
+  index("idx_milestone_media_date").on(table.workDate),
+  index("idx_milestone_media_type").on(table.mediaType),
+]);
+
+// Client Portal Relations
+export const clientsRelations = relations(clients, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [clients.organizationId],
+    references: [organizations.id],
+  }),
+  portalAccount: one(clientPortalAccounts, {
+    fields: [clients.id],
+    references: [clientPortalAccounts.clientId],
+  }),
+}));
+
+export const clientPortalAccountsRelations = relations(clientPortalAccounts, ({ one, many }) => ({
+  client: one(clients, {
+    fields: [clientPortalAccounts.clientId],
+    references: [clients.id],
+  }),
+  verificationCodes: many(clientPortalVerificationCodes),
+}));
+
+export const clientPortalVerificationCodesRelations = relations(clientPortalVerificationCodes, ({ one }) => ({
+  portalAccount: one(clientPortalAccounts, {
+    fields: [clientPortalVerificationCodes.portalAccountId],
+    references: [clientPortalAccounts.id],
+  }),
+}));
+
+export const jobMilestonesRelations = relations(jobMilestones, ({ one, many }) => ({
+  job: one(jobs, {
+    fields: [jobMilestones.jobId],
+    references: [jobs.id],
+  }),
+  invoice: one(invoices, {
+    fields: [jobMilestones.invoiceId],
+    references: [invoices.id],
+  }),
+  completedBy: one(staffProfiles, {
+    fields: [jobMilestones.completedById],
+    references: [staffProfiles.id],
+  }),
+  payments: many(milestonePayments),
+  media: many(milestoneMedia),
+}));
+
+export const milestonePaymentsRelations = relations(milestonePayments, ({ one }) => ({
+  milestone: one(jobMilestones, {
+    fields: [milestonePayments.milestoneId],
+    references: [jobMilestones.id],
+  }),
+  requestedBy: one(staffProfiles, {
+    fields: [milestonePayments.requestedById],
+    references: [staffProfiles.id],
+  }),
+}));
+
+export const milestoneMediaRelations = relations(milestoneMedia, ({ one }) => ({
+  milestone: one(jobMilestones, {
+    fields: [milestoneMedia.milestoneId],
+    references: [jobMilestones.id],
+  }),
+  job: one(jobs, {
+    fields: [milestoneMedia.jobId],
+    references: [jobs.id],
+  }),
+  scheduleEntry: one(scheduleEntries, {
+    fields: [milestoneMedia.scheduleEntryId],
+    references: [scheduleEntries.id],
+  }),
+  uploadedBy: one(staffProfiles, {
+    fields: [milestoneMedia.uploadedById],
+    references: [staffProfiles.id],
+  }),
+}));
+
+// Client Portal Insert Schemas
+export const insertClientSchema = createInsertSchema(clients).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  firstName: z.string().min(1, "First name is required"),
+  lastName: z.string().min(1, "Last name is required"),
+  email: z.string().email("Invalid email").optional().or(z.literal("")),
+  phone: z.string().optional(),
+  clientType: z.enum(clientTypes).optional(),
+});
+
+export const insertClientPortalAccountSchema = createInsertSchema(clientPortalAccounts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastLoginAt: true,
+}).extend({
+  clientId: z.string().min(1, "Client is required"),
+  email: z.string().email("Valid email is required"),
+});
+
+export const insertJobMilestoneSchema = createInsertSchema(jobMilestones).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  startedAt: true,
+  completedAt: true,
+  completedById: true,
+}).extend({
+  jobId: z.string().min(1, "Job is required"),
+  title: z.string().min(1, "Title is required"),
+  status: z.enum(milestoneStatuses).optional(),
+});
+
+export const insertMilestonePaymentSchema = createInsertSchema(milestonePayments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  milestoneId: z.string().min(1, "Milestone is required"),
+  amount: z.string().min(1, "Amount is required"),
+  status: z.enum(milestonePaymentStatuses).optional(),
+});
+
+export const insertMilestoneMediaSchema = createInsertSchema(milestoneMedia).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  milestoneId: z.string().min(1, "Milestone is required"),
+  jobId: z.string().min(1, "Job is required"),
+  mediaType: z.enum(["photo", "note"]),
+});
+
+// Client Portal Types
+export type Client = typeof clients.$inferSelect;
+export type InsertClient = z.infer<typeof insertClientSchema>;
+
+export type ClientPortalAccount = typeof clientPortalAccounts.$inferSelect;
+export type InsertClientPortalAccount = z.infer<typeof insertClientPortalAccountSchema>;
+
+export type ClientPortalVerificationCode = typeof clientPortalVerificationCodes.$inferSelect;
+
+export type JobMilestone = typeof jobMilestones.$inferSelect;
+export type InsertJobMilestone = z.infer<typeof insertJobMilestoneSchema>;
+
+export type MilestonePayment = typeof milestonePayments.$inferSelect;
+export type InsertMilestonePayment = z.infer<typeof insertMilestonePaymentSchema>;
+
+export type MilestoneMedia = typeof milestoneMedia.$inferSelect;
+export type InsertMilestoneMedia = z.infer<typeof insertMilestoneMediaSchema>;
+
+// Client Portal Helper Types
+export type ClientWithPortal = Client & {
+  portalAccount?: ClientPortalAccount;
+};
+
+export type JobMilestoneWithDetails = JobMilestone & {
+  payments: MilestonePayment[];
+  media: MilestoneMedia[];
+};
+
+export type ClientJobView = {
+  jobId: string;
+  jobTitle: string;
+  jobStatus: string;
+  milestones: JobMilestoneWithDetails[];
+  totalAmount: number;
+  paidAmount: number;
+  pendingPayments: number;
+  progressPercent: number;
+  nextMilestone?: JobMilestone;
+  hasScheduledDates: boolean;
+};
+
+export type ClientPortalDashboard = {
+  client: Client;
+  activeJobs: ClientJobView[];
+  upcomingPayments: MilestonePayment[];
+  recentMedia: MilestoneMedia[];
 };
