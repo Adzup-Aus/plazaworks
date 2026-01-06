@@ -31,6 +31,13 @@ Key features include:
 - Removed job type as a user input from all forms (job form, quote form, jobs list filters) - field kept in schema for backward compatibility
 - Added inline client creation dialog in quote wizard - users can create new clients without leaving the wizard
 - Integrated Resend email service with pre-built templates
+- Added unified numbering system for jobs and invoices:
+  - organizationCounters table for sequential number reservation per organization
+  - Jobs table updated with jobNumber, jobName, suburb, referenceNumber, quoteId, invoiceId fields
+  - Quotes table updated with referenceNumber field
+  - Invoices table updated with referenceNumber, clientId, paymentLinkToken fields
+  - invoicePayments table for tracking individual milestone payments against a single invoice
+  - numberingService.ts for number reservation, job name generation, and payment link tokens
 
 ## External Dependencies
 - **Database**: PostgreSQL

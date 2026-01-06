@@ -96,6 +96,21 @@ export const organizationSettings = pgTable("organization_settings", {
   index("idx_settings_org").on(table.organizationId),
 ]);
 
+// Organization counters table - for sequential numbering (quotes/jobs/invoices share same number)
+export const organizationCounters = pgTable("organization_counters", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  counterKey: varchar("counter_key", { length: 50 }).notNull(), // e.g., "job_invoice" for shared numbering
+  nextValue: integer("next_value").notNull().default(1),
+  prefix: varchar("prefix", { length: 20 }).default(""),
+  padLength: integer("pad_length").default(4), // e.g., 4 = "0001"
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  unique("uniq_counter_org_key").on(table.organizationId, table.counterKey),
+  index("idx_counter_org").on(table.organizationId),
+]);
+
 // Organization members table - links users to organizations
 export const organizationMembers = pgTable("organization_members", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -410,17 +425,27 @@ export const staffProfiles = pgTable("staff_profiles", {
 export const jobs = pgTable("jobs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  // Job numbering - same as invoice number for seamless workflow
+  jobNumber: varchar("job_number", { length: 50 }),
+  // Job name auto-generated as "[Client Name] | Suburb"
+  jobName: varchar("job_name", { length: 255 }),
+  // Shared reference number linking quote/job/invoice
+  referenceNumber: integer("reference_number"),
   clientId: varchar("client_id"),
   clientName: varchar("client_name", { length: 255 }).notNull(),
   clientEmail: varchar("client_email", { length: 255 }),
   clientPhone: varchar("client_phone", { length: 50 }),
   address: text("address").notNull(),
+  suburb: varchar("suburb", { length: 100 }),
   jobType: varchar("job_type", { length: 50 }).notNull(),
   description: text("description"),
   status: varchar("status", { length: 50 }).notNull().default("pending"),
   priority: varchar("priority", { length: 20 }).default("normal"),
   estimatedDuration: varchar("estimated_duration", { length: 50 }),
   notes: text("notes"),
+  // Links to quote and invoice
+  quoteId: varchar("quote_id"),
+  invoiceId: varchar("invoice_id"),
   createdById: varchar("created_by_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -429,6 +454,8 @@ export const jobs = pgTable("jobs", {
   index("idx_jobs_status").on(table.status),
   index("idx_jobs_type").on(table.jobType),
   index("idx_jobs_created").on(table.createdAt),
+  index("idx_jobs_number").on(table.jobNumber),
+  index("idx_jobs_ref").on(table.referenceNumber),
 ]);
 
 // Schedule entry statuses
@@ -751,6 +778,8 @@ export const quotes = pgTable("quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   quoteNumber: varchar("quote_number", { length: 50 }).notNull().unique(),
+  // Shared reference number linking quote/job/invoice (sequential per org)
+  referenceNumber: integer("reference_number"),
   // Client reference - required, no manual entry allowed
   clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
   // Snapshot of client details at time of quote creation (for historical accuracy)
@@ -791,6 +820,7 @@ export const quotes = pgTable("quotes", {
   index("idx_quotes_created").on(table.createdAt),
   index("idx_quotes_client").on(table.clientId),
   index("idx_quotes_client_status").on(table.clientStatus),
+  index("idx_quotes_ref").on(table.referenceNumber),
 ]);
 
 // Invoices table
@@ -798,8 +828,11 @@ export const invoices = pgTable("invoices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   invoiceNumber: varchar("invoice_number", { length: 50 }).notNull().unique(),
+  // Shared reference number linking quote/job/invoice (sequential per org)
+  referenceNumber: integer("reference_number"),
   jobId: varchar("job_id").references(() => jobs.id, { onDelete: "set null" }),
   quoteId: varchar("quote_id").references(() => quotes.id, { onDelete: "set null" }),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
   clientName: varchar("client_name", { length: 255 }).notNull(),
   clientEmail: varchar("client_email", { length: 255 }),
   clientPhone: varchar("client_phone", { length: 50 }),
@@ -814,6 +847,8 @@ export const invoices = pgTable("invoices", {
   dueDate: date("due_date"),
   notes: text("notes"),
   termsAndConditions: text("terms_and_conditions"),
+  // Payment link token for client portal access
+  paymentLinkToken: varchar("payment_link_token", { length: 100 }),
   stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
   createdById: varchar("created_by_id"),
   sentAt: timestamp("sent_at"),
@@ -825,6 +860,31 @@ export const invoices = pgTable("invoices", {
   index("idx_invoices_number").on(table.invoiceNumber),
   index("idx_invoices_job").on(table.jobId),
   index("idx_invoices_due").on(table.dueDate),
+  index("idx_invoices_ref").on(table.referenceNumber),
+  index("idx_invoices_token").on(table.paymentLinkToken),
+]);
+
+// Invoice payments table - records individual payments against an invoice
+export const invoicePayments = pgTable("invoice_payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
+  // Optional milestone reference if payment is for a specific milestone
+  milestoneId: varchar("milestone_id"),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  paymentMethod: varchar("payment_method", { length: 20 }).notNull().default("stripe"),
+  status: varchar("status", { length: 20 }).notNull().default("completed"),
+  // Payment provider references
+  stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
+  stripeChargeId: varchar("stripe_charge_id", { length: 255 }),
+  // Payment details
+  description: varchar("description", { length: 255 }),
+  paidAt: timestamp("paid_at").defaultNow(),
+  createdById: varchar("created_by_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_inv_payments_invoice").on(table.invoiceId),
+  index("idx_inv_payments_status").on(table.status),
+  index("idx_inv_payments_paid").on(table.paidAt),
 ]);
 
 // Quote milestones - for organizing line items into phases/stages
@@ -1112,6 +1172,30 @@ export const insertQuoteMilestoneSchema = createInsertSchema(quoteMilestones).om
   expectedEndDate: z.string().optional(),
 });
 
+export const insertInvoicePaymentSchema = createInsertSchema(invoicePayments).omit({
+  id: true,
+  createdAt: true,
+  paidAt: true,
+}).extend({
+  invoiceId: z.string().min(1, "Invoice ID is required"),
+  amount: z.string(),
+  paymentMethod: z.enum(paymentMethods).optional(),
+  status: z.enum(paymentStatuses).optional(),
+  description: z.string().optional(),
+});
+
+export const insertOrganizationCounterSchema = createInsertSchema(organizationCounters).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  organizationId: z.string().min(1, "Organization ID is required"),
+  counterKey: z.string().min(1, "Counter key is required"),
+  nextValue: z.number().optional(),
+  prefix: z.string().optional(),
+  padLength: z.number().optional(),
+});
+
 // Phase 3 Types
 export type Quote = typeof quotes.$inferSelect;
 export type InsertQuote = z.infer<typeof insertQuoteSchema>;
@@ -1134,6 +1218,12 @@ export type InsertQuoteWorkflowEvent = z.infer<typeof insertQuoteWorkflowEventSc
 export type QuoteMilestone = typeof quoteMilestones.$inferSelect;
 export type InsertQuoteMilestone = z.infer<typeof insertQuoteMilestoneSchema>;
 
+export type InvoicePayment = typeof invoicePayments.$inferSelect;
+export type InsertInvoicePayment = z.infer<typeof insertInvoicePaymentSchema>;
+
+export type OrganizationCounter = typeof organizationCounters.$inferSelect;
+export type InsertOrganizationCounter = z.infer<typeof insertOrganizationCounterSchema>;
+
 // Helper types
 export type QuoteWithLineItems = Quote & {
   lineItems: LineItem[];
@@ -1153,6 +1243,7 @@ export type QuoteWithDetails = Quote & {
 export type InvoiceWithDetails = Invoice & {
   lineItems: LineItem[];
   payments: Payment[];
+  invoicePayments: InvoicePayment[];
 };
 
 // =====================

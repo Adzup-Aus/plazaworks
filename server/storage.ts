@@ -19,6 +19,8 @@ import {
   type InsertLineItem,
   type Payment,
   type InsertPayment,
+  type InvoicePayment,
+  type InsertInvoicePayment,
   type QuoteWithLineItems,
   type InvoiceWithDetails,
   type Vehicle,
@@ -164,6 +166,7 @@ import {
   quoteWorkflowEvents,
   quoteMilestones,
   organizationSettings,
+  invoicePayments,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, lt, sql, inArray, isNull } from "drizzle-orm";
@@ -281,6 +284,11 @@ export interface IStorage {
   // Quote workflow event operations
   getQuoteWorkflowEvents(quoteId: string): Promise<QuoteWorkflowEvent[]>;
   createQuoteWorkflowEvent(event: InsertQuoteWorkflowEvent): Promise<QuoteWorkflowEvent>;
+
+  // Invoice payment operations
+  getInvoicePayments(invoiceId: string): Promise<InvoicePayment[]>;
+  createInvoicePayment(payment: InsertInvoicePayment): Promise<InvoicePayment>;
+  getInvoiceByPaymentToken(token: string): Promise<Invoice | undefined>;
 
   // Organization settings operations
   getOrganizationSettings(organizationId: string): Promise<OrganizationSettings | undefined>;
@@ -858,8 +866,9 @@ export class DatabaseStorage implements IStorage {
     const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id));
     if (!invoice) return undefined;
     const items = await db.select().from(lineItems).where(eq(lineItems.invoiceId, id)).orderBy(lineItems.sortOrder);
-    const invoicePayments = await db.select().from(payments).where(eq(payments.invoiceId, id)).orderBy(desc(payments.createdAt));
-    return { ...invoice, lineItems: items, payments: invoicePayments };
+    const invoicePaymentsData = await db.select().from(payments).where(eq(payments.invoiceId, id)).orderBy(desc(payments.createdAt));
+    const invPayments = await db.select().from(invoicePayments).where(eq(invoicePayments.invoiceId, id)).orderBy(desc(invoicePayments.paidAt));
+    return { ...invoice, lineItems: items, payments: invoicePaymentsData, invoicePayments: invPayments };
   }
 
   async getInvoicesByStatus(status: string): Promise<Invoice[]> {
@@ -1176,6 +1185,52 @@ export class DatabaseStorage implements IStorage {
   async createQuoteWorkflowEvent(event: InsertQuoteWorkflowEvent): Promise<QuoteWorkflowEvent> {
     const [created] = await db.insert(quoteWorkflowEvents).values(event).returning();
     return created;
+  }
+
+  // =====================
+  // Invoice Payments
+  // =====================
+
+  async getInvoicePayments(invoiceId: string): Promise<InvoicePayment[]> {
+    return db.select().from(invoicePayments).where(eq(invoicePayments.invoiceId, invoiceId)).orderBy(desc(invoicePayments.paidAt));
+  }
+
+  async createInvoicePayment(payment: InsertInvoicePayment): Promise<InvoicePayment> {
+    const [created] = await db.insert(invoicePayments).values(payment).returning();
+
+    const invoice = await this.getInvoice(payment.invoiceId);
+    if (invoice) {
+      const currentPaid = parseFloat(invoice.amountPaid || "0");
+      const paymentAmount = parseFloat(payment.amount);
+      const newPaid = currentPaid + paymentAmount;
+      const total = parseFloat(invoice.total || "0");
+      const newDue = Math.max(0, total - newPaid);
+
+      let newStatus = invoice.status;
+      if (newDue <= 0) {
+        newStatus = "paid";
+      } else if (newPaid > 0) {
+        newStatus = "partially_paid";
+      }
+
+      await db
+        .update(invoices)
+        .set({
+          amountPaid: String(newPaid),
+          amountDue: String(newDue),
+          status: newStatus,
+          paidAt: newDue <= 0 ? new Date() : null,
+          updatedAt: new Date(),
+        })
+        .where(eq(invoices.id, payment.invoiceId));
+    }
+
+    return created;
+  }
+
+  async getInvoiceByPaymentToken(token: string): Promise<Invoice | undefined> {
+    const [invoice] = await db.select().from(invoices).where(eq(invoices.paymentLinkToken, token));
+    return invoice;
   }
 
   // =====================
