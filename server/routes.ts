@@ -859,9 +859,12 @@ export async function registerRoutes(
       
       // Auto-create default organization if user has no memberships
       if (memberships.length === 0) {
-        const user = await storage.getUser(userId);
-        const orgName = user?.firstName && user?.lastName 
-          ? `${user.firstName} ${user.lastName}'s Organization`
+        // Use OIDC claims for user name if available
+        const claims = req.user?.claims || {};
+        const firstName = claims.first_name || claims.given_name || "";
+        const lastName = claims.last_name || claims.family_name || "";
+        const orgName = firstName && lastName 
+          ? `${firstName} ${lastName}'s Organization`
           : `Organization ${userId.substring(0, 8)}`;
         
         // Create default organization
@@ -872,7 +875,7 @@ export async function registerRoutes(
         });
         
         // Create owner membership for this user
-        await storage.createOrganizationMembership({
+        await storage.createOrganizationMember({
           organizationId: newOrg.id,
           userId: userId,
           role: "owner",
@@ -3846,7 +3849,7 @@ export async function registerRoutes(
   // =====================
 
   // Get all clients for the organization
-  app.get("/api/clients", isAuthenticated, async (req: any, res) => {
+  app.get("/api/clients", isAuthenticated, withOrganization, async (req: any, res) => {
     try {
       const organizationId = req.organizationId;
       if (!organizationId) {
@@ -3875,7 +3878,7 @@ export async function registerRoutes(
   });
 
   // Create client
-  app.post("/api/clients", isAuthenticated, async (req: any, res) => {
+  app.post("/api/clients", isAuthenticated, withOrganization, async (req: any, res) => {
     try {
       const organizationId = req.organizationId;
       if (!organizationId) {
