@@ -47,6 +47,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
@@ -165,6 +166,8 @@ const quoteWizardSchema = z.object({
   singleTotalPrice: z.coerce.number().min(0).optional(),
   milestones: z.array(milestoneSchema).min(1, "At least one milestone is required"),
   customSections: z.array(customSectionSchema).default([]),
+  termsOfTradeTemplateId: z.string().optional(),
+  termsOfTradeContent: z.string().optional(),
 });
 
 type QuoteWizardValues = z.infer<typeof quoteWizardSchema>;
@@ -253,6 +256,8 @@ export default function QuoteWizard() {
         { richDescription: "", price: 0 }
       ],
       customSections: [],
+      termsOfTradeTemplateId: "",
+      termsOfTradeContent: "",
     },
   });
 
@@ -378,6 +383,8 @@ export default function QuoteWizard() {
         subtotal: subtotal.toFixed(2),
         taxAmount: taxAmount.toFixed(2),
         total: total.toFixed(2),
+        termsOfTradeTemplateId: data.termsOfTradeTemplateId || null,
+        termsOfTradeContent: data.termsOfTradeContent || null,
       });
       const newQuote = await response.json();
 
@@ -1504,11 +1511,77 @@ function Step4CustomSections({
     }
   };
 
+  const handleTermsOfTradeChange = (templateId: string) => {
+    const effectiveId = templateId === "none" ? "" : templateId;
+    form.setValue("termsOfTradeTemplateId", effectiveId, { shouldDirty: true, shouldTouch: true });
+    const template = termsTemplates.find(t => t.id.toString() === templateId);
+    if (template) {
+      form.setValue("termsOfTradeContent", template.content, { shouldDirty: true, shouldTouch: true });
+    } else {
+      form.setValue("termsOfTradeContent", "", { shouldDirty: true, shouldTouch: true });
+    }
+  };
+
+  const selectedTermsTemplateId = form.watch("termsOfTradeTemplateId");
+
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Terms of Trade
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Select terms of trade to include with this quote. These can be sent as a separate PDF.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <FormField
+            control={form.control}
+            name="termsOfTradeTemplateId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Select Terms of Trade Template</FormLabel>
+                <Select 
+                  onValueChange={handleTermsOfTradeChange} 
+                  value={field.value || ""}
+                >
+                  <FormControl>
+                    <SelectTrigger data-testid="select-terms-of-trade">
+                      <SelectValue placeholder="Select terms template..." />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="none">No terms of trade</SelectItem>
+                    {termsTemplates.map((template) => (
+                      <SelectItem key={template.id} value={template.id.toString()}>
+                        {template.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          {selectedTermsTemplateId && selectedTermsTemplateId !== "none" && (
+            <div className="mt-4 p-4 bg-muted/50 rounded-md">
+              <div className="text-sm text-muted-foreground mb-2">Preview:</div>
+              <div 
+                className="prose prose-sm max-w-none dark:prose-invert"
+                dangerouslySetInnerHTML={{ __html: form.watch("termsOfTradeContent") || "" }}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Separator />
+
       <div>
         <h2 className="text-xl font-semibold mb-2">Custom Sections</h2>
-        <p className="text-muted-foreground">Add additional sections like Terms & Conditions, Warranty, etc.</p>
+        <p className="text-muted-foreground">Add additional sections like warranty information, special conditions, etc.</p>
       </div>
 
       {customSectionFields.map((field, index) => (
@@ -1670,6 +1743,24 @@ function Step5Review({
           ))}
         </CardContent>
       </Card>
+
+      {data.termsOfTradeContent && data.termsOfTradeTemplateId && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Terms of Trade
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">Will be included with the quote and can be sent as a separate PDF</p>
+          </CardHeader>
+          <CardContent>
+            <div 
+              className="prose prose-sm max-w-none dark:prose-invert"
+              dangerouslySetInnerHTML={{ __html: data.termsOfTradeContent }}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {data.customSections && data.customSections.length > 0 && (
         <Card>
