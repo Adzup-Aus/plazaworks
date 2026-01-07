@@ -28,6 +28,11 @@ Key features include:
 - **Email Integration**: Resend integration for transactional emails (quote notifications, invoices, OTP login, job completion).
 
 ## Recent Changes
+- Added Terms Templates feature for reusable quote sections:
+  - Settings page (/settings) for managing templates with rich text editor
+  - Template dropdown in quote wizard Step 4 (Custom Sections) to apply saved templates
+  - termsTemplates table with name, content, organizationId, and createdById fields
+  - API routes with Zod validation for CRUD operations
 - Removed job type as a user input from all forms (job form, quote form, jobs list filters) - field kept in schema for backward compatibility
 - Added inline client creation dialog in quote wizard - users can create new clients without leaving the wizard
 - Integrated Resend email service with pre-built templates
