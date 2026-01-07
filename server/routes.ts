@@ -2435,6 +2435,71 @@ export async function registerRoutes(
   });
 
   // =====================
+  // QUOTE CUSTOM SECTIONS
+  // =====================
+
+  // Get custom sections for quote
+  app.get("/api/quotes/:quoteId/custom-sections", isAuthenticated, async (req, res) => {
+    try {
+      const sections = await storage.getQuoteCustomSections(req.params.quoteId);
+      res.json(sections);
+    } catch (err: any) {
+      console.error("Error fetching quote custom sections:", err);
+      res.status(500).json({ message: "Failed to fetch quote custom sections" });
+    }
+  });
+
+  // Create custom section for quote
+  app.post("/api/quotes/:quoteId/custom-sections", isAuthenticated, async (req, res) => {
+    try {
+      const section = await storage.createQuoteCustomSection({
+        ...req.body,
+        quoteId: req.params.quoteId,
+      });
+      res.status(201).json(section);
+    } catch (err: any) {
+      console.error("Error creating quote custom section:", err);
+      res.status(500).json({ message: "Failed to create quote custom section" });
+    }
+  });
+
+  // Update custom section
+  app.patch("/api/quote-custom-sections/:id", isAuthenticated, async (req, res) => {
+    try {
+      const updated = await storage.updateQuoteCustomSection(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ message: "Quote custom section not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating quote custom section:", err);
+      res.status(500).json({ message: "Failed to update quote custom section" });
+    }
+  });
+
+  // Delete custom section
+  app.delete("/api/quote-custom-sections/:id", isAuthenticated, async (req, res) => {
+    try {
+      await storage.deleteQuoteCustomSection(req.params.id);
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting quote custom section:", err);
+      res.status(500).json({ message: "Failed to delete quote custom section" });
+    }
+  });
+
+  // Delete all custom sections for a quote
+  app.delete("/api/quotes/:quoteId/custom-sections", isAuthenticated, async (req, res) => {
+    try {
+      await storage.deleteQuoteCustomSectionsByQuote(req.params.quoteId);
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting quote custom sections:", err);
+      res.status(500).json({ message: "Failed to delete quote custom sections" });
+    }
+  });
+
+  // =====================
   // QUOTE PAYMENT SCHEDULES
   // =====================
 

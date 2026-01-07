@@ -901,6 +901,18 @@ export const quoteMilestones = pgTable("quote_milestones", {
   index("idx_quote_milestones_quote").on(table.quoteId),
 ]);
 
+// Quote custom sections - for additional text sections like "What's Included", "What's NOT Included", etc.
+export const quoteCustomSections = pgTable("quote_custom_sections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").notNull().references(() => quotes.id, { onDelete: "cascade" }),
+  heading: varchar("heading", { length: 255 }).notNull(),
+  content: text("content").notNull(),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_quote_custom_sections_quote").on(table.quoteId),
+]);
+
 // Line items - shared between quotes and invoices
 export const lineItems = pgTable("line_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -995,6 +1007,7 @@ export const quotesRelations = relations(quotes, ({ many, one }) => ({
   milestones: many(quoteMilestones),
   paymentSchedules: many(quotePaymentSchedules),
   workflowEvents: many(quoteWorkflowEvents),
+  customSections: many(quoteCustomSections),
   client: one(clients, {
     fields: [quotes.clientId],
     references: [clients.id],
@@ -1006,6 +1019,13 @@ export const quotesRelations = relations(quotes, ({ many, one }) => ({
   convertedInvoice: one(invoices, {
     fields: [quotes.convertedToInvoiceId],
     references: [invoices.id],
+  }),
+}));
+
+export const quoteCustomSectionsRelations = relations(quoteCustomSections, ({ one }) => ({
+  quote: one(quotes, {
+    fields: [quoteCustomSections.quoteId],
+    references: [quotes.id],
   }),
 }));
 
@@ -1172,6 +1192,15 @@ export const insertQuoteMilestoneSchema = createInsertSchema(quoteMilestones).om
   expectedEndDate: z.string().optional(),
 });
 
+export const insertQuoteCustomSectionSchema = createInsertSchema(quoteCustomSections).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  heading: z.string().min(1, "Section heading is required"),
+  content: z.string().optional().nullable(),
+  sortOrder: z.number().optional(),
+});
+
 export const insertInvoicePaymentSchema = createInsertSchema(invoicePayments).omit({
   id: true,
   createdAt: true,
@@ -1217,6 +1246,9 @@ export type InsertQuoteWorkflowEvent = z.infer<typeof insertQuoteWorkflowEventSc
 
 export type QuoteMilestone = typeof quoteMilestones.$inferSelect;
 export type InsertQuoteMilestone = z.infer<typeof insertQuoteMilestoneSchema>;
+
+export type QuoteCustomSection = typeof quoteCustomSections.$inferSelect;
+export type InsertQuoteCustomSection = z.infer<typeof insertQuoteCustomSectionSchema>;
 
 export type InvoicePayment = typeof invoicePayments.$inferSelect;
 export type InsertInvoicePayment = z.infer<typeof insertInvoicePaymentSchema>;

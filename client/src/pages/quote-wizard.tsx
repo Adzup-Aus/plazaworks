@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -7,7 +7,8 @@ import { z } from "zod";
 import { format } from "date-fns";
 import { 
   ArrowLeft, ArrowRight, Check, User, DollarSign, 
-  FileText, Plus, Trash2, UserPlus, CalendarIcon, ListOrdered
+  FileText, Plus, Trash2, UserPlus, CalendarIcon, ListOrdered,
+  ChevronDown, Send, CheckCircle
 } from "lucide-react";
 
 const COUNTRIES = [
@@ -70,6 +71,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Client } from "@shared/schema";
@@ -134,6 +141,12 @@ const milestoneSchema = z.object({
   price: z.coerce.number().min(0).optional(),
 });
 
+const customSectionSchema = z.object({
+  id: z.string().optional(),
+  heading: z.string().min(1, "Section heading is required"),
+  content: z.string().optional(),
+});
+
 const quoteWizardSchema = z.object({
   clientId: z.string().min(1, "Please select a client"),
   clientName: z.string().min(1, "Client name is required"),
@@ -152,6 +165,7 @@ const quoteWizardSchema = z.object({
   useSinglePrice: z.boolean().default(true),
   singleTotalPrice: z.coerce.number().min(0).optional(),
   milestones: z.array(milestoneSchema).min(1, "At least one milestone is required"),
+  customSections: z.array(customSectionSchema).default([]),
 });
 
 type QuoteWizardValues = z.infer<typeof quoteWizardSchema>;
@@ -206,6 +220,7 @@ export default function QuoteWizard() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [currentStep, setCurrentStep] = useState(1);
+  const submissionModeRef = useRef<"draft" | "send" | "mark_sent">("draft");
 
   const { data: clients, isLoading: clientsLoading } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
@@ -233,12 +248,22 @@ export default function QuoteWizard() {
       milestones: [
         { heading: "", richDescription: "", price: 0 }
       ],
+      customSections: [],
     },
   });
 
   const { fields: milestoneFields, append, remove, replace } = useFieldArray({
     control: form.control,
     name: "milestones",
+  });
+
+  const { 
+    fields: customSectionFields, 
+    append: appendSection, 
+    remove: removeSection 
+  } = useFieldArray({
+    control: form.control,
+    name: "customSections",
   });
 
   const handleClientSelect = (clientId: string) => {
@@ -453,11 +478,42 @@ export default function QuoteWizard() {
         }
       }
 
-      return newQuote;
+      if (data.customSections && data.customSections.length > 0) {
+        for (let sectionIndex = 0; sectionIndex < data.customSections.length; sectionIndex++) {
+          const section = data.customSections[sectionIndex];
+          await apiRequest("POST", `/api/quotes/${newQuote.id}/custom-sections`, {
+            heading: section.heading,
+            content: section.content || null,
+            sortOrder: sectionIndex,
+          });
+        }
+      }
+
+      const mode = submissionModeRef.current;
+      if (mode === "send" || mode === "mark_sent") {
+        await apiRequest("PATCH", `/api/quotes/${newQuote.id}`, {
+          status: "sent",
+        });
+        
+        if (mode === "send") {
+          try {
+            await apiRequest("POST", `/api/quotes/${newQuote.id}/send`);
+          } catch (err) {
+            console.log("Email send may not be configured:", err);
+          }
+        }
+      }
+
+      return { quote: newQuote, mode };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/quotes"] });
-      toast({ title: "Quote created successfully" });
+      const message = result.mode === "send" 
+        ? "Quote created and sent to client" 
+        : result.mode === "mark_sent"
+        ? "Quote created and marked as sent"
+        : "Quote created successfully";
+      toast({ title: message });
       navigate("/quotes");
     },
     onError: () => {
@@ -535,6 +591,9 @@ export default function QuoteWizard() {
                 onMilestoneCountChange={handleMilestoneCountChange}
                 onAppend={() => append({ heading: "", richDescription: "", price: 0 })}
                 onRemove={remove}
+                customSectionFields={customSectionFields}
+                onAppendSection={() => appendSection({ heading: "", content: "" })}
+                onRemoveSection={removeSection}
               />
             )}
 
@@ -560,14 +619,49 @@ export default function QuoteWizard() {
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               ) : (
-                <Button 
-                  type="submit" 
-                  disabled={createMutation.isPending}
-                  data-testid="button-create-quote"
-                >
-                  {createMutation.isPending ? "Creating..." : "Create Quote"}
-                  <Check className="ml-2 h-4 w-4" />
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button 
+                      disabled={createMutation.isPending}
+                      data-testid="button-create-quote"
+                    >
+                      {createMutation.isPending ? "Creating..." : "Create Quote"}
+                      <ChevronDown className="ml-2 h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem 
+                      onClick={() => {
+                        submissionModeRef.current = "send";
+                        form.handleSubmit(onSubmit)();
+                      }}
+                      data-testid="menu-create-and-send"
+                    >
+                      <Send className="mr-2 h-4 w-4" />
+                      Create and Send
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => {
+                        submissionModeRef.current = "mark_sent";
+                        form.handleSubmit(onSubmit)();
+                      }}
+                      data-testid="menu-mark-as-sent"
+                    >
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Mark as sent
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => {
+                        submissionModeRef.current = "draft";
+                        form.handleSubmit(onSubmit)();
+                      }}
+                      data-testid="menu-save-as-draft"
+                    >
+                      <Check className="mr-2 h-4 w-4" />
+                      Save as draft
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           </form>
@@ -1165,13 +1259,19 @@ function Step3Milestones({
   milestoneFields,
   onMilestoneCountChange,
   onAppend,
-  onRemove
+  onRemove,
+  customSectionFields,
+  onAppendSection,
+  onRemoveSection
 }: { 
   form: ReturnType<typeof useForm<QuoteWizardValues>>;
   milestoneFields: { id: string }[];
   onMilestoneCountChange: (count: number) => void;
   onAppend: () => void;
   onRemove: (index: number) => void;
+  customSectionFields: { id: string }[];
+  onAppendSection: () => void;
+  onRemoveSection: (index: number) => void;
 }) {
   const milestones = form.watch("milestones");
   const useSinglePrice = form.watch("useSinglePrice");
@@ -1391,6 +1491,84 @@ function Step3Milestones({
         <Plus className="mr-2 h-4 w-4" />
         Add Milestone
       </Button>
+
+      <div className="border-t pt-6 mt-6">
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold mb-1">Custom Sections</h3>
+          <p className="text-sm text-muted-foreground">Add additional sections like Terms & Conditions, Warranty, etc.</p>
+        </div>
+
+        {customSectionFields.map((field, index) => (
+          <Card key={field.id} className="mb-4">
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between gap-4">
+                <Badge variant="outline">
+                  <FileText className="w-3 h-3 mr-1" />
+                  Section {index + 1}
+                </Badge>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onRemoveSection(index)}
+                  data-testid={`button-remove-section-${index}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <FormField
+                control={form.control}
+                name={`customSections.${index}.heading`}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Section Heading</FormLabel>
+                    <FormControl>
+                      <Input 
+                        {...field} 
+                        placeholder="e.g., Terms & Conditions"
+                        data-testid={`input-section-heading-${index}`}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name={`customSections.${index}.content`}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Content</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        {...field} 
+                        placeholder="Enter section content..."
+                        className="min-h-[120px]"
+                        data-testid={`input-section-content-${index}`}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </CardContent>
+          </Card>
+        ))}
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onAppendSection}
+          className="w-full"
+          data-testid="button-add-section"
+        >
+          <Plus className="mr-2 h-4 w-4" />
+          Add Custom Section
+        </Button>
+      </div>
     </div>
   );
 }
@@ -1416,11 +1594,11 @@ function Step4Review({
       </div>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-3">
           <CardTitle className="text-lg">Client Details</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
             <div>
               <div className="text-muted-foreground">Client</div>
               <div className="font-medium" data-testid="text-review-client">{data.clientName}</div>
@@ -1442,16 +1620,16 @@ function Step4Review({
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-3">
           <CardTitle className="text-lg">Job Details</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
             <div>
               <div className="text-muted-foreground">Valid Until</div>
               <div className="font-medium">{data.validUntil ? format(data.validUntil, "PPP") : "Not specified"}</div>
             </div>
-            <div className="col-span-2">
+            <div className="lg:col-span-3">
               <div className="text-muted-foreground">Description</div>
               <div className="font-medium">{data.description || "-"}</div>
             </div>
@@ -1481,6 +1659,26 @@ function Step4Review({
           ))}
         </CardContent>
       </Card>
+
+      {data.customSections && data.customSections.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Additional Sections</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {data.customSections.map((section, index) => (
+              <div key={index} className="p-4 border rounded-md">
+                <div className="font-medium mb-2">{section.heading}</div>
+                {section.content && (
+                  <div className="text-sm text-muted-foreground whitespace-pre-wrap">
+                    {section.content}
+                  </div>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

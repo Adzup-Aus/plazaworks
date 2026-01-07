@@ -105,6 +105,9 @@ import {
   // Quote milestone types
   type QuoteMilestone,
   type InsertQuoteMilestone,
+  // Quote custom section types
+  type QuoteCustomSection,
+  type InsertQuoteCustomSection,
   // Quote payment schedule types
   type QuotePaymentSchedule,
   type InsertQuotePaymentSchedule,
@@ -165,6 +168,7 @@ import {
   quotePaymentSchedules,
   quoteWorkflowEvents,
   quoteMilestones,
+  quoteCustomSections,
   organizationSettings,
   invoicePayments,
 } from "@shared/schema";
@@ -271,6 +275,13 @@ export interface IStorage {
   updateQuoteMilestone(id: string, milestone: Partial<InsertQuoteMilestone>): Promise<QuoteMilestone | undefined>;
   deleteQuoteMilestone(id: string): Promise<boolean>;
   deleteQuoteMilestonesByQuote(quoteId: string): Promise<boolean>;
+
+  // Quote custom section operations
+  getQuoteCustomSections(quoteId: string): Promise<QuoteCustomSection[]>;
+  createQuoteCustomSection(section: InsertQuoteCustomSection): Promise<QuoteCustomSection>;
+  updateQuoteCustomSection(id: string, section: Partial<InsertQuoteCustomSection>): Promise<QuoteCustomSection | undefined>;
+  deleteQuoteCustomSection(id: string): Promise<boolean>;
+  deleteQuoteCustomSectionsByQuote(quoteId: string): Promise<boolean>;
 
   // Quote payment schedule operations
   getQuotePaymentSchedules(quoteId: string): Promise<QuotePaymentSchedule[]>;
@@ -1120,6 +1131,41 @@ export class DatabaseStorage implements IStorage {
   async deleteQuoteMilestonesByQuote(quoteId: string): Promise<boolean> {
     await db.delete(quoteMilestones)
       .where(eq(quoteMilestones.quoteId, quoteId));
+    return true;
+  }
+
+  // =====================
+  // Quote Custom Sections
+  // =====================
+
+  async getQuoteCustomSections(quoteId: string): Promise<QuoteCustomSection[]> {
+    return await db.select().from(quoteCustomSections)
+      .where(eq(quoteCustomSections.quoteId, quoteId))
+      .orderBy(quoteCustomSections.sortOrder);
+  }
+
+  async createQuoteCustomSection(section: InsertQuoteCustomSection): Promise<QuoteCustomSection> {
+    const [created] = await db.insert(quoteCustomSections).values(section).returning();
+    return created;
+  }
+
+  async updateQuoteCustomSection(id: string, section: Partial<InsertQuoteCustomSection>): Promise<QuoteCustomSection | undefined> {
+    const [updated] = await db.update(quoteCustomSections)
+      .set(section)
+      .where(eq(quoteCustomSections.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteQuoteCustomSection(id: string): Promise<boolean> {
+    await db.delete(quoteCustomSections)
+      .where(eq(quoteCustomSections.id, id));
+    return true;
+  }
+
+  async deleteQuoteCustomSectionsByQuote(quoteId: string): Promise<boolean> {
+    await db.delete(quoteCustomSections)
+      .where(eq(quoteCustomSections.quoteId, quoteId));
     return true;
   }
 
