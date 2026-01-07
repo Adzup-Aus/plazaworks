@@ -821,6 +821,9 @@ export const quotes = pgTable("quotes", {
   validUntil: date("valid_until"),
   notes: text("notes"),
   termsAndConditions: text("terms_and_conditions"),
+  // Terms of Trade from template
+  termsOfTradeTemplateId: varchar("terms_of_trade_template_id").references(() => termsTemplates.id, { onDelete: "set null" }),
+  termsOfTradeContent: text("terms_of_trade_content"),
   // Conversion tracking
   convertedToJobId: varchar("converted_to_job_id"),
   convertedToInvoiceId: varchar("converted_to_invoice_id"),
