@@ -37,6 +37,7 @@ import Clients from "@/pages/clients";
 import Settings from "@/pages/settings";
 import ClientPortalLogin from "@/pages/client-portal-login";
 import ClientPortalDashboard from "@/pages/client-portal-dashboard";
+import InvoicePayment from "@/pages/invoice-payment";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -120,6 +121,7 @@ function PublicRouter() {
       <Route path="/portal/login" component={ClientPortalLogin} />
       <Route path="/portal/dashboard" component={ClientPortalDashboard} />
       <Route path="/portal/:token" component={ClientPortal} />
+      <Route path="/pay/:token" component={InvoicePayment} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -133,7 +135,8 @@ function AppContent() {
                         pathname === "/login" || 
                         pathname === "/register" || 
                         pathname.startsWith("/invite/") ||
-                        pathname.startsWith("/portal/");
+                        pathname.startsWith("/portal/") ||
+                        pathname.startsWith("/pay/");
 
   if (isPublicRoute && !isAuthenticated) {
     return <PublicRouter />;

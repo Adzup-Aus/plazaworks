@@ -239,13 +239,14 @@ export interface IStorage {
   sendQuote(id: string): Promise<Quote | undefined>;
   acceptQuote(id: string): Promise<Quote | undefined>;
   rejectQuote(id: string): Promise<Quote | undefined>;
-  convertQuoteToJob(id: string): Promise<{ quote: Quote; job: Job } | undefined>;
+  convertQuoteToJob(id: string): Promise<{ quote: Quote; job: Job; invoice?: Invoice } | undefined>;
   deleteQuote(id: string): Promise<boolean>;
   generateQuoteNumber(): Promise<string>;
 
   // Invoice operations
   getInvoices(): Promise<Invoice[]>;
   getInvoice(id: string): Promise<Invoice | undefined>;
+  getInvoiceByPaymentToken(token: string): Promise<InvoiceWithDetails | undefined>;
   getInvoiceWithDetails(id: string): Promise<InvoiceWithDetails | undefined>;
   getInvoicesByStatus(status: string): Promise<Invoice[]>;
   getInvoicesByJob(jobId: string): Promise<Invoice[]>;
@@ -834,7 +835,7 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async convertQuoteToJob(id: string): Promise<{ quote: Quote; job: Job } | undefined> {
+  async convertQuoteToJob(id: string): Promise<{ quote: Quote; job: Job; invoice?: Invoice } | undefined> {
     const quote = await this.getQuote(id);
     if (!quote || quote.status !== "accepted") return undefined;
 
@@ -849,13 +850,27 @@ export class DatabaseStorage implements IStorage {
       createdById: quote.createdById,
     }).returning();
 
+    // Create invoice from quote with payment link
+    const invoice = await this.createInvoiceFromQuote(id, quote.createdById ?? undefined);
+    
+    // Link the invoice to the job if created
+    if (invoice) {
+      await db.update(invoices)
+        .set({ jobId: job.id })
+        .where(eq(invoices.id, invoice.id));
+    }
+
     const [updatedQuote] = await db
       .update(quotes)
-      .set({ convertedToJobId: job.id, updatedAt: new Date() })
+      .set({ 
+        convertedToJobId: job.id, 
+        convertedToInvoiceId: invoice?.id,
+        updatedAt: new Date() 
+      })
       .where(eq(quotes.id, id))
       .returning();
 
-    return { quote: updatedQuote, job };
+    return { quote: updatedQuote, job, invoice };
   }
 
   async deleteQuote(id: string): Promise<boolean> {
@@ -881,6 +896,15 @@ export class DatabaseStorage implements IStorage {
   async getInvoice(id: string): Promise<Invoice | undefined> {
     const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id));
     return invoice;
+  }
+
+  async getInvoiceByPaymentToken(token: string): Promise<InvoiceWithDetails | undefined> {
+    const [invoice] = await db.select().from(invoices).where(eq(invoices.paymentLinkToken, token));
+    if (!invoice) return undefined;
+    const items = await db.select().from(lineItems).where(eq(lineItems.invoiceId, invoice.id)).orderBy(lineItems.sortOrder);
+    const invoicePaymentsData = await db.select().from(payments).where(eq(payments.invoiceId, invoice.id)).orderBy(desc(payments.createdAt));
+    const invPayments = await db.select().from(invoicePayments).where(eq(invoicePayments.invoiceId, invoice.id)).orderBy(desc(invoicePayments.paidAt));
+    return { ...invoice, lineItems: items, payments: invoicePaymentsData, invoicePayments: invPayments };
   }
 
   async getInvoiceWithDetails(id: string): Promise<InvoiceWithDetails | undefined> {
@@ -938,21 +962,34 @@ export class DatabaseStorage implements IStorage {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 14);
 
+    // Generate a unique payment link token
+    const paymentLinkToken = `pay_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+
+    // Get payment schedules to find deposit amount
+    const paymentSchedules = await this.getQuotePaymentSchedules(quoteId);
+    const depositSchedule = paymentSchedules.find(s => s.type === "deposit");
+    
+    // Use deposit amount as initial amount due, or full total if no deposit
+    const depositAmount = depositSchedule?.calculatedAmount || quoteData.total;
+
     const [invoice] = await db.insert(invoices).values({
       invoiceNumber,
       quoteId,
+      clientId: quoteData.clientId,
       clientName: quoteData.clientName,
       clientEmail: quoteData.clientEmail,
       clientPhone: quoteData.clientPhone,
       clientAddress: quoteData.clientAddress,
-      status: "draft",
+      status: "sent",
       subtotal: quoteData.subtotal,
       taxRate: quoteData.taxRate,
       taxAmount: quoteData.taxAmount,
       total: quoteData.total,
-      amountDue: quoteData.total,
+      amountDue: depositAmount,
       dueDate: dueDate.toISOString().split("T")[0],
+      paymentLinkToken,
       createdById,
+      sentAt: new Date(),
     }).returning();
 
     // Copy line items
@@ -965,6 +1002,13 @@ export class DatabaseStorage implements IStorage {
         amount: item.amount,
         sortOrder: item.sortOrder,
       });
+    }
+
+    // Link payment schedules to this invoice
+    for (const schedule of paymentSchedules) {
+      await db.update(quotePaymentSchedules)
+        .set({ invoiceId: invoice.id })
+        .where(eq(quotePaymentSchedules.id, schedule.id));
     }
 
     return invoice;

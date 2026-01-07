@@ -28,6 +28,13 @@ Key features include:
 - **Email Integration**: Resend integration for transactional emails (quote notifications, invoices, OTP login, job completion).
 
 ## Recent Changes
+- Added Invoice Payment Links feature:
+  - When a quote is converted to a job, an invoice is automatically created with a unique payment link token
+  - Public payment page at /pay/:token allows clients to view invoice and pay deposit without authentication
+  - Payment schedules from quote are linked to invoice for tracking deposit and milestone payments
+  - Deposit amount is set as initial amountDue on invoice (not full total)
+  - Payment recording validates amount, updates invoice status (paid/partial), and marks deposit schedule as paid
+- Added read-only QuoteView page with edit warning dialog for non-draft quotes
 - Added Terms Templates feature for reusable quote sections:
   - Settings page (/settings) for managing templates with rich text editor
   - Template dropdown in quote wizard Step 4 (Custom Sections) to apply saved templates
