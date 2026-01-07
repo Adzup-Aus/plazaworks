@@ -137,7 +137,6 @@ const depositTypes = [
 
 const milestoneSchema = z.object({
   id: z.string().optional(),
-  heading: z.string().min(1, "Heading is required"),
   richDescription: z.string().optional(),
   price: z.coerce.number().min(0).optional(),
 });
@@ -251,7 +250,7 @@ export default function QuoteWizard() {
       useSinglePrice: true,
       singleTotalPrice: 0,
       milestones: [
-        { heading: "", richDescription: "", price: 0 }
+        { richDescription: "", price: 0 }
       ],
       customSections: [],
     },
@@ -385,8 +384,9 @@ export default function QuoteWizard() {
       for (let milestoneIndex = 0; milestoneIndex < data.milestones.length; milestoneIndex++) {
         const milestone = data.milestones[milestoneIndex];
         
+        const milestoneTitle = `Milestone ${milestoneIndex + 1}`;
         const milestoneResponse = await apiRequest("POST", `/api/quotes/${newQuote.id}/milestones`, {
-          title: milestone.heading,
+          title: milestoneTitle,
           description: milestone.richDescription || null,
           sequence: milestoneIndex + 1,
         });
@@ -396,21 +396,19 @@ export default function QuoteWizard() {
           ? (milestoneIndex === data.milestones.length - 1 ? (data.singleTotalPrice || 0) : 0)
           : (milestone.price || 0);
         
-        if (milestone.heading.trim()) {
-          const lineItemPayload: Record<string, unknown> = {
-            quoteMilestoneId: savedMilestone.id,
-            heading: milestone.heading,
-            description: milestone.heading,
-            quantity: "1",
-            unitPrice: itemPrice.toFixed(2),
-            amount: itemPrice.toFixed(2),
-            sortOrder: 0,
-          };
-          if (milestone.richDescription) {
-            lineItemPayload.richDescription = milestone.richDescription;
-          }
-          await apiRequest("POST", `/api/quotes/${newQuote.id}/line-items`, lineItemPayload);
+        const lineItemPayload: Record<string, unknown> = {
+          quoteMilestoneId: savedMilestone.id,
+          heading: milestoneTitle,
+          description: milestoneTitle,
+          quantity: "1",
+          unitPrice: itemPrice.toFixed(2),
+          amount: itemPrice.toFixed(2),
+          sortOrder: 0,
+        };
+        if (milestone.richDescription) {
+          lineItemPayload.richDescription = milestone.richDescription;
         }
+        await apiRequest("POST", `/api/quotes/${newQuote.id}/line-items`, lineItemPayload);
       }
 
       if (data.depositType !== "none") {
@@ -445,7 +443,7 @@ export default function QuoteWizard() {
               
               schedules.push({
                 type: "milestone",
-                name: `Milestone ${index + 1}: ${milestone.heading || "Payment"}`,
+                name: `Milestone ${index + 1}`,
                 isPercentage: false,
                 fixedAmount: milestoneAmount.toFixed(2),
                 calculatedAmount: milestoneAmount.toFixed(2),
@@ -597,7 +595,7 @@ export default function QuoteWizard() {
                 form={form} 
                 milestoneFields={milestoneFields}
                 onMilestoneCountChange={handleMilestoneCountChange}
-                onAppend={() => append({ heading: "", richDescription: "", price: 0 })}
+                onAppend={() => append({ richDescription: "", price: 0 })}
                 onRemove={remove}
               />
             )}
@@ -1388,24 +1386,6 @@ function Step3Milestones({
           <CardContent className="space-y-4">
             <FormField
               control={form.control}
-              name={`milestones.${index}.heading`}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Heading</FormLabel>
-                  <FormControl>
-                    <Input 
-                      {...field} 
-                      placeholder="e.g., Kitchen Renovation Phase 1"
-                      data-testid={`input-milestone-heading-${index}`}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
               name={`milestones.${index}.richDescription`}
               render={({ field }) => (
                 <FormItem>
@@ -1675,7 +1655,7 @@ function Step5Review({
           {data.milestones.map((milestone, index) => (
             <div key={index} className="p-4 border rounded-md">
               <div className="flex items-center justify-between gap-4 mb-2">
-                <div className="font-medium">{milestone.heading || `Milestone ${index + 1}`}</div>
+                <div className="font-medium">Milestone {index + 1}</div>
                 {!data.useSinglePrice && milestone.price && milestone.price > 0 && (
                   <span className="font-medium">{formatCurrency(milestone.price)}</span>
                 )}
