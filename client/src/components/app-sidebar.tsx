@@ -38,6 +38,7 @@ import {
   Target,
   Shield,
   UserCircle,
+  Settings,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -76,6 +77,11 @@ const mainNavItems = [
     title: "Clients",
     url: "/clients",
     icon: UserCircle,
+  },
+  {
+    title: "Settings",
+    url: "/settings",
+    icon: Settings,
   },
 ];
 

@@ -33,6 +33,7 @@ import Capacity from "@/pages/capacity";
 import KpiDashboard from "@/pages/kpi-dashboard";
 import Admin from "@/pages/admin";
 import Clients from "@/pages/clients";
+import Settings from "@/pages/settings";
 import ClientPortalLogin from "@/pages/client-portal-login";
 import ClientPortalDashboard from "@/pages/client-portal-dashboard";
 import NotFound from "@/pages/not-found";
@@ -57,6 +58,7 @@ function AuthenticatedRouter() {
       <Route path="/kpi" component={KpiDashboard} />
       <Route path="/team" component={Team} />
       <Route path="/clients" component={Clients} />
+      <Route path="/settings" component={Settings} />
       <Route path="/admin" component={Admin} />
       <Route component={NotFound} />
     </Switch>

@@ -115,6 +115,9 @@ import {
   type InsertQuoteWorkflowEvent,
   type OrganizationSettings,
   type InsertOrganizationSettings,
+  type TermsTemplate,
+  type InsertTermsTemplate,
+  termsTemplates,
   staffProfiles,
   userWorkingHours,
   jobs,
@@ -305,6 +308,13 @@ export interface IStorage {
   getOrganizationSettings(organizationId: string): Promise<OrganizationSettings | undefined>;
   createOrganizationSettings(settings: InsertOrganizationSettings): Promise<OrganizationSettings>;
   updateOrganizationSettings(organizationId: string, settings: Partial<InsertOrganizationSettings>): Promise<OrganizationSettings | undefined>;
+
+  // Terms template operations
+  getTermsTemplates(organizationId?: string): Promise<TermsTemplate[]>;
+  getTermsTemplate(id: string): Promise<TermsTemplate | undefined>;
+  createTermsTemplate(template: InsertTermsTemplate): Promise<TermsTemplate>;
+  updateTermsTemplate(id: string, template: Partial<InsertTermsTemplate>): Promise<TermsTemplate | undefined>;
+  deleteTermsTemplate(id: string): Promise<boolean>;
 
   // Vehicle operations
   getVehicles(): Promise<Vehicle[]>;
@@ -1300,6 +1310,43 @@ export class DatabaseStorage implements IStorage {
       .where(eq(organizationSettings.organizationId, organizationId))
       .returning();
     return updated;
+  }
+
+  // =====================
+  // Terms Templates Operations
+  // =====================
+  async getTermsTemplates(organizationId?: string): Promise<TermsTemplate[]> {
+    if (organizationId) {
+      return db.select().from(termsTemplates)
+        .where(eq(termsTemplates.organizationId, organizationId))
+        .orderBy(termsTemplates.name);
+    }
+    return db.select().from(termsTemplates).orderBy(termsTemplates.name);
+  }
+
+  async getTermsTemplate(id: string): Promise<TermsTemplate | undefined> {
+    const [template] = await db.select().from(termsTemplates)
+      .where(eq(termsTemplates.id, id));
+    return template;
+  }
+
+  async createTermsTemplate(template: InsertTermsTemplate): Promise<TermsTemplate> {
+    const [created] = await db.insert(termsTemplates).values(template).returning();
+    return created;
+  }
+
+  async updateTermsTemplate(id: string, template: Partial<InsertTermsTemplate>): Promise<TermsTemplate | undefined> {
+    const [updated] = await db.update(termsTemplates)
+      .set({ ...template, updatedAt: new Date() })
+      .where(eq(termsTemplates.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteTermsTemplate(id: string): Promise<boolean> {
+    const result = await db.delete(termsTemplates)
+      .where(eq(termsTemplates.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
 
   // =====================

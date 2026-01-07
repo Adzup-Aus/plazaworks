@@ -124,6 +124,7 @@ import {
   insertStaffCapacityRuleSchema,
   insertStaffTimeOffSchema,
   insertClientSchema,
+  insertTermsTemplateSchema,
   insertJobMilestoneSchema,
   insertMilestonePaymentSchema,
   insertMilestoneMediaSchema,
@@ -2496,6 +2497,86 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("Error deleting quote custom sections:", err);
       res.status(500).json({ message: "Failed to delete quote custom sections" });
+    }
+  });
+
+  // =====================
+  // TERMS TEMPLATES
+  // =====================
+
+  // Get all terms templates
+  app.get("/api/terms-templates", isAuthenticated, async (req, res) => {
+    try {
+      const templates = await storage.getTermsTemplates();
+      res.json(templates);
+    } catch (err: any) {
+      console.error("Error fetching terms templates:", err);
+      res.status(500).json({ message: "Failed to fetch terms templates" });
+    }
+  });
+
+  // Get single terms template
+  app.get("/api/terms-templates/:id", isAuthenticated, async (req, res) => {
+    try {
+      const template = await storage.getTermsTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+      res.json(template);
+    } catch (err: any) {
+      console.error("Error fetching terms template:", err);
+      res.status(500).json({ message: "Failed to fetch terms template" });
+    }
+  });
+
+  // Create terms template
+  app.post("/api/terms-templates", isAuthenticated, async (req: any, res) => {
+    try {
+      const parsed = insertTermsTemplateSchema.safeParse({
+        ...req.body,
+        createdById: req.user?.id,
+      });
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid template data", errors: parsed.error.issues });
+      }
+      const template = await storage.createTermsTemplate(parsed.data);
+      res.status(201).json(template);
+    } catch (err: any) {
+      console.error("Error creating terms template:", err);
+      res.status(500).json({ message: "Failed to create terms template" });
+    }
+  });
+
+  // Update terms template
+  app.patch("/api/terms-templates/:id", isAuthenticated, async (req, res) => {
+    try {
+      const updateSchema = insertTermsTemplateSchema.partial();
+      const parsed = updateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid template data", errors: parsed.error.issues });
+      }
+      const updated = await storage.updateTermsTemplate(req.params.id, parsed.data);
+      if (!updated) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating terms template:", err);
+      res.status(500).json({ message: "Failed to update terms template" });
+    }
+  });
+
+  // Delete terms template
+  app.delete("/api/terms-templates/:id", isAuthenticated, async (req, res) => {
+    try {
+      const deleted = await storage.deleteTermsTemplate(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error deleting terms template:", err);
+      res.status(500).json({ message: "Failed to delete terms template" });
     }
   });
 

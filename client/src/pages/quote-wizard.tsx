@@ -80,7 +80,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Client } from "@shared/schema";
+import type { Client, TermsTemplate } from "@shared/schema";
 
 const newClientFormSchema = z.object({
   type: z.enum(["individual", "company"]),
@@ -225,6 +225,10 @@ export default function QuoteWizard() {
 
   const { data: clients, isLoading: clientsLoading } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
+  });
+
+  const { data: termsTemplates } = useQuery<TermsTemplate[]>({
+    queryKey: ["/api/terms-templates"],
   });
 
   const form = useForm<QuoteWizardValues>({
@@ -604,6 +608,7 @@ export default function QuoteWizard() {
                 customSectionFields={customSectionFields}
                 onAppendSection={() => appendSection({ content: "" })}
                 onRemoveSection={removeSection}
+                termsTemplates={termsTemplates || []}
               />
             )}
 
@@ -1504,12 +1509,21 @@ function Step4CustomSections({
   customSectionFields,
   onAppendSection,
   onRemoveSection,
+  termsTemplates,
 }: {
   form: ReturnType<typeof useForm<QuoteWizardValues>>;
   customSectionFields: { id: string }[];
   onAppendSection: () => void;
   onRemoveSection: (index: number) => void;
+  termsTemplates: TermsTemplate[];
 }) {
+  const handleApplyTemplate = (index: number, templateId: string) => {
+    const template = termsTemplates.find(t => t.id.toString() === templateId);
+    if (template) {
+      form.setValue(`customSections.${index}.content`, template.content);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -1525,15 +1539,31 @@ function Step4CustomSections({
                 <FileText className="w-3 h-3 mr-1" />
                 Section {index + 1}
               </Badge>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => onRemoveSection(index)}
-                data-testid={`button-remove-section-${index}`}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              <div className="flex items-center gap-2">
+                {termsTemplates.length > 0 && (
+                  <Select onValueChange={(value) => handleApplyTemplate(index, value)}>
+                    <SelectTrigger className="w-[180px]" data-testid={`select-template-${index}`}>
+                      <SelectValue placeholder="Apply template" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {termsTemplates.map((template) => (
+                        <SelectItem key={template.id} value={template.id.toString()}>
+                          {template.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onRemoveSection(index)}
+                  data-testid={`button-remove-section-${index}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>

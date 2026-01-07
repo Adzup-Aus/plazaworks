@@ -111,6 +111,22 @@ export const organizationCounters = pgTable("organization_counters", {
   index("idx_counter_org").on(table.organizationId),
 ]);
 
+// Terms of trade templates - reusable templates for different service types
+export const termsTemplates = pgTable("terms_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  content: text("content").notNull(),
+  serviceType: varchar("service_type", { length: 100 }),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdById: varchar("created_by_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_terms_templates_org").on(table.organizationId),
+  index("idx_terms_templates_service").on(table.serviceType),
+]);
+
 // Organization members table - links users to organizations
 export const organizationMembers = pgTable("organization_members", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1213,6 +1229,17 @@ export const insertInvoicePaymentSchema = createInsertSchema(invoicePayments).om
   description: z.string().optional(),
 });
 
+export const insertTermsTemplateSchema = createInsertSchema(termsTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1, "Template name is required"),
+  content: z.string().min(1, "Template content is required"),
+  serviceType: z.string().optional().nullable(),
+  isDefault: z.boolean().optional(),
+});
+
 export const insertOrganizationCounterSchema = createInsertSchema(organizationCounters).omit({
   id: true,
   createdAt: true,
@@ -1255,6 +1282,9 @@ export type InsertInvoicePayment = z.infer<typeof insertInvoicePaymentSchema>;
 
 export type OrganizationCounter = typeof organizationCounters.$inferSelect;
 export type InsertOrganizationCounter = z.infer<typeof insertOrganizationCounterSchema>;
+
+export type TermsTemplate = typeof termsTemplates.$inferSelect;
+export type InsertTermsTemplate = z.infer<typeof insertTermsTemplateSchema>;
 
 // Helper types
 export type QuoteWithLineItems = Quote & {
