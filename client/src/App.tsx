@@ -24,6 +24,7 @@ import Team from "@/pages/team";
 import Quotes from "@/pages/quotes";
 import QuoteForm from "@/pages/quote-form";
 import QuoteWizard from "@/pages/quote-wizard";
+import QuoteView from "@/pages/quote-view";
 import Invoices from "@/pages/invoices";
 import InvoiceDetail from "@/pages/invoice-detail";
 import ClientPortal from "@/pages/client-portal";
@@ -47,7 +48,8 @@ function AuthenticatedRouter() {
       <Route path="/jobs/:id" component={JobForm} />
       <Route path="/quotes" component={Quotes} />
       <Route path="/quotes/new" component={QuoteWizard} />
-      <Route path="/quotes/:id" component={QuoteForm} />
+      <Route path="/quotes/:id" component={QuoteView} />
+      <Route path="/quotes/:id/edit" component={QuoteForm} />
       <Route path="/invoices" component={Invoices} />
       <Route path="/invoices/new" component={InvoiceDetail} />
       <Route path="/invoices/:id" component={InvoiceDetail} />

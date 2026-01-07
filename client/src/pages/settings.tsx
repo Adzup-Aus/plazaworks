@@ -50,7 +50,6 @@ import type { TermsTemplate } from "@shared/schema";
 const templateFormSchema = z.object({
   name: z.string().min(1, "Template name is required"),
   content: z.string().min(1, "Template content is required"),
-  serviceType: z.string().optional(),
 });
 
 type TemplateFormData = z.infer<typeof templateFormSchema>;
@@ -72,7 +71,6 @@ export default function Settings() {
     defaultValues: {
       name: "",
       content: "",
-      serviceType: "",
     },
   });
 
@@ -81,7 +79,6 @@ export default function Settings() {
     defaultValues: {
       name: "",
       content: "",
-      serviceType: "",
     },
   });
 
@@ -137,7 +134,6 @@ export default function Settings() {
     editForm.reset({
       name: template.name,
       content: template.content,
-      serviceType: template.serviceType || "",
     });
   };
 
@@ -149,8 +145,7 @@ export default function Settings() {
 
   const filteredTemplates = templates?.filter(
     (template) =>
-      template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (template.serviceType?.toLowerCase().includes(searchQuery.toLowerCase()))
+      template.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -223,16 +218,9 @@ export default function Settings() {
                     <Card key={template.id} className="p-4" data-testid={`card-template-${template.id}`}>
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-medium" data-testid={`text-template-name-${template.id}`}>
-                              {template.name}
-                            </h3>
-                            {template.serviceType && (
-                              <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
-                                {template.serviceType}
-                              </span>
-                            )}
-                          </div>
+                          <h3 className="font-medium mb-1" data-testid={`text-template-name-${template.id}`}>
+                            {template.name}
+                          </h3>
                           <div 
                             className="text-sm text-muted-foreground line-clamp-2 prose prose-sm dark:prose-invert max-w-none"
                             dangerouslySetInnerHTML={{ __html: template.content }}
@@ -287,24 +275,6 @@ export default function Settings() {
                         {...field} 
                         placeholder="e.g., Drainage Terms" 
                         data-testid="input-template-name"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={createForm.control}
-                name="serviceType"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Service Type (Optional)</FormLabel>
-                    <FormControl>
-                      <Input 
-                        {...field} 
-                        placeholder="e.g., Drainage, Bathroom Renovation" 
-                        data-testid="input-service-type"
                       />
                     </FormControl>
                     <FormMessage />
@@ -373,24 +343,6 @@ export default function Settings() {
                         {...field} 
                         placeholder="e.g., Drainage Terms" 
                         data-testid="input-edit-template-name"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={editForm.control}
-                name="serviceType"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Service Type (Optional)</FormLabel>
-                    <FormControl>
-                      <Input 
-                        {...field} 
-                        placeholder="e.g., Drainage, Bathroom Renovation" 
-                        data-testid="input-edit-service-type"
                       />
                     </FormControl>
                     <FormMessage />
