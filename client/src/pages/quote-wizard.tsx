@@ -148,6 +148,7 @@ const quoteWizardSchema = z.object({
   depositType: z.enum(["none", "percentage", "fixed"]).default("none"),
   depositPercentage: z.coerce.number().min(0).max(100).optional(),
   depositAmount: z.coerce.number().min(0).optional(),
+  depositBalanceStrategy: z.enum(["on_completion", "milestones"]).default("on_completion"),
   useSinglePrice: z.boolean().default(true),
   singleTotalPrice: z.coerce.number().min(0).optional(),
   milestones: z.array(milestoneSchema).min(1, "At least one milestone is required"),
@@ -226,6 +227,7 @@ export default function QuoteWizard() {
       depositType: "none",
       depositPercentage: 20,
       depositAmount: 0,
+      depositBalanceStrategy: "on_completion",
       useSinglePrice: true,
       singleTotalPrice: 0,
       milestones: [
@@ -272,10 +274,16 @@ export default function QuoteWizard() {
     return result;
   };
 
-  const nextStep = async () => {
+  const nextStep = async (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     const isValid = await validateStep(currentStep);
     if (isValid && currentStep < STEPS.length) {
-      setCurrentStep(currentStep + 1);
+      requestAnimationFrame(() => {
+        setCurrentStep(currentStep + 1);
+      });
     }
   };
 
@@ -356,16 +364,19 @@ export default function QuoteWizard() {
           : (milestone.price || 0);
         
         if (milestone.heading.trim()) {
-          await apiRequest("POST", `/api/quotes/${newQuote.id}/line-items`, {
+          const lineItemPayload: Record<string, unknown> = {
             quoteMilestoneId: savedMilestone.id,
             heading: milestone.heading,
             description: milestone.heading,
-            richDescription: milestone.richDescription || null,
             quantity: "1",
             unitPrice: itemPrice.toFixed(2),
             amount: itemPrice.toFixed(2),
             sortOrder: 0,
-          });
+          };
+          if (milestone.richDescription) {
+            lineItemPayload.richDescription = milestone.richDescription;
+          }
+          await apiRequest("POST", `/api/quotes/${newQuote.id}/line-items`, lineItemPayload);
         }
       }
 
@@ -373,22 +384,51 @@ export default function QuoteWizard() {
         const schedules = [];
         
         if (data.depositType === "percentage") {
+          const depositAmount = (total * (data.depositPercentage || 20)) / 100;
+          const remainingAmount = total - depositAmount;
+          
           schedules.push({
             type: "deposit",
             name: "Deposit",
             isPercentage: true,
             percentage: data.depositPercentage?.toString() || "20",
-            calculatedAmount: ((total * (data.depositPercentage || 20)) / 100).toFixed(2),
+            calculatedAmount: depositAmount.toFixed(2),
             sortOrder: 0,
           });
-          schedules.push({
-            type: "final",
-            name: "Final Payment",
-            isPercentage: true,
-            percentage: (100 - (data.depositPercentage || 20)).toString(),
-            calculatedAmount: (total - (total * (data.depositPercentage || 20)) / 100).toFixed(2),
-            sortOrder: 1,
-          });
+          
+          if (data.depositBalanceStrategy === "milestones" && data.milestones.length > 0) {
+            const milestoneCount = data.milestones.length;
+            const baseAmountPerMilestone = Math.floor((remainingAmount * 100) / milestoneCount) / 100;
+            let allocatedTotal = 0;
+            
+            data.milestones.forEach((milestone, index) => {
+              let milestoneAmount: number;
+              if (index === milestoneCount - 1) {
+                milestoneAmount = Math.round((remainingAmount - allocatedTotal) * 100) / 100;
+              } else {
+                milestoneAmount = baseAmountPerMilestone;
+                allocatedTotal += milestoneAmount;
+              }
+              
+              schedules.push({
+                type: "milestone",
+                name: `Milestone ${index + 1}: ${milestone.heading || "Payment"}`,
+                isPercentage: false,
+                fixedAmount: milestoneAmount.toFixed(2),
+                calculatedAmount: milestoneAmount.toFixed(2),
+                sortOrder: index + 1,
+              });
+            });
+          } else {
+            schedules.push({
+              type: "final",
+              name: "Final Payment",
+              isPercentage: true,
+              percentage: (100 - (data.depositPercentage || 20)).toString(),
+              calculatedAmount: remainingAmount.toFixed(2),
+              sortOrder: 1,
+            });
+          }
         } else if (data.depositType === "fixed") {
           schedules.push({
             type: "deposit",
@@ -515,7 +555,7 @@ export default function QuoteWizard() {
               </Button>
 
               {currentStep < STEPS.length ? (
-                <Button type="button" onClick={nextStep} data-testid="button-next-step">
+                <Button type="button" onClick={(e) => nextStep(e)} data-testid="button-next-step">
                   Next
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
@@ -944,7 +984,7 @@ function Step2PaymentStructure({
           />
 
           {depositType === "percentage" && (
-            <div className="mt-6 p-4 rounded-md bg-muted/50">
+            <div className="mt-6 p-4 rounded-md bg-muted/50 space-y-4">
               <FormField
                 control={form.control}
                 name="depositPercentage"
@@ -964,12 +1004,59 @@ function Step2PaymentStructure({
                         <span className="text-muted-foreground">%</span>
                       </div>
                     </FormControl>
-                    <FormDescription>
-                      The remaining {100 - (field.value || 0)}% will be due on completion
-                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
+              />
+              
+              <FormField
+                control={form.control}
+                name="depositBalanceStrategy"
+                render={({ field }) => {
+                  const depositPercentage = form.watch("depositPercentage") || 0;
+                  const remainingPercentage = 100 - depositPercentage;
+                  return (
+                    <FormItem>
+                      <FormLabel>Remaining Balance Payment</FormLabel>
+                      <FormDescription className="mb-2">
+                        How should the remaining {remainingPercentage}% be paid?
+                      </FormDescription>
+                      <FormControl>
+                        <RadioGroup
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          className="grid gap-3"
+                        >
+                          <label
+                            className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-colors ${
+                              field.value === "on_completion" ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+                            }`}
+                            data-testid="radio-balance-on-completion"
+                          >
+                            <RadioGroupItem value="on_completion" />
+                            <div>
+                              <div className="font-medium">On completion</div>
+                              <div className="text-sm text-muted-foreground">Single payment when job is complete</div>
+                            </div>
+                          </label>
+                          <label
+                            className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-colors ${
+                              field.value === "milestones" ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+                            }`}
+                            data-testid="radio-balance-milestones"
+                          >
+                            <RadioGroupItem value="milestones" />
+                            <div>
+                              <div className="font-medium">Based on milestones</div>
+                              <div className="text-sm text-muted-foreground">Split across milestone completions</div>
+                            </div>
+                          </label>
+                        </RadioGroup>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
               />
             </div>
           )}
