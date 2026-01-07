@@ -144,7 +144,6 @@ const milestoneSchema = z.object({
 
 const customSectionSchema = z.object({
   id: z.string().optional(),
-  heading: z.string().min(1, "Section heading is required"),
   content: z.string().optional(),
 });
 
@@ -487,7 +486,7 @@ export default function QuoteWizard() {
         for (let sectionIndex = 0; sectionIndex < data.customSections.length; sectionIndex++) {
           const section = data.customSections[sectionIndex];
           await apiRequest("POST", `/api/quotes/${newQuote.id}/custom-sections`, {
-            heading: section.heading,
+            heading: `Section ${sectionIndex + 1}`,
             content: section.content || null,
             sortOrder: sectionIndex,
           });
@@ -603,7 +602,7 @@ export default function QuoteWizard() {
               <Step4CustomSections
                 form={form}
                 customSectionFields={customSectionFields}
-                onAppendSection={() => appendSection({ heading: "", content: "" })}
+                onAppendSection={() => appendSection({ content: "" })}
                 onRemoveSection={removeSection}
               />
             )}
@@ -1537,25 +1536,7 @@ function Step4CustomSections({
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <FormField
-              control={form.control}
-              name={`customSections.${index}.heading`}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Section Heading</FormLabel>
-                  <FormControl>
-                    <Input 
-                      {...field} 
-                      placeholder="e.g., Terms & Conditions"
-                      data-testid={`input-section-heading-${index}`}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
+          <CardContent>
             <FormField
               control={form.control}
               name={`customSections.${index}.content`}
@@ -1670,9 +1651,10 @@ function Step5Review({
                 )}
               </div>
               {milestone.richDescription && (
-                <div className="text-sm text-muted-foreground whitespace-pre-wrap">
-                  {milestone.richDescription}
-                </div>
+                <div 
+                  className="text-sm text-muted-foreground prose prose-sm dark:prose-invert max-w-none"
+                  dangerouslySetInnerHTML={{ __html: milestone.richDescription }}
+                />
               )}
             </div>
           ))}
@@ -1687,11 +1669,12 @@ function Step5Review({
           <CardContent className="space-y-4">
             {data.customSections.map((section, index) => (
               <div key={index} className="p-4 border rounded-md">
-                <div className="font-medium mb-2">{section.heading}</div>
+                <div className="font-medium mb-2">Section {index + 1}</div>
                 {section.content && (
-                  <div className="text-sm text-muted-foreground whitespace-pre-wrap">
-                    {section.content}
-                  </div>
+                  <div 
+                    className="text-sm text-muted-foreground prose prose-sm dark:prose-invert max-w-none"
+                    dangerouslySetInnerHTML={{ __html: section.content }}
+                  />
                 )}
               </div>
             ))}

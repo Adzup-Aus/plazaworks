@@ -43,11 +43,6 @@ import { useAuth } from "@/hooks/use-auth";
 
 const mainNavItems = [
   {
-    title: "Dashboard",
-    url: "/",
-    icon: LayoutDashboard,
-  },
-  {
     title: "Jobs",
     url: "/jobs",
     icon: Briefcase,
@@ -85,6 +80,11 @@ const mainNavItems = [
 ];
 
 const dashboardsNavItems = [
+  {
+    title: "Overview",
+    url: "/",
+    icon: LayoutDashboard,
+  },
   {
     title: "KPI",
     url: "/kpi",
