@@ -40,6 +40,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/RichTextEditor";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Calendar } from "@/components/ui/calendar";
@@ -174,7 +175,8 @@ const STEPS = [
   { id: 1, title: "Select Client", icon: User },
   { id: 2, title: "Payment Structure", icon: DollarSign },
   { id: 3, title: "Milestones", icon: ListOrdered },
-  { id: 4, title: "Review", icon: Check },
+  { id: 4, title: "Custom Sections", icon: FileText },
+  { id: 5, title: "Review", icon: Check },
 ];
 
 function StepIndicator({ currentStep }: { currentStep: number }) {
@@ -292,6 +294,9 @@ export default function QuoteWizard() {
         break;
       case 3:
         fields = ["milestones"];
+        break;
+      case 4:
+        fields = ["customSections"];
         break;
     }
     
@@ -591,14 +596,20 @@ export default function QuoteWizard() {
                 onMilestoneCountChange={handleMilestoneCountChange}
                 onAppend={() => append({ heading: "", richDescription: "", price: 0 })}
                 onRemove={remove}
+              />
+            )}
+
+            {currentStep === 4 && (
+              <Step4CustomSections
+                form={form}
                 customSectionFields={customSectionFields}
                 onAppendSection={() => appendSection({ heading: "", content: "" })}
                 onRemoveSection={removeSection}
               />
             )}
 
-            {currentStep === 4 && (
-              <Step4Review form={form} calculateTotals={calculateTotals} formatCurrency={formatCurrency} />
+            {currentStep === 5 && (
+              <Step5Review form={form} calculateTotals={calculateTotals} formatCurrency={formatCurrency} />
             )}
 
             <div className="flex justify-between mt-8">
@@ -1260,18 +1271,12 @@ function Step3Milestones({
   onMilestoneCountChange,
   onAppend,
   onRemove,
-  customSectionFields,
-  onAppendSection,
-  onRemoveSection
 }: { 
   form: ReturnType<typeof useForm<QuoteWizardValues>>;
   milestoneFields: { id: string }[];
   onMilestoneCountChange: (count: number) => void;
   onAppend: () => void;
   onRemove: (index: number) => void;
-  customSectionFields: { id: string }[];
-  onAppendSection: () => void;
-  onRemoveSection: (index: number) => void;
 }) {
   const milestones = form.watch("milestones");
   const useSinglePrice = form.watch("useSinglePrice");
@@ -1402,10 +1407,10 @@ function Step3Milestones({
                 <FormItem>
                   <FormLabel>Description (Rich Text)</FormLabel>
                   <FormControl>
-                    <Textarea 
-                      {...field} 
+                    <RichTextEditor 
+                      value={field.value || ''}
+                      onChange={field.onChange}
                       placeholder="Detailed description of the work included in this milestone..."
-                      className="min-h-[120px]"
                       data-testid={`input-milestone-desc-${index}`}
                     />
                   </FormControl>
@@ -1491,89 +1496,103 @@ function Step3Milestones({
         <Plus className="mr-2 h-4 w-4" />
         Add Milestone
       </Button>
-
-      <div className="border-t pt-6 mt-6">
-        <div className="mb-4">
-          <h3 className="text-lg font-semibold mb-1">Custom Sections</h3>
-          <p className="text-sm text-muted-foreground">Add additional sections like Terms & Conditions, Warranty, etc.</p>
-        </div>
-
-        {customSectionFields.map((field, index) => (
-          <Card key={field.id} className="mb-4">
-            <CardHeader className="pb-4">
-              <div className="flex items-center justify-between gap-4">
-                <Badge variant="outline">
-                  <FileText className="w-3 h-3 mr-1" />
-                  Section {index + 1}
-                </Badge>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => onRemoveSection(index)}
-                  data-testid={`button-remove-section-${index}`}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <FormField
-                control={form.control}
-                name={`customSections.${index}.heading`}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Section Heading</FormLabel>
-                    <FormControl>
-                      <Input 
-                        {...field} 
-                        placeholder="e.g., Terms & Conditions"
-                        data-testid={`input-section-heading-${index}`}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name={`customSections.${index}.content`}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Content</FormLabel>
-                    <FormControl>
-                      <Textarea 
-                        {...field} 
-                        placeholder="Enter section content..."
-                        className="min-h-[120px]"
-                        data-testid={`input-section-content-${index}`}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </CardContent>
-          </Card>
-        ))}
-
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onAppendSection}
-          className="w-full"
-          data-testid="button-add-section"
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Add Custom Section
-        </Button>
-      </div>
     </div>
   );
 }
 
-function Step4Review({ 
+function Step4CustomSections({
+  form,
+  customSectionFields,
+  onAppendSection,
+  onRemoveSection,
+}: {
+  form: ReturnType<typeof useForm<QuoteWizardValues>>;
+  customSectionFields: { id: string }[];
+  onAppendSection: () => void;
+  onRemoveSection: (index: number) => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold mb-2">Custom Sections</h2>
+        <p className="text-muted-foreground">Add additional sections like Terms & Conditions, Warranty, etc.</p>
+      </div>
+
+      {customSectionFields.map((field, index) => (
+        <Card key={field.id}>
+          <CardHeader className="pb-4">
+            <div className="flex items-center justify-between gap-4">
+              <Badge variant="outline">
+                <FileText className="w-3 h-3 mr-1" />
+                Section {index + 1}
+              </Badge>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => onRemoveSection(index)}
+                data-testid={`button-remove-section-${index}`}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <FormField
+              control={form.control}
+              name={`customSections.${index}.heading`}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Section Heading</FormLabel>
+                  <FormControl>
+                    <Input 
+                      {...field} 
+                      placeholder="e.g., Terms & Conditions"
+                      data-testid={`input-section-heading-${index}`}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name={`customSections.${index}.content`}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Content (Rich Text)</FormLabel>
+                  <FormControl>
+                    <RichTextEditor 
+                      value={field.value || ''}
+                      onChange={field.onChange}
+                      placeholder="Enter section content..."
+                      data-testid={`input-section-content-${index}`}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </CardContent>
+        </Card>
+      ))}
+
+      <Button
+        type="button"
+        variant="outline"
+        onClick={onAppendSection}
+        className="w-full"
+        data-testid="button-add-section"
+      >
+        <Plus className="mr-2 h-4 w-4" />
+        Add Custom Section
+      </Button>
+    </div>
+  );
+}
+
+function Step5Review({ 
   form, 
   calculateTotals,
   formatCurrency
