@@ -827,6 +827,12 @@ export const quotes = pgTable("quotes", {
   // Conversion tracking
   convertedToJobId: varchar("converted_to_job_id"),
   convertedToInvoiceId: varchar("converted_to_invoice_id"),
+  // Revision tracking
+  revisionNumber: integer("revision_number").notNull().default(1),
+  parentQuoteId: varchar("parent_quote_id"),
+  revisionReason: text("revision_reason"),
+  isLatestRevision: boolean("is_latest_revision").notNull().default(true),
+  supersededByQuoteId: varchar("superseded_by_quote_id"),
   createdById: varchar("created_by_id"),
   sentAt: timestamp("sent_at"),
   acceptedAt: timestamp("accepted_at"),
@@ -840,6 +846,7 @@ export const quotes = pgTable("quotes", {
   index("idx_quotes_client").on(table.clientId),
   index("idx_quotes_client_status").on(table.clientStatus),
   index("idx_quotes_ref").on(table.referenceNumber),
+  index("idx_quotes_parent").on(table.parentQuoteId),
 ]);
 
 // Invoices table

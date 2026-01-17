@@ -176,7 +176,7 @@ import {
   invoicePayments,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, lte, lt, sql, inArray, isNull } from "drizzle-orm";
+import { eq, desc, and, gte, lte, lt, sql, inArray, isNull, or } from "drizzle-orm";
 import crypto from "crypto";
 
 export interface IStorage {
@@ -240,6 +240,8 @@ export interface IStorage {
   acceptQuote(id: string): Promise<Quote | undefined>;
   rejectQuote(id: string): Promise<Quote | undefined>;
   convertQuoteToJob(id: string): Promise<{ quote: Quote; job: Job; invoice?: Invoice } | undefined>;
+  createQuoteRevision(id: string, revisionReason: string, createdById?: string): Promise<Quote | undefined>;
+  getQuoteRevisionHistory(quoteId: string): Promise<Quote[]>;
   deleteQuote(id: string): Promise<boolean>;
   generateQuoteNumber(): Promise<string>;
 
@@ -871,6 +873,131 @@ export class DatabaseStorage implements IStorage {
       .returning();
 
     return { quote: updatedQuote, job, invoice };
+  }
+
+  async createQuoteRevision(id: string, revisionReason: string, createdById?: string): Promise<Quote | undefined> {
+    // Get original quote with line items
+    const originalQuote = await this.getQuoteWithLineItems(id);
+    if (!originalQuote) return undefined;
+
+    // Generate new quote number (same base, new version)
+    const newQuoteNumber = await this.generateQuoteNumber();
+    
+    // Calculate next revision number
+    const revisionNumber = (originalQuote.revisionNumber || 1) + 1;
+
+    // Create new quote as a revision
+    const [newQuote] = await db.insert(quotes).values({
+      organizationId: originalQuote.organizationId,
+      quoteNumber: newQuoteNumber,
+      referenceNumber: originalQuote.referenceNumber,
+      clientId: originalQuote.clientId,
+      clientName: originalQuote.clientName,
+      clientEmail: originalQuote.clientEmail,
+      clientPhone: originalQuote.clientPhone,
+      clientAddress: originalQuote.clientAddress,
+      jobType: originalQuote.jobType,
+      description: originalQuote.description,
+      status: "draft",
+      clientStatus: "pending",
+      subtotal: originalQuote.subtotal,
+      taxRate: originalQuote.taxRate,
+      taxAmount: originalQuote.taxAmount,
+      total: originalQuote.total,
+      validUntil: originalQuote.validUntil,
+      notes: originalQuote.notes,
+      termsAndConditions: originalQuote.termsAndConditions,
+      termsOfTradeTemplateId: originalQuote.termsOfTradeTemplateId,
+      termsOfTradeContent: originalQuote.termsOfTradeContent,
+      revisionNumber,
+      parentQuoteId: originalQuote.parentQuoteId || originalQuote.id,
+      revisionReason,
+      isLatestRevision: true,
+      createdById: createdById || originalQuote.createdById,
+    }).returning();
+
+    // Mark original quote as superseded
+    await db.update(quotes)
+      .set({ 
+        isLatestRevision: false, 
+        supersededByQuoteId: newQuote.id,
+        updatedAt: new Date()
+      })
+      .where(eq(quotes.id, id));
+
+    // Copy line items to new quote
+    if (originalQuote.lineItems && originalQuote.lineItems.length > 0) {
+      const newLineItems = originalQuote.lineItems.map(item => ({
+        quoteId: newQuote.id,
+        category: item.category,
+        milestoneTitle: item.milestoneTitle,
+        description: item.description,
+        richDescription: item.richDescription,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        total: item.total,
+        sortOrder: item.sortOrder,
+      }));
+      await db.insert(lineItems).values(newLineItems);
+    }
+
+    // Copy custom sections
+    const originalSections = await db.select()
+      .from(quoteCustomSections)
+      .where(eq(quoteCustomSections.quoteId, id));
+    
+    if (originalSections.length > 0) {
+      const newSections = originalSections.map(section => ({
+        quoteId: newQuote.id,
+        title: section.title,
+        content: section.content,
+        sortOrder: section.sortOrder,
+      }));
+      await db.insert(quoteCustomSections).values(newSections);
+    }
+
+    // Copy payment schedules
+    const originalSchedules = await db.select()
+      .from(quotePaymentSchedules)
+      .where(eq(quotePaymentSchedules.quoteId, id));
+    
+    if (originalSchedules.length > 0) {
+      const newSchedules = originalSchedules.map(schedule => ({
+        quoteId: newQuote.id,
+        type: schedule.type,
+        name: schedule.name,
+        percentage: schedule.percentage,
+        fixedAmount: schedule.fixedAmount,
+        calculatedAmount: schedule.calculatedAmount,
+        isPercentage: schedule.isPercentage,
+        sortOrder: schedule.sortOrder,
+      }));
+      await db.insert(quotePaymentSchedules).values(newSchedules);
+    }
+
+    return newQuote;
+  }
+
+  async getQuoteRevisionHistory(quoteId: string): Promise<Quote[]> {
+    // Get the quote to find its parent or if it is the parent
+    const quote = await this.getQuote(quoteId);
+    if (!quote) return [];
+
+    // Find the root parent
+    const rootId = quote.parentQuoteId || quoteId;
+
+    // Get all quotes in the revision chain (original + all revisions)
+    const allRevisions = await db.select()
+      .from(quotes)
+      .where(
+        or(
+          eq(quotes.id, rootId),
+          eq(quotes.parentQuoteId, rootId)
+        )
+      )
+      .orderBy(quotes.revisionNumber);
+
+    return allRevisions;
   }
 
   async deleteQuote(id: string): Promise<boolean> {

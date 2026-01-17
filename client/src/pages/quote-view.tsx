@@ -1,12 +1,22 @@
 import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Send, Check, X, ArrowRight, Edit, FileText, User, Calendar, DollarSign, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Send, Check, X, ArrowRight, Edit, FileText, User, Calendar, DollarSign, AlertTriangle, RotateCcw, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,7 +29,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { QuoteWithLineItems } from "@shared/schema";
+import type { QuoteWithLineItems, Quote } from "@shared/schema";
 
 const statusColors: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -34,9 +44,17 @@ export default function QuoteView() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [showEditWarning, setShowEditWarning] = useState(false);
+  const [showRevisionDialog, setShowRevisionDialog] = useState(false);
+  const [revisionReason, setRevisionReason] = useState("");
+  const [showRevisionHistory, setShowRevisionHistory] = useState(false);
 
   const { data: quote, isLoading } = useQuery<QuoteWithLineItems>({
     queryKey: ["/api/quotes", params.id],
+  });
+
+  const { data: revisionHistory } = useQuery<Quote[]>({
+    queryKey: ["/api/quotes", params.id, "revisions"],
+    enabled: showRevisionHistory,
   });
 
   const sendMutation = useMutation({
@@ -80,9 +98,29 @@ export default function QuoteView() {
     },
   });
 
+  const revisionMutation = useMutation({
+    mutationFn: async (reason: string) => {
+      const response = await apiRequest("POST", `/api/quotes/${params.id}/revise`, { revisionReason: reason });
+      return response.json();
+    },
+    onSuccess: (newQuote: Quote) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/quotes"] });
+      toast({ 
+        title: "Revision created", 
+        description: `New quote ${newQuote.quoteNumber} created. Redirecting to edit...` 
+      });
+      setShowRevisionDialog(false);
+      setRevisionReason("");
+      navigate(`/quotes/${newQuote.id}/edit`);
+    },
+    onError: () => {
+      toast({ title: "Failed to create revision", variant: "destructive" });
+    },
+  });
+
   const handleEditClick = () => {
     if (quote?.status && quote.status !== "draft") {
-      setShowEditWarning(true);
+      setShowRevisionDialog(true);
     } else {
       navigate(`/quotes/${params.id}/edit`);
     }
@@ -91,6 +129,14 @@ export default function QuoteView() {
   const handleConfirmEdit = () => {
     setShowEditWarning(false);
     navigate(`/quotes/${params.id}/edit`);
+  };
+
+  const handleCreateRevision = () => {
+    if (!revisionReason.trim()) {
+      toast({ title: "Please enter a reason for the revision", variant: "destructive" });
+      return;
+    }
+    revisionMutation.mutate(revisionReason);
   };
 
   if (isLoading) {
@@ -149,13 +195,34 @@ export default function QuoteView() {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {quote.revisionNumber && quote.revisionNumber > 1 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowRevisionHistory(true)}
+              data-testid="button-revision-history"
+            >
+              <History className="mr-2 h-4 w-4" />
+              Rev {quote.revisionNumber}
+            </Button>
+          )}
+          
           <Button
             variant="outline"
             onClick={handleEditClick}
             data-testid="button-edit-quote"
           >
-            <Edit className="mr-2 h-4 w-4" />
-            Edit Quote
+            {quote.status === "draft" ? (
+              <>
+                <Edit className="mr-2 h-4 w-4" />
+                Edit Quote
+              </>
+            ) : (
+              <>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Revise Quote
+              </>
+            )}
           </Button>
           
           {quote.status === "draft" && (
@@ -350,6 +417,109 @@ export default function QuoteView() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={showRevisionDialog} onOpenChange={setShowRevisionDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RotateCcw className="h-5 w-5" />
+              Create Quote Revision
+            </DialogTitle>
+            <DialogDescription>
+              This will create a new revision of the quote, preserving the original for reference. 
+              The new revision will be opened for editing.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="revision-reason">Reason for revision</Label>
+              <Textarea
+                id="revision-reason"
+                placeholder="Enter the reason for this revision (e.g., 'Client requested price adjustment', 'Updated scope of work')"
+                value={revisionReason}
+                onChange={(e) => setRevisionReason(e.target.value)}
+                rows={3}
+                data-testid="input-revision-reason"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowRevisionDialog(false)}
+              data-testid="button-cancel-revision"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateRevision}
+              disabled={revisionMutation.isPending || !revisionReason.trim()}
+              data-testid="button-create-revision"
+            >
+              {revisionMutation.isPending ? "Creating..." : "Create Revision"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showRevisionHistory} onOpenChange={setShowRevisionHistory}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              Revision History
+            </DialogTitle>
+            <DialogDescription>
+              All versions of this quote, from earliest to latest.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4 max-h-96 overflow-y-auto">
+            {revisionHistory?.map((rev, index) => (
+              <div 
+                key={rev.id}
+                className={`p-3 rounded-lg border ${rev.id === quote.id ? 'border-primary bg-muted/50' : 'hover-elevate cursor-pointer'}`}
+                onClick={() => {
+                  if (rev.id !== quote.id) {
+                    navigate(`/quotes/${rev.id}`);
+                    setShowRevisionHistory(false);
+                  }
+                }}
+              >
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Badge variant={rev.id === quote.id ? "default" : "outline"}>
+                      Rev {rev.revisionNumber || 1}
+                    </Badge>
+                    <span className="font-medium">{rev.quoteNumber}</span>
+                    <Badge className={statusColors[rev.status] || ""}>
+                      {rev.status}
+                    </Badge>
+                    {rev.id === quote.id && (
+                      <Badge variant="secondary">Current</Badge>
+                    )}
+                  </div>
+                  <span className="text-sm text-muted-foreground">
+                    {rev.createdAt ? new Date(rev.createdAt).toLocaleDateString() : ''}
+                  </span>
+                </div>
+                {rev.revisionReason && (
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Reason: {rev.revisionReason}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowRevisionHistory(false)}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={showEditWarning} onOpenChange={setShowEditWarning}>
         <AlertDialogContent>

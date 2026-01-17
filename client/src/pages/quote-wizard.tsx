@@ -139,7 +139,7 @@ const depositTypes = [
 const milestoneSchema = z.object({
   id: z.string().optional(),
   richDescription: z.string().optional(),
-  price: z.coerce.number().min(0).optional(),
+  price: z.coerce.number().min(0, "Price must be 0 or greater"),
 });
 
 const customSectionSchema = z.object({
@@ -168,6 +168,14 @@ const quoteWizardSchema = z.object({
   customSections: z.array(customSectionSchema).default([]),
   termsOfTradeTemplateId: z.string().optional(),
   termsOfTradeContent: z.string().optional(),
+}).refine((data) => {
+  if (!data.useSinglePrice) {
+    return data.milestones.every(m => m.price !== undefined && m.price > 0);
+  }
+  return true;
+}, {
+  message: "Each milestone must have a price when not using single pricing",
+  path: ["milestones"],
 });
 
 type QuoteWizardValues = z.infer<typeof quoteWizardSchema>;
@@ -1416,7 +1424,7 @@ function Step3Milestones({
                 name={`milestones.${index}.price`}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Price (Optional)</FormLabel>
+                    <FormLabel>Price</FormLabel>
                     <FormControl>
                       <div className="flex items-center gap-2">
                         <span className="text-muted-foreground">$</span>
@@ -1432,7 +1440,7 @@ function Step3Milestones({
                       </div>
                     </FormControl>
                     <FormDescription>
-                      Leave blank or 0 if not priced separately
+                      Enter the price for this milestone
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -1526,59 +1534,6 @@ function Step4CustomSections({
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Terms of Trade
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Select terms of trade to include with this quote. These can be sent as a separate PDF.
-          </p>
-        </CardHeader>
-        <CardContent>
-          <FormField
-            control={form.control}
-            name="termsOfTradeTemplateId"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Select Terms of Trade Template</FormLabel>
-                <Select 
-                  onValueChange={handleTermsOfTradeChange} 
-                  value={field.value || ""}
-                >
-                  <FormControl>
-                    <SelectTrigger data-testid="select-terms-of-trade">
-                      <SelectValue placeholder="Select terms template..." />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="none">No terms of trade</SelectItem>
-                    {termsTemplates.map((template) => (
-                      <SelectItem key={template.id} value={template.id.toString()}>
-                        {template.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          {selectedTermsTemplateId && selectedTermsTemplateId !== "none" && (
-            <div className="mt-4 p-4 bg-muted/50 rounded-md">
-              <div className="text-sm text-muted-foreground mb-2">Preview:</div>
-              <div 
-                className="prose prose-sm max-w-none dark:prose-invert"
-                dangerouslySetInnerHTML={{ __html: form.watch("termsOfTradeContent") || "" }}
-              />
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Separator />
-
       <div>
         <h2 className="text-xl font-semibold mb-2">Custom Sections</h2>
         <p className="text-muted-foreground">Add additional sections like warranty information, special conditions, etc.</p>
@@ -1652,6 +1607,59 @@ function Step4CustomSections({
         <Plus className="mr-2 h-4 w-4" />
         Add Custom Section
       </Button>
+
+      <Separator />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Terms of Trade
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Select terms of trade to include with this quote. These can be sent as a separate PDF.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <FormField
+            control={form.control}
+            name="termsOfTradeTemplateId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Select Terms of Trade Template</FormLabel>
+                <Select 
+                  onValueChange={handleTermsOfTradeChange} 
+                  value={field.value || ""}
+                >
+                  <FormControl>
+                    <SelectTrigger data-testid="select-terms-of-trade">
+                      <SelectValue placeholder="Select terms template..." />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="none">No terms of trade</SelectItem>
+                    {termsTemplates.map((template) => (
+                      <SelectItem key={template.id} value={template.id.toString()}>
+                        {template.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          {selectedTermsTemplateId && selectedTermsTemplateId !== "none" && (
+            <div className="mt-4 p-4 bg-muted/50 rounded-md">
+              <div className="text-sm text-muted-foreground mb-2">Preview:</div>
+              <div 
+                className="prose prose-sm max-w-none dark:prose-invert"
+                dangerouslySetInnerHTML={{ __html: form.watch("termsOfTradeContent") || "" }}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

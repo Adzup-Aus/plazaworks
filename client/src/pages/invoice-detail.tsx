@@ -117,10 +117,20 @@ export default function InvoiceDetail() {
       });
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", params.id] });
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      toast({ title: "Payment recorded" });
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/quotes"] });
+      
+      if (result?.convertedJob) {
+        toast({ 
+          title: "Payment recorded", 
+          description: "Quote has been automatically converted to a job."
+        });
+      } else {
+        toast({ title: "Payment recorded" });
+      }
       setPaymentDialogOpen(false);
       form.reset();
     },

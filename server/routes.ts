@@ -2093,6 +2093,39 @@ export async function registerRoutes(
     }
   });
 
+  // Create quote revision
+  app.post("/api/quotes/:id/revise", isAuthenticated, async (req, res) => {
+    try {
+      const { revisionReason } = req.body;
+      if (!revisionReason || typeof revisionReason !== "string") {
+        return res.status(400).json({ message: "Revision reason is required" });
+      }
+
+      const userId = (req as any).user?.id;
+      const newQuote = await storage.createQuoteRevision(req.params.id, revisionReason, userId);
+      
+      if (!newQuote) {
+        return res.status(404).json({ message: "Quote not found" });
+      }
+
+      res.status(201).json(newQuote);
+    } catch (err: any) {
+      console.error("Error creating quote revision:", err);
+      res.status(500).json({ message: "Failed to create quote revision" });
+    }
+  });
+
+  // Get quote revision history
+  app.get("/api/quotes/:id/revisions", isAuthenticated, async (req, res) => {
+    try {
+      const revisions = await storage.getQuoteRevisionHistory(req.params.id);
+      res.json(revisions);
+    } catch (err: any) {
+      console.error("Error fetching quote revisions:", err);
+      res.status(500).json({ message: "Failed to fetch quote revisions" });
+    }
+  });
+
   // Delete quote
   app.delete("/api/quotes/:id", isAuthenticated, async (req, res) => {
     try {
@@ -2719,7 +2752,7 @@ export async function registerRoutes(
     }
   });
 
-  // Create payment
+  // Create payment (and auto-convert quote to job if applicable)
   app.post("/api/invoices/:invoiceId/payments", isAuthenticated, async (req, res) => {
     try {
       const validation = insertPaymentSchema.safeParse({
@@ -2730,8 +2763,33 @@ export async function registerRoutes(
         return res.status(400).json({ message: validation.error.errors[0].message });
       }
 
+      // Get the invoice to check if it has a linked quote
+      const invoice = await storage.getInvoice(req.params.invoiceId);
+      let convertedJob = null;
+      
+      if (invoice?.quoteId) {
+        // Check if quote needs to be converted to job
+        const quote = await storage.getQuote(invoice.quoteId);
+        if (quote && !quote.convertedToJobId) {
+          // First, accept the quote if not already accepted
+          if (quote.status !== "accepted") {
+            await storage.acceptQuote(quote.id);
+          }
+          
+          // Now convert the quote to a job
+          const result = await storage.convertQuoteToJob(invoice.quoteId);
+          if (result) {
+            convertedJob = result.job;
+          }
+        }
+      }
+
       const payment = await storage.createPayment(validation.data);
-      res.status(201).json(payment);
+      res.status(201).json({ 
+        payment, 
+        convertedJob,
+        message: convertedJob ? "Payment recorded and quote converted to job" : "Payment recorded"
+      });
     } catch (err: any) {
       console.error("Error creating payment:", err);
       res.status(500).json({ message: "Failed to create payment" });
