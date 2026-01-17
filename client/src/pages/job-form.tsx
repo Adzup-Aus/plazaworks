@@ -880,13 +880,35 @@ function ShareLinkSection({ jobId }: { jobId: string }) {
   );
 }
 
+interface UserWorkingHours {
+  id: string;
+  staffId: string;
+  dayOfWeek: number;
+  isWorkingDay: boolean;
+  startTime: string | null;
+  endTime: string | null;
+}
+
+function calculateHoursFromTimeRange(startTime: string | null, endTime: string | null): number {
+  if (!startTime || !endTime) return 7.5;
+  const [startH, startM] = startTime.split(":").map(Number);
+  const [endH, endM] = endTime.split(":").map(Number);
+  const startMinutes = startH * 60 + startM;
+  const endMinutes = endH * 60 + endM;
+  return Math.max(0, (endMinutes - startMinutes) / 60);
+}
+
 function JobScheduleSection({ jobId }: { jobId: string }) {
   const { toast } = useToast();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [newDate, setNewDate] = useState("");
+  const [startDate, setStartDate] = useState<Date | undefined>(undefined);
+  const [endDate, setEndDate] = useState<Date | undefined>(undefined);
+  const [useEndDate, setUseEndDate] = useState(false);
   const [newStaffId, setNewStaffId] = useState("");
   const [newDurationHours, setNewDurationHours] = useState("7.5");
   const [newNotes, setNewNotes] = useState("");
+  const [autoCalculateHours, setAutoCalculateHours] = useState(false);
+  const [staffWorkingHours, setStaffWorkingHours] = useState<UserWorkingHours[]>([]);
 
   const { data: scheduleEntries, isLoading } = useQuery<ScheduleEntry[]>({
     queryKey: ["/api/schedule"],
@@ -906,10 +928,14 @@ function JobScheduleSection({ jobId }: { jobId: string }) {
       queryClient.invalidateQueries({ queryKey: ["/api/schedule"] });
       toast({ title: "Schedule added", description: "The job has been scheduled." });
       setIsAddDialogOpen(false);
-      setNewDate("");
+      setStartDate(undefined);
+      setEndDate(undefined);
+      setUseEndDate(false);
       setNewStaffId("");
       setNewDurationHours("7.5");
       setNewNotes("");
+      setAutoCalculateHours(false);
+      setStaffWorkingHours([]);
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -955,18 +981,138 @@ function JobScheduleSection({ jobId }: { jobId: string }) {
     },
   });
 
-  const handleAddSchedule = () => {
-    if (!newDate) {
+  // Fetch staff working hours when a staff member is selected
+  useEffect(() => {
+    if (newStaffId && newStaffId !== "unassigned") {
+      fetch(`/api/staff/${newStaffId}/working-hours`)
+        .then((res) => res.json())
+        .then((hours: UserWorkingHours[]) => {
+          setStaffWorkingHours(hours);
+          // Auto-calculate if enabled and we have dates
+          if (autoCalculateHours && startDate) {
+            calculateAndSetDuration(startDate, endDate, hours);
+          }
+        })
+        .catch(() => setStaffWorkingHours([]));
+    } else {
+      setStaffWorkingHours([]);
+    }
+  }, [newStaffId]);
+
+  // Re-calculate when dates change and auto-calculate is enabled
+  useEffect(() => {
+    if (autoCalculateHours && startDate && staffWorkingHours.length > 0) {
+      calculateAndSetDuration(startDate, endDate, staffWorkingHours);
+    }
+  }, [startDate, endDate, autoCalculateHours, staffWorkingHours]);
+
+  const calculateAndSetDuration = (start: Date, end: Date | undefined, hours: UserWorkingHours[]) => {
+    const dates: Date[] = [];
+    const current = new Date(start);
+    const endD = end || start;
+    
+    while (current <= endD) {
+      dates.push(new Date(current));
+      current.setDate(current.getDate() + 1);
+    }
+
+    let totalDuration = 0;
+    for (const d of dates) {
+      const dayOfWeek = d.getDay();
+      const dayHours = hours.find((h) => h.dayOfWeek === dayOfWeek);
+      if (dayHours && dayHours.isWorkingDay) {
+        totalDuration += calculateHoursFromTimeRange(dayHours.startTime, dayHours.endTime);
+      }
+    }
+
+    // If no working hours found, default to 7.5 per day
+    if (totalDuration === 0 && dates.length > 0) {
+      totalDuration = dates.length * 7.5;
+    }
+
+    setNewDurationHours(totalDuration.toFixed(1));
+  };
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleAddSchedule = async () => {
+    if (!startDate) {
       toast({ title: "Date required", description: "Please select a date.", variant: "destructive" });
       return;
     }
-    addScheduleMutation.mutate({
-      jobId,
-      scheduledDate: newDate,
-      staffId: newStaffId || undefined,
-      durationHours: newDurationHours,
-      notes: newNotes || undefined,
-    });
+
+    setIsSubmitting(true);
+
+    const dates: Date[] = [];
+    const current = new Date(startDate);
+    const endD = useEndDate && endDate ? endDate : startDate;
+    
+    while (current <= endD) {
+      dates.push(new Date(current));
+      current.setDate(current.getDate() + 1);
+    }
+
+    // Build list of schedule entries to create
+    const entriesToCreate: Array<{ date: Date; duration: number }> = [];
+    
+    for (const date of dates) {
+      let dayDuration = parseFloat(newDurationHours);
+      
+      if (autoCalculateHours && staffWorkingHours.length > 0) {
+        const dayOfWeek = date.getDay();
+        const dayHours = staffWorkingHours.find((h) => h.dayOfWeek === dayOfWeek);
+        if (dayHours && dayHours.isWorkingDay) {
+          dayDuration = calculateHoursFromTimeRange(dayHours.startTime, dayHours.endTime);
+        } else {
+          dayDuration = 0; // Skip non-working days
+        }
+      }
+
+      if (dayDuration > 0) {
+        entriesToCreate.push({ date, duration: dayDuration });
+      }
+    }
+
+    if (entriesToCreate.length === 0) {
+      toast({ 
+        title: "No working days", 
+        description: "No working days found in the selected date range for this staff member.", 
+        variant: "destructive" 
+      });
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      for (const entry of entriesToCreate) {
+        await apiRequest("POST", "/api/schedule", {
+          jobId,
+          scheduledDate: format(entry.date, "yyyy-MM-dd"),
+          staffId: newStaffId || undefined,
+          durationHours: entry.duration.toFixed(1),
+          notes: newNotes || undefined,
+        });
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule"] });
+      toast({ 
+        title: "Schedule added", 
+        description: `${entriesToCreate.length} day${entriesToCreate.length !== 1 ? "s" : ""} scheduled.` 
+      });
+      setIsAddDialogOpen(false);
+      setStartDate(undefined);
+      setEndDate(undefined);
+      setUseEndDate(false);
+      setNewStaffId("");
+      setNewDurationHours("7.5");
+      setNewNotes("");
+      setAutoCalculateHours(false);
+      setStaffWorkingHours([]);
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to create schedule", variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const formatDate = (dateStr: string) => {
@@ -1016,14 +1162,71 @@ function JobScheduleSection({ jobId }: { jobId: string }) {
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Date</label>
-                <Input
-                  type="date"
-                  value={newDate}
-                  onChange={(e) => setNewDate(e.target.value)}
-                  data-testid="input-schedule-date"
-                />
+                <label className="text-sm font-medium">{useEndDate ? "Start Date" : "Date"}</label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                      data-testid="button-schedule-start-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {startDate ? format(startDate, "PPP") : <span className="text-muted-foreground">Pick a date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarComponent
+                      mode="single"
+                      selected={startDate}
+                      onSelect={setStartDate}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
+
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="useEndDate"
+                  checked={useEndDate}
+                  onCheckedChange={(checked) => {
+                    setUseEndDate(checked === true);
+                    if (!checked) setEndDate(undefined);
+                  }}
+                  data-testid="checkbox-use-end-date"
+                />
+                <label htmlFor="useEndDate" className="text-sm font-medium cursor-pointer">
+                  Schedule multiple days (date range)
+                </label>
+              </div>
+
+              {useEndDate && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">End Date</label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start text-left font-normal"
+                        data-testid="button-schedule-end-date"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {endDate ? format(endDate, "PPP") : <span className="text-muted-foreground">Pick end date</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={endDate}
+                        onSelect={setEndDate}
+                        disabled={(date) => startDate ? date < startDate : false}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <label className="text-sm font-medium">Staff Member</label>
                 <Select value={newStaffId || "unassigned"} onValueChange={(v) => setNewStaffId(v === "unassigned" ? "" : v)}>
@@ -1040,18 +1243,43 @@ function JobScheduleSection({ jobId }: { jobId: string }) {
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="autoCalcHours"
+                  checked={autoCalculateHours}
+                  onCheckedChange={(checked) => setAutoCalculateHours(checked === true)}
+                  disabled={!newStaffId || newStaffId === "unassigned"}
+                  data-testid="checkbox-auto-calculate"
+                />
+                <label 
+                  htmlFor="autoCalcHours" 
+                  className={`text-sm font-medium cursor-pointer ${!newStaffId || newStaffId === "unassigned" ? "text-muted-foreground" : ""}`}
+                >
+                  Auto-calculate hours from staff working schedule
+                </label>
+              </div>
+
               <div className="space-y-2">
-                <label className="text-sm font-medium">Duration (hours)</label>
+                <label className="text-sm font-medium">
+                  {autoCalculateHours ? "Total Duration (hours) - calculated" : "Duration (hours)"}
+                </label>
                 <Input
                   type="number"
                   step="0.5"
                   min="0.5"
-                  max="12"
                   value={newDurationHours}
                   onChange={(e) => setNewDurationHours(e.target.value)}
+                  disabled={autoCalculateHours}
                   data-testid="input-schedule-duration"
                 />
+                {autoCalculateHours && staffWorkingHours.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Based on staff member's configured working hours
+                  </p>
+                )}
               </div>
+
               <div className="space-y-2">
                 <label className="text-sm font-medium">Notes (optional)</label>
                 <Input
@@ -1068,10 +1296,10 @@ function JobScheduleSection({ jobId }: { jobId: string }) {
               </Button>
               <Button
                 onClick={handleAddSchedule}
-                disabled={addScheduleMutation.isPending}
+                disabled={isSubmitting}
                 data-testid="button-confirm-add-schedule"
               >
-                {addScheduleMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
                 Add Schedule
               </Button>
             </DialogFooter>
