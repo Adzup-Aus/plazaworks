@@ -58,9 +58,20 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  User
+  User,
+  Pencil,
+  CalendarIcon,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react";
+import { RichTextEditor } from "@/components/RichTextEditor";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { format } from "date-fns";
 import { jobStatuses, pcItemStatuses, type Job, type PCItem, type ClientAccessToken, type JobPhoto, type ScheduleEntry, type StaffProfile } from "@shared/schema";
+import type { User as AuthUser } from "@shared/models/auth";
+
+type StaffProfileWithUser = StaffProfile & { user?: AuthUser };
 
 const formSchema = z.object({
   clientName: z.string().min(1, "Client name is required"),
@@ -93,22 +104,50 @@ function getPCStatusColor(status: string): string {
   return colors[status] || "bg-muted text-muted-foreground";
 }
 
+interface PCItemFormData {
+  title: string;
+  status: string;
+  dueDate: Date | null;
+  assignedToId: string;
+  description: string;
+}
+
+const defaultPCItemForm: PCItemFormData = {
+  title: "",
+  status: "pending",
+  dueDate: null,
+  assignedToId: "__none__",
+  description: "",
+};
+
 function PCItemsSection({ jobId }: { jobId: string }) {
   const { toast } = useToast();
-  const [newItemTitle, setNewItemTitle] = useState("");
   const [isAddingItem, setIsAddingItem] = useState(false);
+  const [formData, setFormData] = useState<PCItemFormData>(defaultPCItemForm);
+  const [editingItem, setEditingItem] = useState<PCItem | null>(null);
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
   const { data: pcItems, isLoading } = useQuery<PCItem[]>({
     queryKey: [`/api/jobs/${jobId}/pc-items`],
   });
 
+  const { data: staffMembers } = useQuery<StaffProfileWithUser[]>({
+    queryKey: ["/api/staff"],
+  });
+
   const addItemMutation = useMutation({
-    mutationFn: async (title: string) => {
-      return apiRequest("POST", `/api/jobs/${jobId}/pc-items`, { title, status: "pending" });
+    mutationFn: async (data: PCItemFormData) => {
+      return apiRequest("POST", `/api/jobs/${jobId}/pc-items`, {
+        title: data.title,
+        status: data.status,
+        dueDate: data.dueDate ? format(data.dueDate, "yyyy-MM-dd") : null,
+        assignedToId: data.assignedToId && data.assignedToId !== "__none__" ? data.assignedToId : null,
+        description: data.description || null,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/pc-items`] });
-      setNewItemTitle("");
+      setFormData(defaultPCItemForm);
       setIsAddingItem(false);
       toast({ title: "Item added", description: "PC item has been added to the checklist." });
     },
@@ -117,13 +156,32 @@ function PCItemsSection({ jobId }: { jobId: string }) {
     },
   });
 
-  const completeItemMutation = useMutation({
-    mutationFn: async (itemId: string) => {
-      return apiRequest("POST", `/api/pc-items/${itemId}/complete`, {});
+  const updateItemMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<PCItemFormData> }) => {
+      const payload: Record<string, unknown> = {};
+      
+      if (data.title !== undefined) {
+        payload.title = data.title;
+      }
+      if (data.status !== undefined) {
+        payload.status = data.status;
+      }
+      if (data.dueDate !== undefined) {
+        payload.dueDate = data.dueDate ? format(data.dueDate, "yyyy-MM-dd") : null;
+      }
+      if (data.assignedToId !== undefined) {
+        payload.assignedToId = data.assignedToId && data.assignedToId !== "__none__" ? data.assignedToId : null;
+      }
+      if (data.description !== undefined) {
+        payload.description = data.description || null;
+      }
+      
+      return apiRequest("PATCH", `/api/pc-items/${id}`, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/pc-items`] });
-      toast({ title: "Item completed", description: "PC item marked as complete." });
+      setEditingItem(null);
+      toast({ title: "Item updated", description: "PC item has been updated." });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -144,13 +202,171 @@ function PCItemsSection({ jobId }: { jobId: string }) {
   });
 
   const handleAddItem = () => {
-    if (newItemTitle.trim()) {
-      addItemMutation.mutate(newItemTitle.trim());
+    if (formData.title.trim()) {
+      addItemMutation.mutate(formData);
     }
+  };
+
+  const handleEditItem = (item: PCItem) => {
+    setEditingItem(item);
+    setFormData({
+      title: item.title,
+      status: item.status,
+      dueDate: item.dueDate ? new Date(item.dueDate) : null,
+      assignedToId: item.assignedToId || "__none__",
+      description: item.description || "",
+    });
+  };
+
+  const handleSaveEdit = () => {
+    if (editingItem && formData.title.trim()) {
+      updateItemMutation.mutate({ id: editingItem.id, data: formData });
+    }
+  };
+
+  const toggleExpanded = (itemId: string) => {
+    setExpandedItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
+  };
+
+  const getStaffName = (staffId: string | null) => {
+    if (!staffId || !staffMembers) return null;
+    const staff = staffMembers.find(s => s.id === staffId);
+    if (!staff) return null;
+    if (staff.user?.firstName) {
+      return `${staff.user.firstName} ${staff.user.lastName || ""}`.trim();
+    }
+    return staff.user?.email || "Unknown";
   };
 
   const completedCount = pcItems?.filter((item) => item.status === "completed").length || 0;
   const totalCount = pcItems?.length || 0;
+
+  const renderForm = (isEdit: boolean) => (
+    <div className="space-y-4 p-4 rounded-md border bg-muted/30">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="md:col-span-2">
+          <label className="text-sm font-medium mb-2 block">Item Title</label>
+          <Input
+            placeholder="Enter checklist item..."
+            value={formData.title}
+            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+            autoFocus={!isEdit}
+            data-testid={isEdit ? "input-edit-pc-item-title" : "input-new-pc-item-title"}
+          />
+        </div>
+
+        <div>
+          <label className="text-sm font-medium mb-2 block">Status</label>
+          <Select
+            value={formData.status}
+            onValueChange={(value) => setFormData({ ...formData, status: value })}
+          >
+            <SelectTrigger data-testid={isEdit ? "select-edit-pc-item-status" : "select-new-pc-item-status"}>
+              <SelectValue placeholder="Select status" />
+            </SelectTrigger>
+            <SelectContent>
+              {pcItemStatuses.map((status) => (
+                <SelectItem key={status} value={status}>
+                  {formatLabel(status)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <label className="text-sm font-medium mb-2 block">Target Due Date</label>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className="w-full justify-start text-left font-normal"
+                data-testid={isEdit ? "button-edit-pc-item-duedate" : "button-new-pc-item-duedate"}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {formData.dueDate ? format(formData.dueDate, "PPP") : "Select date"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <CalendarComponent
+                mode="single"
+                selected={formData.dueDate || undefined}
+                onSelect={(date) => setFormData({ ...formData, dueDate: date || null })}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        <div>
+          <label className="text-sm font-medium mb-2 block">Assignee</label>
+          <Select
+            value={formData.assignedToId}
+            onValueChange={(value) => setFormData({ ...formData, assignedToId: value })}
+          >
+            <SelectTrigger data-testid={isEdit ? "select-edit-pc-item-assignee" : "select-new-pc-item-assignee"}>
+              <SelectValue placeholder="Select assignee" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">Unassigned</SelectItem>
+              {staffMembers?.map((staff) => (
+                <SelectItem key={staff.id} value={staff.id}>
+                  {staff.user?.firstName 
+                    ? `${staff.user.firstName} ${staff.user.lastName || ""}`.trim()
+                    : staff.user?.email || "Unknown"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="md:col-span-2">
+          <label className="text-sm font-medium mb-2 block">Description</label>
+          <RichTextEditor
+            value={formData.description}
+            onChange={(value) => setFormData({ ...formData, description: value })}
+            placeholder="Add more details, notes, or instructions..."
+            data-testid={isEdit ? "editor-edit-pc-item-description" : "editor-new-pc-item-description"}
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 justify-end pt-2">
+        <Button
+          variant="ghost"
+          onClick={() => {
+            if (isEdit) {
+              setEditingItem(null);
+            } else {
+              setIsAddingItem(false);
+            }
+            setFormData(defaultPCItemForm);
+          }}
+          data-testid={isEdit ? "button-cancel-edit-pc-item" : "button-cancel-pc-item"}
+        >
+          Cancel
+        </Button>
+        <Button
+          onClick={isEdit ? handleSaveEdit : handleAddItem}
+          disabled={(isEdit ? updateItemMutation.isPending : addItemMutation.isPending) || !formData.title.trim()}
+          data-testid={isEdit ? "button-save-edit-pc-item" : "button-save-pc-item"}
+        >
+          {(isEdit ? updateItemMutation.isPending : addItemMutation.isPending) ? (
+            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+          ) : null}
+          {isEdit ? "Save Changes" : "Add Item"}
+        </Button>
+      </div>
+    </div>
+  );
 
   return (
     <Card className="overflow-visible">
@@ -166,46 +382,20 @@ function PCItemsSection({ jobId }: { jobId: string }) {
               : "Track completion items for this job"}
           </CardDescription>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setIsAddingItem(true)}
-          data-testid="button-add-pc-item"
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Add Item
-        </Button>
+        {!isAddingItem && !editingItem && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setIsAddingItem(true)}
+            data-testid="button-add-pc-item"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add Item
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
-        {isAddingItem && (
-          <div className="flex items-center gap-2 p-3 rounded-md border bg-muted/50">
-            <Input
-              placeholder="Enter checklist item..."
-              value={newItemTitle}
-              onChange={(e) => setNewItemTitle(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAddItem()}
-              className="flex-1"
-              autoFocus
-              data-testid="input-new-pc-item"
-            />
-            <Button 
-              size="sm" 
-              onClick={handleAddItem}
-              disabled={addItemMutation.isPending || !newItemTitle.trim()}
-              data-testid="button-save-pc-item"
-            >
-              {addItemMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add"}
-            </Button>
-            <Button 
-              size="sm" 
-              variant="ghost" 
-              onClick={() => { setIsAddingItem(false); setNewItemTitle(""); }}
-              data-testid="button-cancel-pc-item"
-            >
-              Cancel
-            </Button>
-          </div>
-        )}
+        {isAddingItem && renderForm(false)}
 
         {isLoading ? (
           <div className="space-y-2">
@@ -214,36 +404,99 @@ function PCItemsSection({ jobId }: { jobId: string }) {
             ))}
           </div>
         ) : pcItems && pcItems.length > 0 ? (
-          <div className="space-y-2">
-            {pcItems.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center gap-3 p-3 rounded-md border hover-elevate"
-                data-testid={`pc-item-${item.id}`}
-              >
-                <Checkbox
-                  checked={item.status === "completed"}
-                  disabled={item.status === "completed" || completeItemMutation.isPending}
-                  onCheckedChange={() => completeItemMutation.mutate(item.id)}
-                  data-testid={`checkbox-pc-item-${item.id}`}
-                />
-                <span className={`flex-1 ${item.status === "completed" ? "line-through text-muted-foreground" : ""}`}>
-                  {item.title}
-                </span>
-                <Badge variant="secondary" className={getPCStatusColor(item.status)}>
-                  {formatLabel(item.status)}
-                </Badge>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => deleteItemMutation.mutate(item.id)}
-                  disabled={deleteItemMutation.isPending}
-                  data-testid={`button-delete-pc-item-${item.id}`}
+          <div className="space-y-3">
+            {pcItems.map((item) => {
+              const isExpanded = expandedItems.has(item.id);
+              const isEditing = editingItem?.id === item.id;
+              const assigneeName = getStaffName(item.assignedToId);
+              const hasDetails = item.description || item.dueDate || item.assignedToId;
+
+              if (isEditing) {
+                return (
+                  <div key={item.id}>
+                    {renderForm(true)}
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={item.id}
+                  className="rounded-md border hover-elevate"
+                  data-testid={`pc-item-${item.id}`}
                 >
-                  <Trash2 className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              </div>
-            ))}
+                  <div className="flex items-center gap-3 p-3">
+                    <Checkbox
+                      checked={item.status === "completed"}
+                      disabled={item.status === "completed"}
+                      onCheckedChange={() => updateItemMutation.mutate({ id: item.id, data: { status: "completed" } })}
+                      data-testid={`checkbox-pc-item-${item.id}`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-medium ${item.status === "completed" ? "line-through text-muted-foreground" : ""}`}>
+                        {item.title}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground flex-wrap">
+                        {item.dueDate && (
+                          <span className="flex items-center gap-1">
+                            <CalendarIcon className="h-3 w-3" />
+                            {format(new Date(item.dueDate), "MMM d, yyyy")}
+                          </span>
+                        )}
+                        {assigneeName && (
+                          <span className="flex items-center gap-1">
+                            <User className="h-3 w-3" />
+                            {assigneeName}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <Badge variant="secondary" className={getPCStatusColor(item.status)}>
+                      {formatLabel(item.status)}
+                    </Badge>
+                    {hasDetails && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => toggleExpanded(item.id)}
+                        data-testid={`button-expand-pc-item-${item.id}`}
+                      >
+                        {isExpanded ? (
+                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </Button>
+                    )}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => handleEditItem(item)}
+                      data-testid={`button-edit-pc-item-${item.id}`}
+                    >
+                      <Pencil className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => deleteItemMutation.mutate(item.id)}
+                      disabled={deleteItemMutation.isPending}
+                      data-testid={`button-delete-pc-item-${item.id}`}
+                    >
+                      <Trash2 className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </div>
+                  {isExpanded && item.description && (
+                    <div className="px-3 pb-3 pt-0 border-t mx-3 mt-2">
+                      <div 
+                        className="prose prose-sm dark:prose-invert max-w-none pt-3"
+                        dangerouslySetInnerHTML={{ __html: item.description }}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : !isAddingItem ? (
           <div className="text-center py-8 text-muted-foreground">
