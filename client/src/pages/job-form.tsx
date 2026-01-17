@@ -73,7 +73,7 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
-import { jobStatuses, pcItemStatuses, type Job, type PCItem, type ClientAccessToken, type JobPhoto, type JobReceipt, type ScheduleEntry, type StaffProfile, type Quote, type QuoteWithDetails, type LineItem, type QuoteMilestone, type QuotePaymentSchedule } from "@shared/schema";
+import { jobStatuses, pcItemStatuses, type Job, type PCItem, type ClientAccessToken, type JobPhoto, type JobReceipt, type ScheduleEntry, type StaffProfile, type Quote, type QuoteWithDetails, type LineItem, type QuoteMilestone, type QuotePaymentSchedule, type Invoice } from "@shared/schema";
 import type { User as AuthUser } from "@shared/models/auth";
 
 type StaffProfileWithUser = StaffProfile & { user?: AuthUser };
@@ -128,7 +128,7 @@ const defaultPCItemForm: PCItemFormData = {
   milestoneId: "__none__",
 };
 
-function PCItemsSection({ jobId, quoteId }: { jobId: string; quoteId?: string | null }) {
+function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?: string | null; invoiceId?: string | null }) {
   const { toast } = useToast();
   const [isAddingItem, setIsAddingItem] = useState(false);
   const [formData, setFormData] = useState<PCItemFormData>(defaultPCItemForm);
@@ -143,9 +143,16 @@ function PCItemsSection({ jobId, quoteId }: { jobId: string; quoteId?: string | 
     queryKey: ["/api/staff"],
   });
 
+  const { data: invoice } = useQuery<Invoice>({
+    queryKey: ["/api/invoices", invoiceId],
+    enabled: !!invoiceId,
+  });
+
+  const effectiveQuoteId = invoice?.quoteId ?? quoteId;
+
   const { data: quoteDetails } = useQuery<QuoteWithDetails>({
-    queryKey: [`/api/quotes/${quoteId}`],
-    enabled: !!quoteId,
+    queryKey: ["/api/quotes", effectiveQuoteId],
+    enabled: !!effectiveQuoteId,
   });
 
   const milestones = quoteDetails?.milestones || [];
@@ -1427,34 +1434,20 @@ function ShareLinkSection({ jobId }: { jobId: string }) {
                   {activeLinks.map((link) => (
                     <div
                       key={link.id}
-                      className="p-3 rounded-md border space-y-2"
+                      className="p-3 rounded-md border"
                       data-testid={`share-link-${link.id}`}
                     >
-                      {link.shortCode && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">Short link:</span>
-                          <div className="flex-1 text-sm font-mono bg-muted px-2 py-1 rounded">
-                            {window.location.origin}/s/{link.shortCode}
-                          </div>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => copyLink(link, true)}
-                            data-testid={`button-copy-short-link-${link.id}`}
-                          >
-                            <ClipboardCopy className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      )}
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground">Full link:</span>
-                        <div className="flex-1 truncate text-xs font-mono text-muted-foreground">
-                          .../{link.token.slice(0, 12)}...
+                        <div className="flex-1 truncate text-sm font-mono bg-muted px-2 py-1 rounded">
+                          {link.shortCode 
+                            ? `${window.location.origin}/s/${link.shortCode}` 
+                            : `.../${link.token.slice(0, 12)}...`}
                         </div>
                         <Button
                           size="icon"
                           variant="ghost"
-                          onClick={() => copyLink(link, false)}
+                          onClick={() => copyLink(link, !!link.shortCode)}
                           data-testid={`button-copy-link-${link.id}`}
                         >
                           <ClipboardCopy className="h-4 w-4" />
@@ -2696,7 +2689,7 @@ export default function JobForm() {
         <>
           <InvoicePreviewSection job={job} />
           <JobScheduleSection jobId={id} />
-          <PCItemsSection jobId={id} quoteId={job.quoteId} />
+          <PCItemsSection jobId={id} quoteId={job.quoteId} invoiceId={job.invoiceId} />
           <JobPhotosSection jobId={id} />
           <JobReceiptsSection jobId={id} />
           <ShareLinkSection jobId={id} />
