@@ -28,6 +28,11 @@ Key features include:
 - **Email Integration**: Resend integration for transactional emails (quote notifications, invoices, OTP login, job completion).
 
 ## Recent Changes
+- Changed Estimated Duration from text to numeric:
+  - Replaced freeform text field with days/hours number inputs
+  - Stored as total hours in database (estimatedDurationHours decimal field)
+  - 1 day = 8 working hours for calculations
+  - Values can be used in dashboards and capacity planning
 - Enhanced Practical Completion Checklist (ClickUp-style):
   - Added status dropdown (pending, in_progress, completed, not_applicable)
   - Added target due date picker with calendar UI
