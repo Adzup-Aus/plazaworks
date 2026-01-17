@@ -625,6 +625,7 @@ export const pcItems = pgTable("pc_items", {
   completedAt: timestamp("completed_at"),
   completedById: varchar("completed_by_id"),
   sortOrder: varchar("sort_order", { length: 10 }).default("0"),
+  linkedScheduleId: varchar("linked_schedule_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [

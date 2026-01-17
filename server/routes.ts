@@ -1727,7 +1727,25 @@ export async function registerRoutes(
         return res.status(400).json({ message: validation.error.errors[0].message });
       }
 
-      const item = await storage.createPCItem(validation.data);
+      let linkedScheduleId: string | undefined;
+
+      // Auto-create schedule entry if both dueDate and assignedToId are provided
+      if (validation.data.dueDate && validation.data.assignedToId) {
+        const scheduleEntry = await storage.createScheduleEntry({
+          jobId: req.params.jobId,
+          staffId: validation.data.assignedToId,
+          scheduledDate: validation.data.dueDate,
+          durationHours: "7.5",
+          status: "scheduled",
+          notes: `Auto-generated from checklist: ${validation.data.title}`,
+        });
+        linkedScheduleId = scheduleEntry.id;
+      }
+
+      const item = await storage.createPCItem({
+        ...validation.data,
+        linkedScheduleId,
+      });
       res.status(201).json(item);
     } catch (err: any) {
       console.error("Error creating PC item:", err);
@@ -1744,10 +1762,50 @@ export async function registerRoutes(
         return res.status(400).json({ message: validation.error.errors[0].message });
       }
 
-      const updated = await storage.updatePCItem(req.params.id, validation.data);
-      if (!updated) {
+      // Get current PC item to check if we need to update/create schedule
+      const currentItem = await storage.getPCItem(req.params.id);
+      if (!currentItem) {
         return res.status(404).json({ message: "PC item not found" });
       }
+
+      // Determine the effective dueDate and assignedToId after update
+      const effectiveDueDate = validation.data.dueDate !== undefined ? validation.data.dueDate : currentItem.dueDate;
+      const effectiveAssignedToId = validation.data.assignedToId !== undefined ? validation.data.assignedToId : currentItem.assignedToId;
+      let linkedScheduleId = currentItem.linkedScheduleId;
+
+      // Handle schedule entry creation/update/deletion based on dueDate and assignedToId
+      const effectiveTitle = validation.data.title ?? currentItem.title;
+      
+      if (effectiveDueDate && effectiveAssignedToId) {
+        if (linkedScheduleId) {
+          // Update existing schedule entry
+          await storage.updateScheduleEntry(linkedScheduleId, {
+            scheduledDate: effectiveDueDate,
+            staffId: effectiveAssignedToId,
+            notes: `Auto-generated from checklist: ${effectiveTitle}`,
+          });
+        } else {
+          // Create new schedule entry
+          const scheduleEntry = await storage.createScheduleEntry({
+            jobId: currentItem.jobId,
+            staffId: effectiveAssignedToId,
+            scheduledDate: effectiveDueDate,
+            durationHours: "7.5",
+            status: "scheduled",
+            notes: `Auto-generated from checklist: ${effectiveTitle}`,
+          });
+          linkedScheduleId = scheduleEntry.id;
+        }
+      } else if (linkedScheduleId) {
+        // Remove linked schedule if dueDate or assignedToId is cleared
+        await storage.deleteScheduleEntry(linkedScheduleId);
+        linkedScheduleId = null;
+      }
+
+      const updated = await storage.updatePCItem(req.params.id, {
+        ...validation.data,
+        linkedScheduleId,
+      });
       res.json(updated);
     } catch (err: any) {
       console.error("Error updating PC item:", err);
@@ -1773,10 +1831,18 @@ export async function registerRoutes(
   // Delete PC item
   app.delete("/api/pc-items/:id", isAuthenticated, async (req, res) => {
     try {
-      const deleted = await storage.deletePCItem(req.params.id);
-      if (!deleted) {
+      // Get the PC item first to check for linked schedule
+      const pcItem = await storage.getPCItem(req.params.id);
+      if (!pcItem) {
         return res.status(404).json({ message: "PC item not found" });
       }
+
+      // Delete linked schedule entry if exists
+      if (pcItem.linkedScheduleId) {
+        await storage.deleteScheduleEntry(pcItem.linkedScheduleId);
+      }
+
+      const deleted = await storage.deletePCItem(req.params.id);
       res.json({ deleted: true });
     } catch (err: any) {
       console.error("Error deleting PC item:", err);

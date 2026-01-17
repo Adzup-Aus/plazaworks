@@ -148,6 +148,7 @@ function PCItemsSection({ jobId }: { jobId: string }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/pc-items`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule"] });
       setFormData(defaultPCItemForm);
       setIsAddingItem(false);
       toast({ title: "Item added", description: "PC item has been added to the checklist." });
@@ -181,6 +182,7 @@ function PCItemsSection({ jobId }: { jobId: string }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/pc-items`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule"] });
       setEditingItem(null);
       toast({ title: "Item updated", description: "PC item has been updated." });
     },
@@ -195,6 +197,7 @@ function PCItemsSection({ jobId }: { jobId: string }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/pc-items`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule"] });
       toast({ title: "Item deleted", description: "PC item has been removed." });
     },
     onError: (error: Error) => {
