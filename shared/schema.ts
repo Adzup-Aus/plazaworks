@@ -617,6 +617,7 @@ export type NotificationType = typeof notificationTypes[number];
 export const pcItems = pgTable("pc_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   jobId: varchar("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
+  milestoneId: varchar("milestone_id"),
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
   status: varchar("status", { length: 50 }).notNull().default("pending"),
@@ -631,6 +632,7 @@ export const pcItems = pgTable("pc_items", {
 }, (table) => [
   index("idx_pc_items_job").on(table.jobId),
   index("idx_pc_items_status").on(table.status),
+  index("idx_pc_items_milestone").on(table.milestoneId),
 ]);
 
 // Notifications
@@ -655,6 +657,7 @@ export const clientAccessTokens = pgTable("client_access_tokens", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   jobId: varchar("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
   token: varchar("token", { length: 64 }).notNull().unique(),
+  shortCode: varchar("short_code", { length: 8 }).unique(),
   expiresAt: timestamp("expires_at"),
   isActive: boolean("is_active").notNull().default(true),
   createdById: varchar("created_by_id"),
@@ -662,6 +665,7 @@ export const clientAccessTokens = pgTable("client_access_tokens", {
 }, (table) => [
   index("idx_client_tokens_job").on(table.jobId),
   index("idx_client_tokens_token").on(table.token),
+  index("idx_client_tokens_short_code").on(table.shortCode),
 ]);
 
 // Phase 2 Relations
@@ -1461,6 +1465,28 @@ export const jobPhotos = pgTable("job_photos", {
   index("idx_job_photos_uploaded_by").on(table.uploadedById),
 ]);
 
+// Job receipts - receipts/expense scans attached to jobs
+export const jobReceipts = pgTable("job_receipts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobId: varchar("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
+  uploadedById: varchar("uploaded_by_id").references(() => staffProfiles.id),
+  filename: varchar("filename", { length: 255 }).notNull(),
+  originalFilename: varchar("original_filename", { length: 255 }),
+  mimeType: varchar("mime_type", { length: 100 }),
+  fileSize: integer("file_size"),
+  url: varchar("url", { length: 1000 }).notNull(),
+  thumbnailUrl: varchar("thumbnail_url", { length: 1000 }),
+  description: varchar("description", { length: 500 }),
+  vendor: varchar("vendor", { length: 255 }),
+  amount: decimal("amount", { precision: 10, scale: 2 }),
+  receiptDate: date("receipt_date"),
+  category: varchar("category", { length: 50 }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_job_receipts_job").on(table.jobId),
+  index("idx_job_receipts_uploaded_by").on(table.uploadedById),
+]);
+
 // Vehicle maintenance records
 export const vehicleMaintenance = pgTable("vehicle_maintenance", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1559,6 +1585,17 @@ export const jobPhotosRelations = relations(jobPhotos, ({ one }) => ({
   }),
 }));
 
+export const jobReceiptsRelations = relations(jobReceipts, ({ one }) => ({
+  job: one(jobs, {
+    fields: [jobReceipts.jobId],
+    references: [jobs.id],
+  }),
+  uploadedBy: one(staffProfiles, {
+    fields: [jobReceipts.uploadedById],
+    references: [staffProfiles.id],
+  }),
+}));
+
 export const vehicleMaintenanceRelations = relations(vehicleMaintenance, ({ one }) => ({
   vehicle: one(vehicles, {
     fields: [vehicleMaintenance.vehicleId],
@@ -1630,6 +1667,16 @@ export const insertJobPhotoSchema = createInsertSchema(jobPhotos).omit({
   url: z.string().min(1, "URL is required"),
 });
 
+export const insertJobReceiptSchema = createInsertSchema(jobReceipts).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  jobId: z.string().min(1, "Job is required"),
+  filename: z.string().min(1, "Filename is required"),
+  url: z.string().min(1, "URL is required"),
+  amount: z.string().optional(),
+});
+
 export const insertVehicleMaintenanceSchema = createInsertSchema(vehicleMaintenance).omit({
   id: true,
   createdAt: true,
@@ -1661,6 +1708,9 @@ export type InsertChecklistRunItem = z.infer<typeof insertChecklistRunItemSchema
 
 export type JobPhoto = typeof jobPhotos.$inferSelect;
 export type InsertJobPhoto = z.infer<typeof insertJobPhotoSchema>;
+
+export type JobReceipt = typeof jobReceipts.$inferSelect;
+export type InsertJobReceipt = z.infer<typeof insertJobReceiptSchema>;
 
 export type VehicleMaintenance = typeof vehicleMaintenance.$inferSelect;
 export type InsertVehicleMaintenance = z.infer<typeof insertVehicleMaintenanceSchema>;

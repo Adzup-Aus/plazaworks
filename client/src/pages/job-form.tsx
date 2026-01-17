@@ -62,13 +62,18 @@ import {
   Pencil,
   CalendarIcon,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Receipt,
+  DollarSign,
+  Undo2,
+  FileText,
+  Eye
 } from "lucide-react";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
-import { jobStatuses, pcItemStatuses, type Job, type PCItem, type ClientAccessToken, type JobPhoto, type ScheduleEntry, type StaffProfile } from "@shared/schema";
+import { jobStatuses, pcItemStatuses, type Job, type PCItem, type ClientAccessToken, type JobPhoto, type JobReceipt, type ScheduleEntry, type StaffProfile, type Quote, type QuoteWithDetails, type LineItem, type QuoteMilestone, type QuotePaymentSchedule } from "@shared/schema";
 import type { User as AuthUser } from "@shared/models/auth";
 
 type StaffProfileWithUser = StaffProfile & { user?: AuthUser };
@@ -111,6 +116,7 @@ interface PCItemFormData {
   dueDate: Date | null;
   assignedToId: string;
   description: string;
+  milestoneId: string;
 }
 
 const defaultPCItemForm: PCItemFormData = {
@@ -119,9 +125,10 @@ const defaultPCItemForm: PCItemFormData = {
   dueDate: null,
   assignedToId: "__none__",
   description: "",
+  milestoneId: "__none__",
 };
 
-function PCItemsSection({ jobId }: { jobId: string }) {
+function PCItemsSection({ jobId, quoteId }: { jobId: string; quoteId?: string | null }) {
   const { toast } = useToast();
   const [isAddingItem, setIsAddingItem] = useState(false);
   const [formData, setFormData] = useState<PCItemFormData>(defaultPCItemForm);
@@ -136,6 +143,13 @@ function PCItemsSection({ jobId }: { jobId: string }) {
     queryKey: ["/api/staff"],
   });
 
+  const { data: quoteDetails } = useQuery<QuoteWithDetails>({
+    queryKey: [`/api/quotes/${quoteId}`],
+    enabled: !!quoteId,
+  });
+
+  const milestones = quoteDetails?.milestones || [];
+
   const addItemMutation = useMutation({
     mutationFn: async (data: PCItemFormData) => {
       return apiRequest("POST", `/api/jobs/${jobId}/pc-items`, {
@@ -144,6 +158,7 @@ function PCItemsSection({ jobId }: { jobId: string }) {
         dueDate: data.dueDate ? format(data.dueDate, "yyyy-MM-dd") : null,
         assignedToId: data.assignedToId && data.assignedToId !== "__none__" ? data.assignedToId : null,
         description: data.description || null,
+        milestoneId: data.milestoneId && data.milestoneId !== "__none__" ? data.milestoneId : null,
       });
     },
     onSuccess: () => {
@@ -176,6 +191,9 @@ function PCItemsSection({ jobId }: { jobId: string }) {
       }
       if (data.description !== undefined) {
         payload.description = data.description || null;
+      }
+      if (data.milestoneId !== undefined) {
+        payload.milestoneId = data.milestoneId && data.milestoneId !== "__none__" ? data.milestoneId : null;
       }
       
       return apiRequest("PATCH", `/api/pc-items/${id}`, payload);
@@ -219,6 +237,7 @@ function PCItemsSection({ jobId }: { jobId: string }) {
       dueDate: item.dueDate ? new Date(item.dueDate) : null,
       assignedToId: item.assignedToId || "__none__",
       description: item.description || "",
+      milestoneId: (item as any).milestoneId || "__none__",
     });
   };
 
@@ -252,6 +271,99 @@ function PCItemsSection({ jobId }: { jobId: string }) {
 
   const completedCount = pcItems?.filter((item) => item.status === "completed").length || 0;
   const totalCount = pcItems?.length || 0;
+
+  const renderPCItem = (item: PCItem) => {
+    const isExpanded = expandedItems.has(item.id);
+    const isEditing = editingItem?.id === item.id;
+    const assigneeName = getStaffName(item.assignedToId);
+    const hasDetails = item.description || item.dueDate || item.assignedToId;
+
+    if (isEditing) {
+      return (
+        <div key={item.id}>
+          {renderForm(true)}
+        </div>
+      );
+    }
+
+    return (
+      <div
+        key={item.id}
+        className="rounded-md border hover-elevate"
+        data-testid={`pc-item-${item.id}`}
+      >
+        <div className="flex items-center gap-3 p-3">
+          <Checkbox
+            checked={item.status === "completed"}
+            disabled={item.status === "completed"}
+            onCheckedChange={() => updateItemMutation.mutate({ id: item.id, data: { status: "completed" } })}
+            data-testid={`checkbox-pc-item-${item.id}`}
+          />
+          <div className="flex-1 min-w-0">
+            <div className={`font-medium ${item.status === "completed" ? "line-through text-muted-foreground" : ""}`}>
+              {item.title}
+            </div>
+            <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground flex-wrap">
+              {item.dueDate && (
+                <span className="flex items-center gap-1">
+                  <CalendarIcon className="h-3 w-3" />
+                  {format(new Date(item.dueDate), "MMM d, yyyy")}
+                </span>
+              )}
+              {assigneeName && (
+                <span className="flex items-center gap-1">
+                  <User className="h-3 w-3" />
+                  {assigneeName}
+                </span>
+              )}
+            </div>
+          </div>
+          <Badge variant="secondary" className={getPCStatusColor(item.status)}>
+            {formatLabel(item.status)}
+          </Badge>
+          {hasDetails && (
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => toggleExpanded(item.id)}
+              data-testid={`button-expand-pc-item-${item.id}`}
+            >
+              {isExpanded ? (
+                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              )}
+            </Button>
+          )}
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => handleEditItem(item)}
+            data-testid={`button-edit-pc-item-${item.id}`}
+          >
+            <Pencil className="h-4 w-4 text-muted-foreground" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => deleteItemMutation.mutate(item.id)}
+            disabled={deleteItemMutation.isPending}
+            data-testid={`button-delete-pc-item-${item.id}`}
+          >
+            <Trash2 className="h-4 w-4 text-muted-foreground" />
+          </Button>
+        </div>
+        {isExpanded && item.description && (
+          <div className="px-3 pb-3 pt-0 border-t mx-3 mt-2">
+            <div 
+              className="prose prose-sm dark:prose-invert max-w-none pt-3"
+              dangerouslySetInnerHTML={{ __html: item.description }}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderForm = (isEdit: boolean) => (
     <div className="space-y-4 p-4 rounded-md border bg-muted/30">
@@ -332,6 +444,28 @@ function PCItemsSection({ jobId }: { jobId: string }) {
           </Select>
         </div>
 
+        {milestones.length > 0 && (
+          <div>
+            <label className="text-sm font-medium mb-2 block">Milestone</label>
+            <Select
+              value={formData.milestoneId}
+              onValueChange={(value) => setFormData({ ...formData, milestoneId: value })}
+            >
+              <SelectTrigger data-testid={isEdit ? "select-edit-pc-item-milestone" : "select-new-pc-item-milestone"}>
+                <SelectValue placeholder="Select milestone" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">General (No milestone)</SelectItem>
+                {milestones.sort((a, b) => a.sequence - b.sequence).map((milestone) => (
+                  <SelectItem key={milestone.id} value={milestone.id}>
+                    {milestone.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         <div className="md:col-span-2">
           <label className="text-sm font-medium mb-2 block">Description</label>
           <RichTextEditor
@@ -408,99 +542,53 @@ function PCItemsSection({ jobId }: { jobId: string }) {
             ))}
           </div>
         ) : pcItems && pcItems.length > 0 ? (
-          <div className="space-y-3">
-            {pcItems.map((item) => {
-              const isExpanded = expandedItems.has(item.id);
-              const isEditing = editingItem?.id === item.id;
-              const assigneeName = getStaffName(item.assignedToId);
-              const hasDetails = item.description || item.dueDate || item.assignedToId;
-
-              if (isEditing) {
-                return (
-                  <div key={item.id}>
-                    {renderForm(true)}
-                  </div>
-                );
-              }
-
-              return (
-                <div
-                  key={item.id}
-                  className="rounded-md border hover-elevate"
-                  data-testid={`pc-item-${item.id}`}
-                >
-                  <div className="flex items-center gap-3 p-3">
-                    <Checkbox
-                      checked={item.status === "completed"}
-                      disabled={item.status === "completed"}
-                      onCheckedChange={() => updateItemMutation.mutate({ id: item.id, data: { status: "completed" } })}
-                      data-testid={`checkbox-pc-item-${item.id}`}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className={`font-medium ${item.status === "completed" ? "line-through text-muted-foreground" : ""}`}>
-                        {item.title}
+          <div className="space-y-4">
+            {milestones.length > 0 ? (
+              <>
+                {milestones.sort((a, b) => a.sequence - b.sequence).map((milestone) => {
+                  const milestoneItems = pcItems.filter((item) => (item as any).milestoneId === milestone.id);
+                  const milestoneCompleted = milestoneItems.filter((item) => item.status === "completed").length;
+                  
+                  if (milestoneItems.length === 0) return null;
+                  
+                  return (
+                    <div key={milestone.id} className="border rounded-md" data-testid={`milestone-section-${milestone.id}`}>
+                      <div className="bg-muted/50 px-3 py-2 border-b flex items-center justify-between">
+                        <span className="font-medium text-sm">{milestone.title}</span>
+                        <Badge variant="outline" className="text-xs">
+                          {milestoneCompleted}/{milestoneItems.length}
+                        </Badge>
                       </div>
-                      <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground flex-wrap">
-                        {item.dueDate && (
-                          <span className="flex items-center gap-1">
-                            <CalendarIcon className="h-3 w-3" />
-                            {format(new Date(item.dueDate), "MMM d, yyyy")}
-                          </span>
-                        )}
-                        {assigneeName && (
-                          <span className="flex items-center gap-1">
-                            <User className="h-3 w-3" />
-                            {assigneeName}
-                          </span>
-                        )}
+                      <div className="p-2 space-y-2">
+                        {milestoneItems.map((item) => renderPCItem(item))}
                       </div>
                     </div>
-                    <Badge variant="secondary" className={getPCStatusColor(item.status)}>
-                      {formatLabel(item.status)}
-                    </Badge>
-                    {hasDetails && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => toggleExpanded(item.id)}
-                        data-testid={`button-expand-pc-item-${item.id}`}
-                      >
-                        {isExpanded ? (
-                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </Button>
-                    )}
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => handleEditItem(item)}
-                      data-testid={`button-edit-pc-item-${item.id}`}
-                    >
-                      <Pencil className="h-4 w-4 text-muted-foreground" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => deleteItemMutation.mutate(item.id)}
-                      disabled={deleteItemMutation.isPending}
-                      data-testid={`button-delete-pc-item-${item.id}`}
-                    >
-                      <Trash2 className="h-4 w-4 text-muted-foreground" />
-                    </Button>
-                  </div>
-                  {isExpanded && item.description && (
-                    <div className="px-3 pb-3 pt-0 border-t mx-3 mt-2">
-                      <div 
-                        className="prose prose-sm dark:prose-invert max-w-none pt-3"
-                        dangerouslySetInnerHTML={{ __html: item.description }}
-                      />
+                  );
+                })}
+                {(() => {
+                  const generalItems = pcItems.filter((item) => !(item as any).milestoneId);
+                  if (generalItems.length === 0) return null;
+                  const generalCompleted = generalItems.filter((item) => item.status === "completed").length;
+                  return (
+                    <div className="border rounded-md" data-testid="milestone-section-general">
+                      <div className="bg-muted/50 px-3 py-2 border-b flex items-center justify-between">
+                        <span className="font-medium text-sm">General Items</span>
+                        <Badge variant="outline" className="text-xs">
+                          {generalCompleted}/{generalItems.length}
+                        </Badge>
+                      </div>
+                      <div className="p-2 space-y-2">
+                        {generalItems.map((item) => renderPCItem(item))}
+                      </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                })()}
+              </>
+            ) : (
+              <div className="space-y-3">
+                {pcItems.map((item) => renderPCItem(item))}
+              </div>
+            )}
           </div>
         ) : !isAddingItem ? (
           <div className="text-center py-8 text-muted-foreground">
@@ -836,6 +924,387 @@ function JobPhotosSection({ jobId }: { jobId: string }) {
   );
 }
 
+function JobReceiptsSection({ jobId }: { jobId: string }) {
+  const { toast } = useToast();
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [selectedReceipt, setSelectedReceipt] = useState<JobReceipt | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [newReceiptDescription, setNewReceiptDescription] = useState("");
+  const [newReceiptVendor, setNewReceiptVendor] = useState("");
+  const [newReceiptAmount, setNewReceiptAmount] = useState("");
+  const [newReceiptCategory, setNewReceiptCategory] = useState("materials");
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: receipts, isLoading } = useQuery<JobReceipt[]>({
+    queryKey: [`/api/jobs/${jobId}/receipts`],
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: async (data: { url: string; description?: string; vendor?: string; amount?: string; category?: string }) => {
+      return apiRequest("POST", `/api/jobs/${jobId}/receipts`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/receipts`] });
+      toast({ title: "Receipt added", description: "Receipt has been added to the job." });
+      setIsAddDialogOpen(false);
+      resetForm();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (receiptId: string) => {
+      return apiRequest("DELETE", `/api/job-receipts/${receiptId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/receipts`] });
+      toast({ title: "Receipt deleted", description: "Receipt has been removed." });
+      setSelectedReceipt(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const resetForm = () => {
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setNewReceiptDescription("");
+    setNewReceiptVendor("");
+    setNewReceiptAmount("");
+    setNewReceiptCategory("materials");
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/heic", "image/heif", "application/pdf"];
+      if (!allowedTypes.includes(file.type)) {
+        toast({ title: "Invalid file", description: "Please select an image or PDF file.", variant: "destructive" });
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast({ title: "File too large", description: "Please select a file under 10MB.", variant: "destructive" });
+        return;
+      }
+      setSelectedFile(file);
+      if (file.type.startsWith("image/")) {
+        const objectUrl = URL.createObjectURL(file);
+        setPreviewUrl(objectUrl);
+      } else {
+        setPreviewUrl(null);
+      }
+    }
+  };
+
+  const handleAddReceipt = async () => {
+    if (!selectedFile) {
+      toast({ title: "File required", description: "Please select a receipt to upload.", variant: "destructive" });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const urlResponse = await fetch("/api/uploads/request-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: selectedFile.name,
+          size: selectedFile.size,
+          contentType: selectedFile.type,
+        }),
+      });
+
+      if (!urlResponse.ok) {
+        throw new Error("Failed to get upload URL");
+      }
+
+      const { uploadURL, objectPath } = await urlResponse.json();
+
+      const uploadResponse = await fetch(uploadURL, {
+        method: "PUT",
+        body: selectedFile,
+        headers: { "Content-Type": selectedFile.type },
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("Failed to upload receipt");
+      }
+
+      uploadMutation.mutate({
+        url: objectPath,
+        description: newReceiptDescription.trim() || undefined,
+        vendor: newReceiptVendor.trim() || undefined,
+        amount: newReceiptAmount.trim() || undefined,
+        category: newReceiptCategory,
+      });
+    } catch (error) {
+      toast({ title: "Upload failed", description: error instanceof Error ? error.message : "Failed to upload receipt", variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Receipt className="h-5 w-5" />
+              Receipts & Expenses
+            </CardTitle>
+            <CardDescription>Upload receipts and expense documentation</CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsAddDialogOpen(true)}
+            disabled={uploadMutation.isPending}
+            data-testid="button-add-receipt"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add Receipt
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="aspect-square rounded-md bg-muted animate-pulse" />
+            ))}
+          </div>
+        ) : receipts && receipts.length > 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {receipts.map((receipt) => (
+              <div
+                key={receipt.id}
+                className="relative aspect-square rounded-md overflow-hidden border group cursor-pointer"
+                onClick={() => setSelectedReceipt(receipt)}
+                data-testid={`receipt-${receipt.id}`}
+              >
+                <img
+                  src={receipt.url}
+                  alt={receipt.description || "Receipt"}
+                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors" />
+                <Button
+                  size="icon"
+                  variant="destructive"
+                  className="absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm("Delete this receipt?")) {
+                      deleteMutation.mutate(receipt.id);
+                    }
+                  }}
+                  data-testid={`button-delete-receipt-${receipt.id}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+                {receipt.amount && (
+                  <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 truncate flex items-center gap-1">
+                    <DollarSign className="h-3 w-3" />
+                    {receipt.amount}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            <Receipt className="mx-auto h-8 w-8 mb-2 opacity-50" />
+            <p>No receipts yet</p>
+            <p className="text-sm">Upload receipts to track job expenses</p>
+          </div>
+        )}
+
+        <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
+          setIsAddDialogOpen(open);
+          if (!open) resetForm();
+        }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add Receipt</DialogTitle>
+              <DialogDescription>Scan or upload a receipt to document job expenses</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  Receipt File <span className="text-destructive">*</span>
+                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  capture="environment"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  data-testid="input-receipt-file"
+                />
+                {selectedFile ? (
+                  <div className="relative">
+                    {previewUrl ? (
+                      <img
+                        src={previewUrl}
+                        alt="Preview"
+                        className="w-full max-h-48 object-contain rounded-md border"
+                      />
+                    ) : (
+                      <div className="p-4 border rounded-md bg-muted flex items-center gap-2">
+                        <Receipt className="h-5 w-5" />
+                        <span className="text-sm">{selectedFile.name}</span>
+                      </div>
+                    )}
+                    <Button
+                      size="icon"
+                      variant="destructive"
+                      className="absolute top-2 right-2 h-7 w-7"
+                      onClick={() => {
+                        setSelectedFile(null);
+                        setPreviewUrl(null);
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed rounded-md p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                    data-testid="dropzone-receipt"
+                  >
+                    <Camera className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+                    <p className="text-sm font-medium">Tap to scan or select a receipt</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Supports images and PDFs up to 10MB
+                    </p>
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label htmlFor="receipt-vendor" className="text-sm font-medium">
+                    Vendor
+                  </label>
+                  <Input
+                    id="receipt-vendor"
+                    placeholder="Store name..."
+                    value={newReceiptVendor}
+                    onChange={(e) => setNewReceiptVendor(e.target.value)}
+                    data-testid="input-receipt-vendor"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="receipt-amount" className="text-sm font-medium">
+                    Amount
+                  </label>
+                  <Input
+                    id="receipt-amount"
+                    placeholder="0.00"
+                    value={newReceiptAmount}
+                    onChange={(e) => setNewReceiptAmount(e.target.value)}
+                    data-testid="input-receipt-amount"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="receipt-category" className="text-sm font-medium">
+                  Category
+                </label>
+                <Select value={newReceiptCategory} onValueChange={setNewReceiptCategory}>
+                  <SelectTrigger data-testid="select-receipt-category">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="materials">Materials</SelectItem>
+                    <SelectItem value="equipment">Equipment</SelectItem>
+                    <SelectItem value="supplies">Supplies</SelectItem>
+                    <SelectItem value="fuel">Fuel</SelectItem>
+                    <SelectItem value="subcontractor">Subcontractor</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="receipt-description" className="text-sm font-medium">
+                  Description (optional)
+                </label>
+                <Input
+                  id="receipt-description"
+                  placeholder="What was purchased..."
+                  value={newReceiptDescription}
+                  onChange={(e) => setNewReceiptDescription(e.target.value)}
+                  data-testid="input-receipt-description"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAddReceipt}
+                disabled={isUploading || uploadMutation.isPending || !selectedFile}
+                data-testid="button-confirm-add-receipt"
+              >
+                {isUploading ? "Uploading..." : uploadMutation.isPending ? "Saving..." : "Add Receipt"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!selectedReceipt} onOpenChange={(open) => !open && setSelectedReceipt(null)}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Receipt Details</DialogTitle>
+            </DialogHeader>
+            {selectedReceipt && (
+              <div className="space-y-4">
+                <img
+                  src={selectedReceipt.url}
+                  alt={selectedReceipt.description || "Receipt"}
+                  className="w-full max-h-[60vh] object-contain rounded-md"
+                />
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  {selectedReceipt.vendor && (
+                    <div>
+                      <span className="text-muted-foreground">Vendor:</span>{" "}
+                      <span className="font-medium">{selectedReceipt.vendor}</span>
+                    </div>
+                  )}
+                  {selectedReceipt.amount && (
+                    <div>
+                      <span className="text-muted-foreground">Amount:</span>{" "}
+                      <span className="font-medium">${selectedReceipt.amount}</span>
+                    </div>
+                  )}
+                </div>
+                {selectedReceipt.description && (
+                  <p className="text-sm text-muted-foreground">{selectedReceipt.description}</p>
+                )}
+                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                  <span>Uploaded: {new Date(selectedReceipt.createdAt || "").toLocaleString()}</span>
+                  {selectedReceipt.category && (
+                    <Badge variant="secondary">{selectedReceipt.category}</Badge>
+                  )}
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      </CardContent>
+    </Card>
+  );
+}
+
 function ShareLinkSection({ jobId }: { jobId: string }) {
   const { toast } = useToast();
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
@@ -870,10 +1339,12 @@ function ShareLinkSection({ jobId }: { jobId: string }) {
     },
   });
 
-  const copyLink = (token: string) => {
-    const url = `${window.location.origin}/portal/${token}`;
+  const copyLink = (link: ClientAccessToken, useShortLink: boolean = true) => {
+    const url = useShortLink && link.shortCode 
+      ? `${window.location.origin}/s/${link.shortCode}`
+      : `${window.location.origin}/portal/${link.token}`;
     navigator.clipboard.writeText(url);
-    toast({ title: "Copied", description: "Link copied to clipboard." });
+    toast({ title: "Copied", description: useShortLink ? "Short link copied to clipboard." : "Full link copied to clipboard." });
   };
 
   const activeLinks = shareLinks?.filter((link) => link.isActive) || [];
@@ -911,33 +1382,52 @@ function ShareLinkSection({ jobId }: { jobId: string }) {
                   <Skeleton className="h-12 w-full" />
                 </div>
               ) : activeLinks.length > 0 ? (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {activeLinks.map((link) => (
                     <div
                       key={link.id}
-                      className="flex items-center gap-2 p-3 rounded-md border"
+                      className="p-3 rounded-md border space-y-2"
                       data-testid={`share-link-${link.id}`}
                     >
-                      <div className="flex-1 truncate text-sm font-mono">
-                        {window.location.origin}/portal/{link.token.slice(0, 8)}...
+                      {link.shortCode && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">Short link:</span>
+                          <div className="flex-1 text-sm font-mono bg-muted px-2 py-1 rounded">
+                            {window.location.origin}/s/{link.shortCode}
+                          </div>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => copyLink(link, true)}
+                            data-testid={`button-copy-short-link-${link.id}`}
+                          >
+                            <ClipboardCopy className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Full link:</span>
+                        <div className="flex-1 truncate text-xs font-mono text-muted-foreground">
+                          .../{link.token.slice(0, 12)}...
+                        </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => copyLink(link, false)}
+                          data-testid={`button-copy-link-${link.id}`}
+                        >
+                          <ClipboardCopy className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => revokeShareLinkMutation.mutate(link.id)}
+                          disabled={revokeShareLinkMutation.isPending}
+                          data-testid={`button-revoke-link-${link.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 text-muted-foreground" />
+                        </Button>
                       </div>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => copyLink(link.token)}
-                        data-testid={`button-copy-link-${link.id}`}
-                      >
-                        <ClipboardCopy className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => revokeShareLinkMutation.mutate(link.id)}
-                        disabled={revokeShareLinkMutation.isPending}
-                        data-testid={`button-revoke-link-${link.id}`}
-                      >
-                        <Trash2 className="h-4 w-4 text-muted-foreground" />
-                      </Button>
                     </div>
                   ))}
                 </div>
@@ -976,6 +1466,184 @@ function ShareLinkSection({ jobId }: { jobId: string }) {
             No share links created. Click "Create Link" to generate a shareable link.
           </p>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function InvoicePreviewSection({ job }: { job: Job }) {
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  
+  const { data: quoteDetails, isLoading } = useQuery<QuoteWithDetails>({
+    queryKey: [`/api/quotes/${job.quoteId}`],
+    enabled: !!job.quoteId && isPreviewOpen,
+  });
+
+  if (!job.quoteId && !job.invoiceId) {
+    return null;
+  }
+
+  const milestones = quoteDetails?.milestones || [];
+  const lineItems = quoteDetails?.lineItems || [];
+  const paymentSchedules = quoteDetails?.paymentSchedules || [];
+
+  const getMilestoneItems = (milestoneId: string) => 
+    lineItems.filter(item => item.quoteMilestoneId === milestoneId);
+
+  const getUnassignedItems = () => 
+    lineItems.filter(item => !item.quoteMilestoneId);
+
+  return (
+    <Card className="overflow-visible">
+      <CardHeader className="flex flex-row items-center justify-between gap-4">
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Linked Quote/Invoice
+          </CardTitle>
+          <CardDescription>
+            View deliverables and milestones from the original quote
+          </CardDescription>
+        </div>
+        <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="outline" data-testid="button-preview-invoice">
+              <Eye className="mr-2 h-4 w-4" />
+              Preview Deliverables
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Quote Deliverables</DialogTitle>
+              <DialogDescription>
+                Reference this when creating checklist items
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6 py-4">
+              {isLoading ? (
+                <div className="space-y-4">
+                  <Skeleton className="h-24 w-full" />
+                  <Skeleton className="h-24 w-full" />
+                </div>
+              ) : quoteDetails ? (
+                <>
+                  {milestones.length > 0 && (
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                        Milestones
+                      </h3>
+                      {milestones.sort((a, b) => a.sequence - b.sequence).map((milestone) => (
+                        <div key={milestone.id} className="border rounded-md p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">{milestone.title}</span>
+                            {milestone.description && (
+                              <span className="text-xs text-muted-foreground">{milestone.description}</span>
+                            )}
+                          </div>
+                          {getMilestoneItems(milestone.id).length > 0 && (
+                            <div className="pl-4 border-l-2 border-primary/30 space-y-2">
+                              {getMilestoneItems(milestone.id).map((item) => (
+                                <div key={item.id} className="text-sm">
+                                  <div className="font-medium">{item.description}</div>
+                                  {item.richDescription && (
+                                    <div 
+                                      className="text-muted-foreground text-xs mt-1 prose prose-sm max-w-none"
+                                      dangerouslySetInnerHTML={{ __html: item.richDescription }}
+                                    />
+                                  )}
+                                  {item.quantity && item.unitPrice && (
+                                    <div className="text-xs text-muted-foreground mt-1">
+                                      Qty: {item.quantity} × ${item.unitPrice} = ${parseFloat(item.quantity) * parseFloat(item.unitPrice)}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {getUnassignedItems().length > 0 && (
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                        Line Items
+                      </h3>
+                      <div className="border rounded-md p-4 space-y-3">
+                        {getUnassignedItems().map((item) => (
+                          <div key={item.id} className="text-sm pb-3 border-b last:border-b-0">
+                            {item.heading && (
+                              <div className="font-semibold text-primary mb-1">{item.heading}</div>
+                            )}
+                            <div className="font-medium">{item.description}</div>
+                            {item.richDescription && (
+                              <div 
+                                className="text-muted-foreground text-xs mt-1 prose prose-sm max-w-none"
+                                dangerouslySetInnerHTML={{ __html: item.richDescription }}
+                              />
+                            )}
+                            {item.quantity && item.unitPrice && (
+                              <div className="text-xs text-muted-foreground mt-1">
+                                Qty: {item.quantity} × ${item.unitPrice} = ${(parseFloat(item.quantity) * parseFloat(item.unitPrice)).toFixed(2)}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {paymentSchedules.length > 0 && (
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                        Payment Schedule
+                      </h3>
+                      <div className="border rounded-md p-4">
+                        <div className="space-y-2">
+                          {paymentSchedules.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)).map((schedule) => (
+                            <div key={schedule.id} className="flex items-center justify-between text-sm">
+                              <span>{schedule.name}</span>
+                              <span className="font-medium">
+                                {schedule.calculatedAmount ? `$${schedule.calculatedAmount}` : schedule.percentage ? `${schedule.percentage}%` : '-'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {quoteDetails.total && (
+                    <div className="border-t pt-4 flex items-center justify-between">
+                      <span className="font-semibold">Total Quote Value</span>
+                      <span className="text-lg font-bold">${quoteDetails.total}</span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FileText className="mx-auto h-8 w-8 mb-2 opacity-50" />
+                  <p>No quote details available</p>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-4 text-sm">
+          {job.quoteId && (
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">Quote #{job.referenceNumber || job.quoteId.slice(0, 8)}</Badge>
+            </div>
+          )}
+          {job.invoiceId && (
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">Invoice Linked</Badge>
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
@@ -1076,6 +1744,19 @@ function JobScheduleSection({ jobId }: { jobId: string }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/schedule"] });
       toast({ title: "Schedule deleted", description: "The schedule entry has been removed." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const resetScheduleMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("POST", `/api/schedule/${id}/reset`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule"] });
+      toast({ title: "Status reset", description: "The entry has been reset to scheduled." });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -1476,16 +2157,40 @@ function JobScheduleSection({ jobId }: { jobId: string }) {
                         </>
                       )}
                       {entry.status === "completed" && (
-                        <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          Done
-                        </Badge>
+                        <>
+                          <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            Done
+                          </Badge>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => resetScheduleMutation.mutate(entry.id)}
+                            disabled={resetScheduleMutation.isPending}
+                            title="Undo - reset to scheduled"
+                            data-testid={`button-reset-schedule-${entry.id}`}
+                          >
+                            <Undo2 className="h-4 w-4 text-muted-foreground" />
+                          </Button>
+                        </>
                       )}
                       {entry.status === "cancelled" && (
-                        <Badge variant="secondary" className="bg-muted text-muted-foreground">
-                          <XCircle className="h-3 w-3 mr-1" />
-                          Cancelled
-                        </Badge>
+                        <>
+                          <Badge variant="secondary" className="bg-muted text-muted-foreground">
+                            <XCircle className="h-3 w-3 mr-1" />
+                            Cancelled
+                          </Badge>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => resetScheduleMutation.mutate(entry.id)}
+                            disabled={resetScheduleMutation.isPending}
+                            title="Undo - reset to scheduled"
+                            data-testid={`button-reset-schedule-${entry.id}`}
+                          >
+                            <Undo2 className="h-4 w-4 text-muted-foreground" />
+                          </Button>
+                        </>
                       )}
                       <Button
                         size="icon"
@@ -1946,11 +2651,13 @@ export default function JobForm() {
         </form>
       </Form>
 
-      {isEditing && id && (
+      {isEditing && id && job && (
         <>
+          <InvoicePreviewSection job={job} />
           <JobScheduleSection jobId={id} />
-          <PCItemsSection jobId={id} />
+          <PCItemsSection jobId={id} quoteId={job.quoteId} />
           <JobPhotosSection jobId={id} />
+          <JobReceiptsSection jobId={id} />
           <ShareLinkSection jobId={id} />
         </>
       )}

@@ -118,6 +118,7 @@ import {
   insertChecklistRunSchema,
   insertChecklistRunItemSchema,
   insertJobPhotoSchema,
+  insertJobReceiptSchema,
   insertVehicleMaintenanceSchema,
   insertJobTimeEntrySchema,
   insertJobCostEntrySchema,
@@ -1659,6 +1660,20 @@ export async function registerRoutes(
     }
   });
 
+  // Reset schedule entry back to scheduled (undo complete/cancel)
+  app.post("/api/schedule/:id/reset", isAuthenticated, async (req, res) => {
+    try {
+      const updated = await storage.updateScheduleEntry(req.params.id, { status: "scheduled" });
+      if (!updated) {
+        return res.status(404).json({ message: "Schedule entry not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error resetting schedule entry:", err);
+      res.status(500).json({ message: "Failed to reset schedule entry" });
+    }
+  });
+
   // Check staff availability for a date
   app.get("/api/schedule/availability/:staffId/:date", isAuthenticated, async (req, res) => {
     try {
@@ -1971,6 +1986,27 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("Error revoking share link:", err);
       res.status(500).json({ message: "Failed to revoke share link" });
+    }
+  });
+
+  // SHORT LINK REDIRECT: /s/:shortCode redirects to full portal link
+  app.get("/s/:shortCode", async (req, res) => {
+    try {
+      const accessToken = await storage.getClientAccessTokenByShortCode(req.params.shortCode);
+      if (!accessToken || !accessToken.isActive) {
+        return res.status(404).send("Link not found or expired");
+      }
+
+      // Check if token is expired
+      if (accessToken.expiresAt && new Date(accessToken.expiresAt) < new Date()) {
+        return res.status(410).send("This link has expired");
+      }
+
+      // Redirect to the full portal page
+      res.redirect(`/portal/${accessToken.token}`);
+    } catch (err: any) {
+      console.error("Error resolving short link:", err);
+      res.status(500).send("Error resolving link");
     }
   });
 
@@ -3384,6 +3420,104 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("Error deleting job photo:", err);
       res.status(500).json({ message: "Failed to delete job photo" });
+    }
+  });
+
+  // =====================
+  // JOB RECEIPT ROUTES
+  // =====================
+
+  // Get receipts for a job
+  app.get("/api/jobs/:jobId/receipts", isAuthenticated, async (req, res) => {
+    try {
+      const receipts = await storage.getJobReceipts(req.params.jobId);
+      res.json(receipts);
+    } catch (err: any) {
+      console.error("Error fetching job receipts:", err);
+      res.status(500).json({ message: "Failed to fetch job receipts" });
+    }
+  });
+
+  // Get single receipt
+  app.get("/api/job-receipts/:id", isAuthenticated, async (req, res) => {
+    try {
+      const receipt = await storage.getJobReceipt(req.params.id);
+      if (!receipt) {
+        return res.status(404).json({ message: "Receipt not found" });
+      }
+      res.json(receipt);
+    } catch (err: any) {
+      console.error("Error fetching job receipt:", err);
+      res.status(500).json({ message: "Failed to fetch job receipt" });
+    }
+  });
+
+  // Upload receipt (scan or file)
+  app.post("/api/jobs/:jobId/receipts", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const staffProfile = await storage.getStaffProfileByUserId(userId);
+
+      // Generate filename from URL if not provided
+      let filename = req.body.filename;
+      if (!filename && req.body.url) {
+        try {
+          const urlObj = new URL(req.body.url);
+          filename = urlObj.pathname.split('/').pop() || `receipt-${Date.now()}.jpg`;
+        } catch {
+          filename = `receipt-${Date.now()}.jpg`;
+        }
+      }
+
+      const validation = insertJobReceiptSchema.safeParse({
+        ...req.body,
+        filename,
+        jobId: req.params.jobId,
+        uploadedById: staffProfile?.id,
+      });
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const receipt = await storage.createJobReceipt(validation.data);
+      res.status(201).json(receipt);
+    } catch (err: any) {
+      console.error("Error creating job receipt:", err);
+      res.status(500).json({ message: "Failed to create job receipt" });
+    }
+  });
+
+  // Update receipt (description, vendor, amount, etc.)
+  app.patch("/api/job-receipts/:id", isAuthenticated, async (req, res) => {
+    try {
+      const partialSchema = insertJobReceiptSchema.partial();
+      const validation = partialSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const updated = await storage.updateJobReceipt(req.params.id, validation.data);
+      if (!updated) {
+        return res.status(404).json({ message: "Receipt not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating job receipt:", err);
+      res.status(500).json({ message: "Failed to update job receipt" });
+    }
+  });
+
+  // Delete receipt
+  app.delete("/api/job-receipts/:id", isAuthenticated, async (req, res) => {
+    try {
+      const deleted = await storage.deleteJobReceipt(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Receipt not found" });
+      }
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting job receipt:", err);
+      res.status(500).json({ message: "Failed to delete job receipt" });
     }
   });
 

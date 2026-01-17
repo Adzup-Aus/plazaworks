@@ -40,6 +40,8 @@ import {
   type ChecklistRunWithItems,
   type JobPhoto,
   type InsertJobPhoto,
+  type JobReceipt,
+  type InsertJobReceipt,
   type VehicleMaintenance,
   type InsertVehicleMaintenance,
   type JobTimeEntry,
@@ -136,6 +138,7 @@ import {
   checklistRuns,
   checklistRunItems,
   jobPhotos,
+  jobReceipts,
   vehicleMaintenance,
   jobTimeEntries,
   jobCostEntries,
@@ -226,6 +229,7 @@ export interface IStorage {
   getClientAccessToken(token: string): Promise<ClientAccessToken | undefined>;
   getClientAccessTokensByJob(jobId: string): Promise<ClientAccessToken[]>;
   createClientAccessToken(data: InsertClientAccessToken): Promise<ClientAccessToken>;
+  getClientAccessTokenByShortCode(shortCode: string): Promise<ClientAccessToken | undefined>;
   revokeClientAccessToken(id: string): Promise<boolean>;
 
   // Quote operations
@@ -367,6 +371,13 @@ export interface IStorage {
   createJobPhoto(photo: InsertJobPhoto): Promise<JobPhoto>;
   updateJobPhoto(id: string, photo: Partial<InsertJobPhoto>): Promise<JobPhoto | undefined>;
   deleteJobPhoto(id: string): Promise<boolean>;
+
+  // Job receipt operations
+  getJobReceipts(jobId: string): Promise<JobReceipt[]>;
+  getJobReceipt(id: string): Promise<JobReceipt | undefined>;
+  createJobReceipt(receipt: InsertJobReceipt): Promise<JobReceipt>;
+  updateJobReceipt(id: string, receipt: Partial<InsertJobReceipt>): Promise<JobReceipt | undefined>;
+  deleteJobReceipt(id: string): Promise<boolean>;
 
   // Vehicle maintenance operations
   getVehicleMaintenanceRecords(vehicleId: string): Promise<VehicleMaintenance[]>;
@@ -753,11 +764,21 @@ export class DatabaseStorage implements IStorage {
 
   async createClientAccessToken(data: InsertClientAccessToken): Promise<ClientAccessToken> {
     const token = crypto.randomBytes(32).toString("hex");
+    // Generate a short 6-character alphanumeric code
+    const shortCode = crypto.randomBytes(4).toString("base64url").substring(0, 6);
     const [created] = await db
       .insert(clientAccessTokens)
-      .values({ ...data, token })
+      .values({ ...data, token, shortCode })
       .returning();
     return created;
+  }
+
+  async getClientAccessTokenByShortCode(shortCode: string): Promise<ClientAccessToken | undefined> {
+    const [accessToken] = await db
+      .select()
+      .from(clientAccessTokens)
+      .where(and(eq(clientAccessTokens.shortCode, shortCode), eq(clientAccessTokens.isActive, true)));
+    return accessToken;
   }
 
   async revokeClientAccessToken(id: string): Promise<boolean> {
@@ -1803,6 +1824,37 @@ export class DatabaseStorage implements IStorage {
 
   async deleteJobPhoto(id: string): Promise<boolean> {
     await db.delete(jobPhotos).where(eq(jobPhotos.id, id));
+    return true;
+  }
+
+  // Job Receipt Operations
+  async getJobReceipts(jobId: string): Promise<JobReceipt[]> {
+    return await db.select().from(jobReceipts)
+      .where(eq(jobReceipts.jobId, jobId))
+      .orderBy(desc(jobReceipts.createdAt));
+  }
+
+  async getJobReceipt(id: string): Promise<JobReceipt | undefined> {
+    const [receipt] = await db.select().from(jobReceipts).where(eq(jobReceipts.id, id));
+    return receipt;
+  }
+
+  async createJobReceipt(receipt: InsertJobReceipt): Promise<JobReceipt> {
+    const [created] = await db.insert(jobReceipts).values(receipt).returning();
+    return created;
+  }
+
+  async updateJobReceipt(id: string, receipt: Partial<InsertJobReceipt>): Promise<JobReceipt | undefined> {
+    const [updated] = await db
+      .update(jobReceipts)
+      .set(receipt)
+      .where(eq(jobReceipts.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteJobReceipt(id: string): Promise<boolean> {
+    await db.delete(jobReceipts).where(eq(jobReceipts.id, id));
     return true;
   }
 
