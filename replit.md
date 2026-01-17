@@ -77,6 +77,30 @@ Key features include:
   - Invoices table updated with referenceNumber, clientId, paymentLinkToken fields
   - invoicePayments table for tracking individual milestone payments against a single invoice
   - numberingService.ts for number reservation, job name generation, and payment link tokens
+- Added Receipt Upload System (JobReceiptsSection):
+  - Upload receipts for job expenses with camera/scan support for mobile
+  - Track vendor name, amount, and category per receipt
+  - Categories: materials, equipment, supplies, fuel, subcontractor, other
+  - Uses presigned URL pattern same as job photos
+  - jobReceipts table with vendor, amount, category, uploadedById fields
+- Added Short Link System for Portal Access:
+  - Generate 6-character base64url codes for easy sharing
+  - shortLinks table stores code, clientAccessTokenId, and metadata
+  - Server-side redirect at /s/:shortCode for direct portal access
+  - ShareLinkSection displays both short and full portal URLs
+- Enhanced Schedule Entry Status Management:
+  - Toggle between scheduled/completed/cancelled states
+  - Undo functionality via /api/schedule/:id/reset endpoint
+  - Status cycles allow reversing accidentally completed/cancelled entries
+- Added Invoice Preview Popup (InvoicePreviewSection):
+  - View linked quote deliverables, milestones, and payment schedules
+  - Lazy-loads quote details only when preview dialog opens
+  - Displays within job form without leaving the page
+- Enhanced Practical Completion Checklist with Milestone Grouping:
+  - PC items can be associated with quote milestones via milestoneId field
+  - Items grouped by milestone with completion counts per section
+  - General Items section for unassigned tasks
+  - Milestone selector dropdown when adding/editing checklist items
 
 ## External Dependencies
 - **Database**: PostgreSQL
