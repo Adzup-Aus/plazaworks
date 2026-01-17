@@ -457,7 +457,7 @@ export const jobs = pgTable("jobs", {
   description: text("description"),
   status: varchar("status", { length: 50 }).notNull().default("pending"),
   priority: varchar("priority", { length: 20 }).default("normal"),
-  estimatedDuration: varchar("estimated_duration", { length: 50 }),
+  estimatedDurationHours: decimal("estimated_duration_hours", { precision: 6, scale: 2 }),
   notes: text("notes"),
   // Links to quote and invoice
   quoteId: varchar("quote_id"),

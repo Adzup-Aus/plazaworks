@@ -81,7 +81,8 @@ const formSchema = z.object({
   description: z.string().optional(),
   status: z.enum(jobStatuses),
   priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
-  estimatedDuration: z.string().optional(),
+  estimatedDurationDays: z.number().min(0).optional(),
+  estimatedDurationHours: z.number().min(0).max(23).optional(),
   notes: z.string().optional(),
 });
 
@@ -1209,13 +1210,18 @@ export default function JobForm() {
       description: "",
       status: "pending",
       priority: "normal",
-      estimatedDuration: "",
+      estimatedDurationDays: 0,
+      estimatedDurationHours: 0,
       notes: "",
     },
   });
 
   useEffect(() => {
     if (job && isEditing) {
+      const totalHours = job.estimatedDurationHours ? parseFloat(job.estimatedDurationHours) : 0;
+      const days = Math.floor(totalHours / 8);
+      const hours = Math.round((totalHours % 8) * 10) / 10;
+      
       form.reset({
         clientName: job.clientName,
         clientEmail: job.clientEmail || "",
@@ -1224,7 +1230,8 @@ export default function JobForm() {
         description: job.description || "",
         status: job.status as typeof jobStatuses[number],
         priority: (job.priority as "low" | "normal" | "high" | "urgent") || "normal",
-        estimatedDuration: job.estimatedDuration || "",
+        estimatedDurationDays: days,
+        estimatedDurationHours: hours,
         notes: job.notes || "",
       });
     }
@@ -1232,7 +1239,13 @@ export default function JobForm() {
 
   const createMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      const response = await apiRequest("POST", "/api/jobs", data);
+      const totalHours = ((data.estimatedDurationDays || 0) * 8) + (data.estimatedDurationHours || 0);
+      const { estimatedDurationDays, estimatedDurationHours, ...rest } = data;
+      const response = await apiRequest("POST", "/api/jobs", {
+        ...rest,
+        estimatedDurationHours: totalHours > 0 ? totalHours.toString() : null,
+        jobType: "general", // Default job type - field is hidden per project requirements
+      });
       return response;
     },
     onSuccess: () => {
@@ -1254,7 +1267,12 @@ export default function JobForm() {
 
   const updateMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      const response = await apiRequest("PATCH", `/api/jobs/${id}`, data);
+      const totalHours = ((data.estimatedDurationDays || 0) * 8) + (data.estimatedDurationHours || 0);
+      const { estimatedDurationDays, estimatedDurationHours, ...rest } = data;
+      const response = await apiRequest("PATCH", `/api/jobs/${id}`, {
+        ...rest,
+        estimatedDurationHours: totalHours > 0 ? totalHours.toString() : null,
+      });
       return response;
     },
     onSuccess: () => {
@@ -1480,23 +1498,52 @@ export default function JobForm() {
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="estimatedDuration"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Estimated Duration</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="e.g., 2 days, 4 hours"
-                          {...field}
-                          data-testid="input-duration"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <FormItem>
+                  <FormLabel>Estimated Duration</FormLabel>
+                  <div className="flex items-center gap-2">
+                    <FormField
+                      control={form.control}
+                      name="estimatedDurationDays"
+                      render={({ field }) => (
+                        <div className="flex items-center gap-1">
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min={0}
+                              className="w-20"
+                              {...field}
+                              onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                              data-testid="input-duration-days"
+                            />
+                          </FormControl>
+                          <span className="text-sm text-muted-foreground">days</span>
+                        </div>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="estimatedDurationHours"
+                      render={({ field }) => (
+                        <div className="flex items-center gap-1">
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={23}
+                              step={0.5}
+                              className="w-20"
+                              {...field}
+                              onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                              data-testid="input-duration-hours"
+                            />
+                          </FormControl>
+                          <span className="text-sm text-muted-foreground">hours</span>
+                        </div>
+                      )}
+                    />
+                  </div>
+                  <FormDescription>1 day = 8 working hours</FormDescription>
+                </FormItem>
               </div>
               <FormField
                 control={form.control}
