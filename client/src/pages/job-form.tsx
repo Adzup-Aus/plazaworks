@@ -541,54 +541,93 @@ function PCItemsSection({ jobId, quoteId }: { jobId: string; quoteId?: string | 
               <Skeleton key={i} className="h-12 w-full" />
             ))}
           </div>
-        ) : pcItems && pcItems.length > 0 ? (
+        ) : milestones.length > 0 ? (
           <div className="space-y-4">
-            {milestones.length > 0 ? (
-              <>
-                {milestones.sort((a, b) => a.sequence - b.sequence).map((milestone) => {
-                  const milestoneItems = pcItems.filter((item) => (item as any).milestoneId === milestone.id);
-                  const milestoneCompleted = milestoneItems.filter((item) => item.status === "completed").length;
-                  
-                  if (milestoneItems.length === 0) return null;
-                  
-                  return (
-                    <div key={milestone.id} className="border rounded-md" data-testid={`milestone-section-${milestone.id}`}>
-                      <div className="bg-muted/50 px-3 py-2 border-b flex items-center justify-between">
-                        <span className="font-medium text-sm">{milestone.title}</span>
+            {milestones.sort((a, b) => a.sequence - b.sequence).map((milestone) => {
+              const milestoneItems = (pcItems || []).filter((item) => (item as any).milestoneId === milestone.id);
+              const milestoneCompleted = milestoneItems.filter((item) => item.status === "completed").length;
+              
+              return (
+                <div key={milestone.id} className="border rounded-md" data-testid={`milestone-section-${milestone.id}`}>
+                  <div className="bg-muted/50 px-3 py-2 border-b flex items-center justify-between gap-2">
+                    <span className="font-medium text-sm">{milestone.title}</span>
+                    <div className="flex items-center gap-2">
+                      {milestoneItems.length > 0 && (
                         <Badge variant="outline" className="text-xs">
                           {milestoneCompleted}/{milestoneItems.length}
                         </Badge>
-                      </div>
-                      <div className="p-2 space-y-2">
-                        {milestoneItems.map((item) => renderPCItem(item))}
-                      </div>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => {
+                          setFormData({ ...defaultPCItemForm, milestoneId: milestone.id });
+                          setIsAddingItem(true);
+                        }}
+                        data-testid={`button-add-item-milestone-${milestone.id}`}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Add
+                      </Button>
                     </div>
-                  );
-                })}
-                {(() => {
-                  const generalItems = pcItems.filter((item) => !(item as any).milestoneId);
-                  if (generalItems.length === 0) return null;
-                  const generalCompleted = generalItems.filter((item) => item.status === "completed").length;
-                  return (
-                    <div className="border rounded-md" data-testid="milestone-section-general">
-                      <div className="bg-muted/50 px-3 py-2 border-b flex items-center justify-between">
-                        <span className="font-medium text-sm">General Items</span>
+                  </div>
+                  {milestoneItems.length > 0 ? (
+                    <div className="p-2 space-y-2">
+                      {milestoneItems.map((item) => renderPCItem(item))}
+                    </div>
+                  ) : (
+                    <div className="p-3 text-sm text-muted-foreground text-center">
+                      No tasks yet
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {(() => {
+              const generalItems = (pcItems || []).filter((item) => !(item as any).milestoneId);
+              const generalCompleted = generalItems.filter((item) => item.status === "completed").length;
+              return (
+                <div className="border rounded-md" data-testid="milestone-section-general">
+                  <div className="bg-muted/50 px-3 py-2 border-b flex items-center justify-between gap-2">
+                    <span className="font-medium text-sm">General Items</span>
+                    <div className="flex items-center gap-2">
+                      {generalItems.length > 0 && (
                         <Badge variant="outline" className="text-xs">
                           {generalCompleted}/{generalItems.length}
                         </Badge>
-                      </div>
-                      <div className="p-2 space-y-2">
-                        {generalItems.map((item) => renderPCItem(item))}
-                      </div>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => {
+                          setFormData({ ...defaultPCItemForm, milestoneId: "__none__" });
+                          setIsAddingItem(true);
+                        }}
+                        data-testid="button-add-item-general"
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Add
+                      </Button>
                     </div>
-                  );
-                })()}
-              </>
-            ) : (
-              <div className="space-y-3">
-                {pcItems.map((item) => renderPCItem(item))}
-              </div>
-            )}
+                  </div>
+                  {generalItems.length > 0 ? (
+                    <div className="p-2 space-y-2">
+                      {generalItems.map((item) => renderPCItem(item))}
+                    </div>
+                  ) : (
+                    <div className="p-3 text-sm text-muted-foreground text-center">
+                      No general tasks
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        ) : pcItems && pcItems.length > 0 ? (
+          <div className="space-y-3">
+            {pcItems.map((item) => renderPCItem(item))}
           </div>
         ) : !isAddingItem ? (
           <div className="text-center py-8 text-muted-foreground">
@@ -606,11 +645,10 @@ function JobPhotosSection({ jobId }: { jobId: string }) {
   const { toast } = useToast();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<JobPhoto | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [newPhotoCaption, setNewPhotoCaption] = useState("");
-  const [newPhotoCategory, setNewPhotoCategory] = useState("general");
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: photos, isLoading } = useQuery<JobPhoto[]>({
@@ -618,17 +656,11 @@ function JobPhotosSection({ jobId }: { jobId: string }) {
   });
 
   const uploadMutation = useMutation({
-    mutationFn: async (data: { url: string; caption?: string; category?: string }) => {
+    mutationFn: async (data: { url: string }) => {
       return apiRequest("POST", `/api/jobs/${jobId}/photos`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/photos`] });
-      toast({ title: "Photo added", description: "Photo has been added to the job." });
-      setIsAddDialogOpen(false);
-      setSelectedFile(null);
-      setPreviewUrl(null);
-      setNewPhotoCaption("");
-      setNewPhotoCategory("general");
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -650,65 +682,94 @@ function JobPhotosSection({ jobId }: { jobId: string }) {
   });
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
+    const files = Array.from(e.target.files || []);
+    const validFiles: File[] = [];
+    const newPreviewUrls: string[] = [];
+    
+    for (const file of files) {
       if (!file.type.startsWith("image/")) {
-        toast({ title: "Invalid file", description: "Please select an image file.", variant: "destructive" });
-        return;
+        toast({ title: "Invalid file", description: `${file.name} is not an image file.`, variant: "destructive" });
+        continue;
       }
       if (file.size > 10 * 1024 * 1024) {
-        toast({ title: "File too large", description: "Please select an image under 10MB.", variant: "destructive" });
-        return;
+        toast({ title: "File too large", description: `${file.name} exceeds 10MB limit.`, variant: "destructive" });
+        continue;
       }
-      setSelectedFile(file);
-      const objectUrl = URL.createObjectURL(file);
-      setPreviewUrl(objectUrl);
+      validFiles.push(file);
+      newPreviewUrls.push(URL.createObjectURL(file));
+    }
+    
+    if (validFiles.length > 0) {
+      setSelectedFiles(prev => [...prev, ...validFiles]);
+      setPreviewUrls(prev => [...prev, ...newPreviewUrls]);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
     }
   };
 
-  const handleAddPhoto = async () => {
-    if (!selectedFile) {
-      toast({ title: "Photo required", description: "Please select a photo to upload.", variant: "destructive" });
+  const handleAddPhotos = async () => {
+    if (selectedFiles.length === 0) {
+      toast({ title: "Photos required", description: "Please select at least one photo to upload.", variant: "destructive" });
       return;
     }
 
     setIsUploading(true);
+    setUploadProgress(0);
+    let successCount = 0;
+    
+    const totalFiles = selectedFiles.length;
     try {
-      const urlResponse = await fetch("/api/uploads/request-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: selectedFile.name,
-          size: selectedFile.size,
-          contentType: selectedFile.type,
-        }),
-      });
+      for (let i = 0; i < totalFiles; i++) {
+        const file = selectedFiles[i];
+        
+        const urlResponse = await fetch("/api/uploads/request-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: file.name,
+            size: file.size,
+            contentType: file.type,
+          }),
+        });
 
-      if (!urlResponse.ok) {
-        throw new Error("Failed to get upload URL");
+        if (!urlResponse.ok) {
+          toast({ title: "Upload failed", description: `Failed to get upload URL for ${file.name}`, variant: "destructive" });
+          continue;
+        }
+
+        const { uploadURL, objectPath } = await urlResponse.json();
+
+        const uploadResponse = await fetch(uploadURL, {
+          method: "PUT",
+          body: file,
+          headers: { "Content-Type": file.type },
+        });
+
+        if (!uploadResponse.ok) {
+          toast({ title: "Upload failed", description: `Failed to upload ${file.name}`, variant: "destructive" });
+          continue;
+        }
+
+        await uploadMutation.mutateAsync({ url: objectPath });
+        successCount++;
+        setUploadProgress(Math.round(((i + 1) / totalFiles) * 100));
       }
-
-      const { uploadURL, objectPath } = await urlResponse.json();
-
-      const uploadResponse = await fetch(uploadURL, {
-        method: "PUT",
-        body: selectedFile,
-        headers: { "Content-Type": selectedFile.type },
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error("Failed to upload photo");
+      
+      if (successCount > 0) {
+        toast({ 
+          title: "Photos uploaded", 
+          description: `${successCount} photo${successCount > 1 ? 's' : ''} added to the job.` 
+        });
+        setIsAddDialogOpen(false);
+        setSelectedFiles([]);
+        setPreviewUrls([]);
       }
-
-      uploadMutation.mutate({
-        url: objectPath,
-        caption: newPhotoCaption.trim() || undefined,
-        category: newPhotoCategory,
-      });
     } catch (error) {
-      toast({ title: "Upload failed", description: error instanceof Error ? error.message : "Failed to upload photo", variant: "destructive" });
+      toast({ title: "Upload failed", description: error instanceof Error ? error.message : "Failed to upload photos", variant: "destructive" });
     } finally {
       setIsUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -771,11 +832,6 @@ function JobPhotosSection({ jobId }: { jobId: string }) {
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
-                {photo.caption && (
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 truncate">
-                    {photo.caption}
-                  </div>
-                )}
               </div>
             ))}
           </div>
@@ -790,105 +846,96 @@ function JobPhotosSection({ jobId }: { jobId: string }) {
         <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
           setIsAddDialogOpen(open);
           if (!open) {
-            setSelectedFile(null);
-            setPreviewUrl(null);
-            setNewPhotoCaption("");
-            setNewPhotoCategory("general");
+            setSelectedFiles([]);
+            setPreviewUrls([]);
           }
         }}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add Photo</DialogTitle>
-              <DialogDescription>Upload a photo from your device to document this job</DialogDescription>
+              <DialogTitle>Add Photos</DialogTitle>
+              <DialogDescription>Upload photos from your device to document this job</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Photo <span className="text-destructive">*</span>
-                </label>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                  data-testid="input-photo-file"
-                />
-                {previewUrl ? (
-                  <div className="relative">
-                    <img
-                      src={previewUrl}
-                      alt="Preview"
-                      className="w-full max-h-48 object-contain rounded-md border"
-                    />
-                    <Button
-                      size="icon"
-                      variant="destructive"
-                      className="absolute top-2 right-2 h-7 w-7"
-                      onClick={() => {
-                        setSelectedFile(null);
-                        setPreviewUrl(null);
-                        if (fileInputRef.current) fileInputRef.current.value = "";
-                      }}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleFileSelect}
+                className="hidden"
+                data-testid="input-photo-file"
+              />
+              {previewUrls.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                    {previewUrls.map((url, index) => (
+                      <div key={index} className="relative aspect-square rounded-md overflow-hidden border">
+                        <img
+                          src={url}
+                          alt={`Preview ${index + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        <Button
+                          size="icon"
+                          variant="destructive"
+                          className="absolute top-1 right-1 h-5 w-5"
+                          onClick={() => {
+                            setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+                            setPreviewUrls(prev => prev.filter((_, i) => i !== index));
+                          }}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
                   </div>
-                ) : (
-                  <div
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed rounded-md p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
-                    data-testid="dropzone-photo"
+                    className="w-full"
                   >
-                    <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
-                    <p className="text-sm font-medium">Click to select a photo</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Supports JPG, PNG, HEIC up to 10MB
-                    </p>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add More Photos
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed rounded-md p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                  data-testid="dropzone-photo"
+                >
+                  <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+                  <p className="text-sm font-medium">Click to select photos</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Supports JPG, PNG, HEIC up to 10MB each
+                  </p>
+                </div>
+              )}
+              {isUploading && (
+                <div className="space-y-1">
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-primary transition-all" 
+                      style={{ width: `${uploadProgress}%` }}
+                    />
                   </div>
-                )}
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="photo-caption" className="text-sm font-medium">
-                  Caption (optional)
-                </label>
-                <Input
-                  id="photo-caption"
-                  placeholder="Describe this photo..."
-                  value={newPhotoCaption}
-                  onChange={(e) => setNewPhotoCaption(e.target.value)}
-                  data-testid="input-photo-caption"
-                />
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="photo-category" className="text-sm font-medium">
-                  Category
-                </label>
-                <Select value={newPhotoCategory} onValueChange={setNewPhotoCategory}>
-                  <SelectTrigger data-testid="select-photo-category">
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="general">General</SelectItem>
-                    <SelectItem value="before">Before</SelectItem>
-                    <SelectItem value="after">After</SelectItem>
-                    <SelectItem value="progress">Progress</SelectItem>
-                    <SelectItem value="issue">Issue</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Uploading... {uploadProgress}%
+                  </p>
+                </div>
+              )}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={isUploading}>
                 Cancel
               </Button>
               <Button
-                onClick={handleAddPhoto}
-                disabled={isUploading || uploadMutation.isPending || !selectedFile}
+                onClick={handleAddPhotos}
+                disabled={isUploading || uploadMutation.isPending || selectedFiles.length === 0}
                 data-testid="button-confirm-add-photo"
               >
-                {isUploading ? "Uploading..." : uploadMutation.isPending ? "Saving..." : "Add Photo"}
+                {isUploading ? "Uploading..." : `Add ${selectedFiles.length > 0 ? selectedFiles.length : ''} Photo${selectedFiles.length !== 1 ? 's' : ''}`}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -897,24 +944,18 @@ function JobPhotosSection({ jobId }: { jobId: string }) {
         <Dialog open={!!selectedPhoto} onOpenChange={(open) => !open && setSelectedPhoto(null)}>
           <DialogContent className="max-w-3xl">
             <DialogHeader>
-              <DialogTitle>Photo Details</DialogTitle>
+              <DialogTitle>Photo</DialogTitle>
             </DialogHeader>
             {selectedPhoto && (
               <div className="space-y-4">
                 <img
                   src={selectedPhoto.url}
-                  alt={selectedPhoto.caption || "Job photo"}
+                  alt="Job photo"
                   className="w-full max-h-[60vh] object-contain rounded-md"
                 />
-                {selectedPhoto.caption && (
-                  <p className="text-sm text-muted-foreground">{selectedPhoto.caption}</p>
-                )}
-                <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span>Uploaded: {new Date(selectedPhoto.createdAt || "").toLocaleString()}</span>
-                  {selectedPhoto.category && (
-                    <Badge variant="secondary">{selectedPhoto.category}</Badge>
-                  )}
-                </div>
+                <p className="text-sm text-muted-foreground">
+                  Uploaded: {new Date(selectedPhoto.createdAt || "").toLocaleString()}
+                </p>
               </div>
             )}
           </DialogContent>
