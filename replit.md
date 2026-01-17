@@ -28,6 +28,19 @@ Key features include:
 - **Email Integration**: Resend integration for transactional emails (quote notifications, invoices, OTP login, job completion).
 
 ## Recent Changes
+- Added Quote Revision System:
+  - Revisions create new quote entries instead of editing existing ones, preserving full audit trail
+  - Revision dialog requires a "reason for change" field to document why changes were needed
+  - Revision history viewer shows all versions with revision numbers and reasons
+  - Fields tracked: revisionNumber, parentQuoteId, isLatestRevision, supersededByQuoteId
+  - Revision creation copies all related entities (line items, custom sections, payment schedules)
+- Enhanced Payment Recording:
+  - Recording invoice payment now automatically accepts linked quote and converts to job
+  - Frontend shows toast notification when quote is converted to job on payment
+- Quote Wizard Improvements:
+  - Milestone price now required when using per-milestone pricing (form-level validation)
+  - Price label changed from "Price (Optional)" to "Price"
+  - Step 4 reordered: Custom Sections now appears before Terms of Trade
 - Added Invoice Payment Links feature:
   - When a quote is converted to a job, an invoice is automatically created with a unique payment link token
   - Public payment page at /pay/:token allows clients to view invoice and pay deposit without authentication
