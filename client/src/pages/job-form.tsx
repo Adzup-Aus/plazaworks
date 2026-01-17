@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -518,9 +518,12 @@ function JobPhotosSection({ jobId }: { jobId: string }) {
   const { toast } = useToast();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<JobPhoto | null>(null);
-  const [newPhotoUrl, setNewPhotoUrl] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [newPhotoCaption, setNewPhotoCaption] = useState("");
   const [newPhotoCategory, setNewPhotoCategory] = useState("general");
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: photos, isLoading } = useQuery<JobPhoto[]>({
     queryKey: [`/api/jobs/${jobId}/photos`],
@@ -534,7 +537,8 @@ function JobPhotosSection({ jobId }: { jobId: string }) {
       queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/photos`] });
       toast({ title: "Photo added", description: "Photo has been added to the job." });
       setIsAddDialogOpen(false);
-      setNewPhotoUrl("");
+      setSelectedFile(null);
+      setPreviewUrl(null);
       setNewPhotoCaption("");
       setNewPhotoCategory("general");
     },
@@ -557,16 +561,67 @@ function JobPhotosSection({ jobId }: { jobId: string }) {
     },
   });
 
-  const handleAddPhoto = () => {
-    if (!newPhotoUrl.trim()) {
-      toast({ title: "URL required", description: "Please enter a photo URL.", variant: "destructive" });
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith("image/")) {
+        toast({ title: "Invalid file", description: "Please select an image file.", variant: "destructive" });
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast({ title: "File too large", description: "Please select an image under 10MB.", variant: "destructive" });
+        return;
+      }
+      setSelectedFile(file);
+      const objectUrl = URL.createObjectURL(file);
+      setPreviewUrl(objectUrl);
+    }
+  };
+
+  const handleAddPhoto = async () => {
+    if (!selectedFile) {
+      toast({ title: "Photo required", description: "Please select a photo to upload.", variant: "destructive" });
       return;
     }
-    uploadMutation.mutate({
-      url: newPhotoUrl.trim(),
-      caption: newPhotoCaption.trim() || undefined,
-      category: newPhotoCategory,
-    });
+
+    setIsUploading(true);
+    try {
+      const urlResponse = await fetch("/api/uploads/request-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: selectedFile.name,
+          size: selectedFile.size,
+          contentType: selectedFile.type,
+        }),
+      });
+
+      if (!urlResponse.ok) {
+        throw new Error("Failed to get upload URL");
+      }
+
+      const { uploadURL, objectPath } = await urlResponse.json();
+
+      const uploadResponse = await fetch(uploadURL, {
+        method: "PUT",
+        body: selectedFile,
+        headers: { "Content-Type": selectedFile.type },
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("Failed to upload photo");
+      }
+
+      uploadMutation.mutate({
+        url: objectPath,
+        caption: newPhotoCaption.trim() || undefined,
+        category: newPhotoCategory,
+      });
+    } catch (error) {
+      toast({ title: "Upload failed", description: error instanceof Error ? error.message : "Failed to upload photo", variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
@@ -644,24 +699,67 @@ function JobPhotosSection({ jobId }: { jobId: string }) {
           </div>
         )}
 
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
+          setIsAddDialogOpen(open);
+          if (!open) {
+            setSelectedFile(null);
+            setPreviewUrl(null);
+            setNewPhotoCaption("");
+            setNewPhotoCategory("general");
+          }
+        }}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add Photo</DialogTitle>
-              <DialogDescription>Add a photo to document this job</DialogDescription>
+              <DialogDescription>Upload a photo from your device to document this job</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <label htmlFor="photo-url" className="text-sm font-medium">
-                  Photo URL <span className="text-destructive">*</span>
+                <label className="text-sm font-medium">
+                  Photo <span className="text-destructive">*</span>
                 </label>
-                <Input
-                  id="photo-url"
-                  placeholder="https://example.com/photo.jpg"
-                  value={newPhotoUrl}
-                  onChange={(e) => setNewPhotoUrl(e.target.value)}
-                  data-testid="input-photo-url"
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  data-testid="input-photo-file"
                 />
+                {previewUrl ? (
+                  <div className="relative">
+                    <img
+                      src={previewUrl}
+                      alt="Preview"
+                      className="w-full max-h-48 object-contain rounded-md border"
+                    />
+                    <Button
+                      size="icon"
+                      variant="destructive"
+                      className="absolute top-2 right-2 h-7 w-7"
+                      onClick={() => {
+                        setSelectedFile(null);
+                        setPreviewUrl(null);
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed rounded-md p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                    data-testid="dropzone-photo"
+                  >
+                    <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+                    <p className="text-sm font-medium">Click to select a photo</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Supports JPG, PNG, HEIC up to 10MB
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <label htmlFor="photo-caption" className="text-sm font-medium">
@@ -699,10 +797,10 @@ function JobPhotosSection({ jobId }: { jobId: string }) {
               </Button>
               <Button
                 onClick={handleAddPhoto}
-                disabled={uploadMutation.isPending || !newPhotoUrl.trim()}
+                disabled={isUploading || uploadMutation.isPending || !selectedFile}
                 data-testid="button-confirm-add-photo"
               >
-                {uploadMutation.isPending ? "Adding..." : "Add Photo"}
+                {isUploading ? "Uploading..." : uploadMutation.isPending ? "Saving..." : "Add Photo"}
               </Button>
             </DialogFooter>
           </DialogContent>

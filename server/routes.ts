@@ -175,6 +175,10 @@ export async function registerRoutes(
   // Setup authentication BEFORE other routes
   await setupAuth(app);
   registerAuthRoutes(app);
+  
+  // Setup object storage routes (requires auth)
+  const { registerObjectStorageRoutes } = await import("./replit_integrations/object_storage");
+  registerObjectStorageRoutes(app);
 
   // =====================
   // OTP AUTHENTICATION ROUTES
