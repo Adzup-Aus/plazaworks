@@ -28,6 +28,15 @@ Key features include:
 - **Email Integration**: Resend integration for transactional emails (quote notifications, invoices, OTP login, job completion).
 
 ## Recent Changes
+- Enhanced Practical Completion Checklist (ClickUp-style):
+  - Added status dropdown (pending, in_progress, completed, not_applicable)
+  - Added target due date picker with calendar UI
+  - Added assignee selection from staff members list
+  - Added rich text description field with RichTextEditor component
+  - Inline edit functionality for modifying existing items
+  - Expandable description display with expand/collapse buttons
+  - PATCH requests only send modified fields to preserve untouched data
+  - Uses "__none__" sentinel value for unassigned staff (Radix UI Select requirement)
 - Added Quote Revision System:
   - Revisions create new quote entries instead of editing existing ones, preserving full audit trail
   - Revision dialog requires a "reason for change" field to document why changes were needed
