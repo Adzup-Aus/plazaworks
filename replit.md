@@ -98,9 +98,15 @@ Key features include:
   - Displays within job form without leaving the page
 - Enhanced Practical Completion Checklist with Milestone Grouping:
   - PC items can be associated with quote milestones via milestoneId field
-  - Items grouped by milestone with completion counts per section
-  - General Items section for unassigned tasks
-  - Milestone selector dropdown when adding/editing checklist items
+  - All quote milestones displayed as section headers (even if empty)
+  - Users can add tasks directly to a specific milestone section
+  - Completion counts shown per milestone section
+  - General Items section at bottom for unassigned tasks
+- Simplified Job Photos Upload:
+  - Removed Caption and Category fields from upload dialog
+  - Multi-file selection enabled (can select multiple photos at once)
+  - Batch upload with progress indicator
+  - Grid preview of selected photos before upload
 
 ## External Dependencies
 - **Database**: PostgreSQL
