@@ -362,8 +362,10 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
         <div className="flex items-center gap-3 p-3">
           <Checkbox
             checked={item.status === "completed"}
-            disabled={item.status === "completed"}
-            onCheckedChange={() => updateItemMutation.mutate({ id: item.id, data: { status: "completed" } })}
+            onCheckedChange={(checked) => updateItemMutation.mutate({ 
+              id: item.id, 
+              data: { status: checked ? "completed" : "pending" } 
+            })}
             data-testid={`checkbox-pc-item-${item.id}`}
           />
           <div className="flex-1 min-w-0">
