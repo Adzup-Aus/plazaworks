@@ -527,17 +527,6 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
               : "Track completion items for this job"}
           </CardDescription>
         </div>
-        {!isAddingItem && !editingItem && milestones.length === 0 && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setIsAddingItem(true)}
-            data-testid="button-add-pc-item"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Add Item
-          </Button>
-        )}
       </CardHeader>
       <CardContent className="space-y-3">
         {isAddingItem && renderForm(false)}
@@ -548,7 +537,7 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
               <Skeleton key={i} className="h-12 w-full" />
             ))}
           </div>
-        ) : milestones.length > 0 ? (
+        ) : (
           <div className="space-y-6">
             {milestones.sort((a, b) => a.sequence - b.sequence).map((milestone) => {
               const milestoneItems = (pcItems || []).filter((item) => (item as any).milestoneId === milestone.id);
@@ -618,17 +607,7 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
               );
             })()}
           </div>
-        ) : pcItems && pcItems.length > 0 ? (
-          <div className="space-y-3">
-            {pcItems.map((item) => renderPCItem(item))}
-          </div>
-        ) : !isAddingItem ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <ListChecks className="mx-auto h-8 w-8 mb-2 opacity-50" />
-            <p>No checklist items yet</p>
-            <p className="text-sm">Add items to track job completion</p>
-          </div>
-        ) : null}
+        )}
       </CardContent>
     </Card>
   );
