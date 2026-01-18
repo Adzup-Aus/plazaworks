@@ -73,7 +73,7 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
-import { jobStatuses, pcItemStatuses, type Job, type PCItem, type ClientAccessToken, type JobPhoto, type JobReceipt, type ScheduleEntry, type StaffProfile, type Quote, type QuoteWithDetails, type LineItem, type QuoteMilestone, type QuotePaymentSchedule, type Invoice } from "@shared/schema";
+import { jobStatuses, pcItemStatuses, type Job, type PCItem, type ClientAccessToken, type JobPhoto, type JobReceipt, type ScheduleEntry, type StaffProfile, type Quote, type QuoteWithDetails, type LineItem, type QuoteMilestone, type QuotePaymentSchedule, type Invoice, type JobMilestone } from "@shared/schema";
 import type { User as AuthUser } from "@shared/models/auth";
 
 type StaffProfileWithUser = StaffProfile & { user?: AuthUser };
@@ -134,6 +134,8 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
   const [formData, setFormData] = useState<PCItemFormData>(defaultPCItemForm);
   const [editingItem, setEditingItem] = useState<PCItem | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [isAddingMilestone, setIsAddingMilestone] = useState(false);
+  const [newMilestoneTitle, setNewMilestoneTitle] = useState("");
 
   const { data: pcItems, isLoading } = useQuery<PCItem[]>({
     queryKey: [`/api/jobs/${jobId}/pc-items`],
@@ -155,7 +157,58 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
     enabled: !!effectiveQuoteId,
   });
 
-  const milestones = quoteDetails?.milestones || [];
+  const { data: jobMilestones } = useQuery<JobMilestone[]>({
+    queryKey: [`/api/jobs/${jobId}/milestones`],
+  });
+
+  const quoteMilestones = quoteDetails?.milestones || [];
+  
+  // Combine quote milestones and job milestones
+  const allMilestones: Array<{ id: string; title: string; sequence: number; source: 'quote' | 'job' }> = [
+    ...quoteMilestones.map(m => ({ id: m.id, title: m.title, sequence: m.sequence, source: 'quote' as const })),
+    ...((jobMilestones || []).map(m => ({ id: m.id, title: m.title, sequence: m.sortOrder || 0, source: 'job' as const }))),
+  ].sort((a, b) => a.sequence - b.sequence);
+
+  const addMilestoneMutation = useMutation({
+    mutationFn: async (title: string) => {
+      // Calculate max sort order from both quote and job milestones to avoid conflicts
+      const maxQuoteSequence = quoteMilestones.length > 0 
+        ? Math.max(...quoteMilestones.map(m => m.sequence)) 
+        : 0;
+      const maxJobSortOrder = (jobMilestones?.length || 0) > 0 
+        ? Math.max(...(jobMilestones || []).map(m => m.sortOrder || 0)) 
+        : 0;
+      const nextSortOrder = Math.max(maxQuoteSequence, maxJobSortOrder) + 1;
+      
+      return apiRequest("POST", `/api/jobs/${jobId}/milestones`, {
+        title,
+        sortOrder: nextSortOrder,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/milestones`] });
+      setIsAddingMilestone(false);
+      setNewMilestoneTitle("");
+      toast({ title: "Milestone added", description: "New milestone has been created." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMilestoneMutation = useMutation({
+    mutationFn: async (milestoneId: string) => {
+      return apiRequest("DELETE", `/api/job-milestones/${milestoneId}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/milestones`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}/pc-items`] });
+      toast({ title: "Milestone deleted", description: "Milestone has been removed." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
 
   const addItemMutation = useMutation({
     mutationFn: async (data: PCItemFormData) => {
@@ -451,27 +504,25 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
           </Select>
         </div>
 
-        {milestones.length > 0 && (
-          <div>
-            <label className="text-sm font-medium mb-2 block">Milestone</label>
-            <Select
-              value={formData.milestoneId}
-              onValueChange={(value) => setFormData({ ...formData, milestoneId: value })}
-            >
-              <SelectTrigger data-testid={isEdit ? "select-edit-pc-item-milestone" : "select-new-pc-item-milestone"}>
-                <SelectValue placeholder="Select milestone" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">General (No milestone)</SelectItem>
-                {milestones.sort((a, b) => a.sequence - b.sequence).map((milestone) => (
-                  <SelectItem key={milestone.id} value={milestone.id}>
-                    {milestone.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+        <div>
+          <label className="text-sm font-medium mb-2 block">Milestone</label>
+          <Select
+            value={formData.milestoneId}
+            onValueChange={(value) => setFormData({ ...formData, milestoneId: value })}
+          >
+            <SelectTrigger data-testid={isEdit ? "select-edit-pc-item-milestone" : "select-new-pc-item-milestone"}>
+              <SelectValue placeholder="Select milestone" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">{allMilestones.length === 0 ? "Milestone 1" : "General Items"}</SelectItem>
+              {allMilestones.map((milestone) => (
+                <SelectItem key={milestone.id} value={milestone.id}>
+                  {milestone.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         <div className="md:col-span-2">
           <label className="text-sm font-medium mb-2 block">Description</label>
@@ -513,6 +564,9 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
     </div>
   );
 
+  // Default milestone name when no milestones exist
+  const defaultMilestoneName = allMilestones.length === 0 ? "Milestone 1" : "General Items";
+
   return (
     <Card className="overflow-visible">
       <CardHeader className="flex flex-row items-center justify-between gap-4">
@@ -539,7 +593,7 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
           </div>
         ) : (
           <div className="space-y-6">
-            {milestones.sort((a, b) => a.sequence - b.sequence).map((milestone) => {
+            {allMilestones.map((milestone, index) => {
               const milestoneItems = (pcItems || []).filter((item) => (item as any).milestoneId === milestone.id);
               const milestoneCompleted = milestoneItems.filter((item) => item.status === "completed").length;
               
@@ -553,6 +607,18 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
                       <Badge variant="outline" className="text-xs">
                         {milestoneCompleted}/{milestoneItems.length}
                       </Badge>
+                    )}
+                    {milestone.source === 'job' && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6"
+                        onClick={() => deleteMilestoneMutation.mutate(milestone.id)}
+                        disabled={deleteMilestoneMutation.isPending}
+                        data-testid={`button-delete-milestone-${milestone.id}`}
+                      >
+                        <Trash2 className="h-3 w-3 text-muted-foreground" />
+                      </Button>
                     )}
                   </div>
                   <div className="ml-4 pl-4 border-l-2 border-muted space-y-2">
@@ -579,8 +645,8 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
               return (
                 <div data-testid="milestone-section-general">
                   <div className="flex items-center gap-3 mb-3">
-                    <div className="bg-muted px-3 py-1.5 rounded-md font-medium text-sm text-muted-foreground whitespace-nowrap">
-                      General Items
+                    <div className="bg-primary/10 text-primary px-3 py-1.5 rounded-md font-medium text-sm whitespace-nowrap">
+                      {defaultMilestoneName}
                     </div>
                     {generalItems.length > 0 && (
                       <Badge variant="outline" className="text-xs">
@@ -606,6 +672,51 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
                 </div>
               );
             })()}
+            
+            {isAddingMilestone ? (
+              <div className="flex items-center gap-2 p-3 border border-dashed rounded-md bg-muted/30">
+                <Input
+                  placeholder="Enter milestone name..."
+                  value={newMilestoneTitle}
+                  onChange={(e) => setNewMilestoneTitle(e.target.value)}
+                  autoFocus
+                  data-testid="input-new-milestone-title"
+                />
+                <Button
+                  size="sm"
+                  onClick={() => addMilestoneMutation.mutate(newMilestoneTitle)}
+                  disabled={addMilestoneMutation.isPending || !newMilestoneTitle.trim()}
+                  data-testid="button-save-milestone"
+                >
+                  {addMilestoneMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Add"
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setIsAddingMilestone(false);
+                    setNewMilestoneTitle("");
+                  }}
+                  data-testid="button-cancel-milestone"
+                >
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setIsAddingMilestone(true)}
+                data-testid="button-add-milestone"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Milestone
+              </Button>
+            )}
           </div>
         )}
       </CardContent>
