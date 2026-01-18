@@ -593,6 +593,39 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
           </div>
         ) : (
           <div className="space-y-6">
+            {(() => {
+              const generalItems = (pcItems || []).filter((item) => !(item as any).milestoneId);
+              const generalCompleted = generalItems.filter((item) => item.status === "completed").length;
+              return (
+                <div data-testid="milestone-section-general">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="bg-muted text-foreground px-3 py-1.5 rounded-md font-medium text-sm whitespace-nowrap">
+                      {defaultMilestoneName}
+                    </div>
+                    {generalItems.length > 0 && (
+                      <Badge variant="outline" className="text-xs">
+                        {generalCompleted}/{generalItems.length}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="ml-4 pl-4 border-l-2 border-muted space-y-2">
+                    {generalItems.map((item) => renderPCItem(item))}
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start text-muted-foreground hover:text-foreground border border-dashed"
+                      onClick={() => {
+                        setFormData({ ...defaultPCItemForm, milestoneId: "__none__" });
+                        setIsAddingItem(true);
+                      }}
+                      data-testid="button-add-item-general"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Task
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
             {allMilestones.map((milestone, index) => {
               const milestoneItems = (pcItems || []).filter((item) => (item as any).milestoneId === milestone.id);
               const milestoneCompleted = milestoneItems.filter((item) => item.status === "completed").length;
@@ -600,7 +633,7 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
               return (
                 <div key={milestone.id} data-testid={`milestone-section-${milestone.id}`}>
                   <div className="flex items-center gap-3 mb-3">
-                    <div className="bg-primary/10 text-primary px-3 py-1.5 rounded-md font-medium text-sm whitespace-nowrap">
+                    <div className="bg-muted text-foreground px-3 py-1.5 rounded-md font-medium text-sm whitespace-nowrap">
                       {milestone.title}
                     </div>
                     {milestoneItems.length > 0 && (
@@ -639,39 +672,6 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
                 </div>
               );
             })}
-            {(() => {
-              const generalItems = (pcItems || []).filter((item) => !(item as any).milestoneId);
-              const generalCompleted = generalItems.filter((item) => item.status === "completed").length;
-              return (
-                <div data-testid="milestone-section-general">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="bg-primary/10 text-primary px-3 py-1.5 rounded-md font-medium text-sm whitespace-nowrap">
-                      {defaultMilestoneName}
-                    </div>
-                    {generalItems.length > 0 && (
-                      <Badge variant="outline" className="text-xs">
-                        {generalCompleted}/{generalItems.length}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="ml-4 pl-4 border-l-2 border-muted space-y-2">
-                    {generalItems.map((item) => renderPCItem(item))}
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start text-muted-foreground hover:text-foreground border border-dashed"
-                      onClick={() => {
-                        setFormData({ ...defaultPCItemForm, milestoneId: "__none__" });
-                        setIsAddingItem(true);
-                      }}
-                      data-testid="button-add-item-general"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Task
-                    </Button>
-                  </div>
-                </div>
-              );
-            })()}
             
             {isAddingMilestone ? (
               <div className="flex items-center gap-2 p-3 border border-dashed rounded-md bg-muted/30">
