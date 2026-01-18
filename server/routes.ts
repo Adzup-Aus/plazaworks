@@ -1748,12 +1748,12 @@ export async function registerRoutes(
 
       let linkedScheduleId: string | undefined;
 
-      // Auto-create schedule entry if both dueDate and assignedToId are provided
-      if (validation.data.dueDate && validation.data.assignedToId) {
+      // Auto-create schedule entry if both finishDate and assignedToId are provided
+      if (validation.data.finishDate && validation.data.assignedToId) {
         const scheduleEntry = await storage.createScheduleEntry({
           jobId: req.params.jobId,
           staffId: validation.data.assignedToId,
-          scheduledDate: validation.data.dueDate,
+          scheduledDate: validation.data.finishDate,
           durationHours: "7.5",
           status: "scheduled",
           notes: `Auto-generated from checklist: ${validation.data.title}`,
@@ -1787,19 +1787,19 @@ export async function registerRoutes(
         return res.status(404).json({ message: "PC item not found" });
       }
 
-      // Determine the effective dueDate and assignedToId after update
-      const effectiveDueDate = validation.data.dueDate !== undefined ? validation.data.dueDate : currentItem.dueDate;
+      // Determine the effective finishDate and assignedToId after update
+      const effectiveFinishDate = validation.data.finishDate !== undefined ? validation.data.finishDate : currentItem.finishDate;
       const effectiveAssignedToId = validation.data.assignedToId !== undefined ? validation.data.assignedToId : currentItem.assignedToId;
       let linkedScheduleId = currentItem.linkedScheduleId;
 
-      // Handle schedule entry creation/update/deletion based on dueDate and assignedToId
+      // Handle schedule entry creation/update/deletion based on finishDate and assignedToId
       const effectiveTitle = validation.data.title ?? currentItem.title;
       
-      if (effectiveDueDate && effectiveAssignedToId) {
+      if (effectiveFinishDate && effectiveAssignedToId) {
         if (linkedScheduleId) {
           // Update existing schedule entry
           await storage.updateScheduleEntry(linkedScheduleId, {
-            scheduledDate: effectiveDueDate,
+            scheduledDate: effectiveFinishDate,
             staffId: effectiveAssignedToId,
             notes: `Auto-generated from checklist: ${effectiveTitle}`,
           });
@@ -1808,7 +1808,7 @@ export async function registerRoutes(
           const scheduleEntry = await storage.createScheduleEntry({
             jobId: currentItem.jobId,
             staffId: effectiveAssignedToId,
-            scheduledDate: effectiveDueDate,
+            scheduledDate: effectiveFinishDate,
             durationHours: "7.5",
             status: "scheduled",
             notes: `Auto-generated from checklist: ${effectiveTitle}`,
@@ -1816,7 +1816,7 @@ export async function registerRoutes(
           linkedScheduleId = scheduleEntry.id;
         }
       } else if (linkedScheduleId) {
-        // Remove linked schedule if dueDate or assignedToId is cleared
+        // Remove linked schedule if finishDate or assignedToId is cleared
         await storage.deleteScheduleEntry(linkedScheduleId);
         linkedScheduleId = null;
       }
@@ -2127,7 +2127,8 @@ export async function registerRoutes(
           id: item.id,
           title: item.title,
           status: item.status,
-          dueDate: item.dueDate,
+          startDate: item.startDate,
+          finishDate: item.finishDate,
         })),
         invoices: jobInvoices
           .filter((inv) => inv.status !== "draft")

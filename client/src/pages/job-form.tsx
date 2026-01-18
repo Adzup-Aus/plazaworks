@@ -113,7 +113,8 @@ function getPCStatusColor(status: string): string {
 interface PCItemFormData {
   title: string;
   status: string;
-  dueDate: Date | null;
+  startDate: Date | null;
+  finishDate: Date | null;
   assignedToId: string;
   description: string;
   milestoneId: string;
@@ -122,7 +123,8 @@ interface PCItemFormData {
 const defaultPCItemForm: PCItemFormData = {
   title: "",
   status: "pending",
-  dueDate: null,
+  startDate: null,
+  finishDate: null,
   assignedToId: "__none__",
   description: "",
   milestoneId: "__none__",
@@ -215,7 +217,8 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
       return apiRequest("POST", `/api/jobs/${jobId}/pc-items`, {
         title: data.title,
         status: data.status,
-        dueDate: data.dueDate ? format(data.dueDate, "yyyy-MM-dd") : null,
+        startDate: data.startDate ? format(data.startDate, "yyyy-MM-dd") : null,
+        finishDate: data.finishDate ? format(data.finishDate, "yyyy-MM-dd") : null,
         assignedToId: data.assignedToId && data.assignedToId !== "__none__" ? data.assignedToId : null,
         description: data.description || null,
         milestoneId: data.milestoneId && data.milestoneId !== "__none__" ? data.milestoneId : null,
@@ -243,8 +246,11 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
       if (data.status !== undefined) {
         payload.status = data.status;
       }
-      if (data.dueDate !== undefined) {
-        payload.dueDate = data.dueDate ? format(data.dueDate, "yyyy-MM-dd") : null;
+      if (data.startDate !== undefined) {
+        payload.startDate = data.startDate ? format(data.startDate, "yyyy-MM-dd") : null;
+      }
+      if (data.finishDate !== undefined) {
+        payload.finishDate = data.finishDate ? format(data.finishDate, "yyyy-MM-dd") : null;
       }
       if (data.assignedToId !== undefined) {
         payload.assignedToId = data.assignedToId && data.assignedToId !== "__none__" ? data.assignedToId : null;
@@ -294,7 +300,8 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
     setFormData({
       title: item.title,
       status: item.status,
-      dueDate: item.dueDate ? new Date(item.dueDate) : null,
+      startDate: item.startDate ? new Date(item.startDate) : null,
+      finishDate: item.finishDate ? new Date(item.finishDate) : null,
       assignedToId: item.assignedToId || "__none__",
       description: item.description || "",
       milestoneId: (item as any).milestoneId || "__none__",
@@ -336,7 +343,7 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
     const isExpanded = expandedItems.has(item.id);
     const isEditing = editingItem?.id === item.id;
     const assigneeName = getStaffName(item.assignedToId);
-    const hasDetails = item.description || item.dueDate || item.assignedToId;
+    const hasDetails = item.description || item.startDate || item.finishDate || item.assignedToId;
 
     if (isEditing) {
       return (
@@ -364,10 +371,13 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
               {item.title}
             </div>
             <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground flex-wrap">
-              {item.dueDate && (
+              {(item.startDate || item.finishDate) && (
                 <span className="flex items-center gap-1">
                   <CalendarIcon className="h-3 w-3" />
-                  {format(new Date(item.dueDate), "MMM d, yyyy")}
+                  {item.startDate && format(new Date(item.startDate), "MMM d")}
+                  {item.startDate && item.finishDate && " - "}
+                  {item.finishDate && format(new Date(item.finishDate), "MMM d, yyyy")}
+                  {item.startDate && !item.finishDate && ", " + new Date(item.startDate).getFullYear()}
                 </span>
               )}
               {assigneeName && (
@@ -459,23 +469,47 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
         </div>
 
         <div>
-          <label className="text-sm font-medium mb-2 block">Target Due Date</label>
+          <label className="text-sm font-medium mb-2 block">Start Date</label>
           <Popover>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
                 className="w-full justify-start text-left font-normal"
-                data-testid={isEdit ? "button-edit-pc-item-duedate" : "button-new-pc-item-duedate"}
+                data-testid={isEdit ? "button-edit-pc-item-startdate" : "button-new-pc-item-startdate"}
               >
                 <CalendarIcon className="mr-2 h-4 w-4" />
-                {formData.dueDate ? format(formData.dueDate, "PPP") : "Select date"}
+                {formData.startDate ? format(formData.startDate, "PPP") : "Select date"}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
               <CalendarComponent
                 mode="single"
-                selected={formData.dueDate || undefined}
-                onSelect={(date) => setFormData({ ...formData, dueDate: date || null })}
+                selected={formData.startDate || undefined}
+                onSelect={(date) => setFormData({ ...formData, startDate: date || null })}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        <div>
+          <label className="text-sm font-medium mb-2 block">Finish Date</label>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className="w-full justify-start text-left font-normal"
+                data-testid={isEdit ? "button-edit-pc-item-finishdate" : "button-new-pc-item-finishdate"}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {formData.finishDate ? format(formData.finishDate, "PPP") : "Select date"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <CalendarComponent
+                mode="single"
+                selected={formData.finishDate || undefined}
+                onSelect={(date) => setFormData({ ...formData, finishDate: date || null })}
                 initialFocus
               />
             </PopoverContent>
