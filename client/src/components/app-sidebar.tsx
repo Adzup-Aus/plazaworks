@@ -32,7 +32,6 @@ import {
   Wrench,
   FileText,
   Receipt,
-  ClipboardCheck,
   Clock,
   BarChart3,
   Target,
@@ -62,11 +61,6 @@ const mainNavItems = [
     title: "Schedule",
     url: "/schedule",
     icon: Calendar,
-  },
-  {
-    title: "Checklists",
-    url: "/checklists",
-    icon: ClipboardCheck,
   },
   {
     title: "Team",

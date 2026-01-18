@@ -28,7 +28,6 @@ import QuoteView from "@/pages/quote-view";
 import Invoices from "@/pages/invoices";
 import InvoiceDetail from "@/pages/invoice-detail";
 import ClientPortal from "@/pages/client-portal";
-import Checklists from "@/pages/checklists";
 import Productivity from "@/pages/productivity";
 import Capacity from "@/pages/capacity";
 import KpiDashboard from "@/pages/kpi-dashboard";
@@ -55,7 +54,6 @@ function AuthenticatedRouter() {
       <Route path="/invoices/new" component={InvoiceDetail} />
       <Route path="/invoices/:id" component={InvoiceDetail} />
       <Route path="/schedule" component={Schedule} />
-      <Route path="/checklists" component={Checklists} />
       <Route path="/productivity" component={Productivity} />
       <Route path="/capacity" component={Capacity} />
       <Route path="/kpi" component={KpiDashboard} />

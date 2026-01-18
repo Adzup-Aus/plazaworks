@@ -41,7 +41,6 @@ const subscriptionTiers = [
       "Quotes & Invoices",
       "Time tracking",
       "Vehicle management",
-      "Checklists",
       "Email support",
     ],
     maxUsers: 15,
