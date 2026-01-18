@@ -1870,6 +1870,69 @@ export async function registerRoutes(
   });
 
   // =====================
+  // JOB MILESTONE ROUTES
+  // =====================
+
+  // Get job milestones for a job
+  app.get("/api/jobs/:jobId/milestones", isAuthenticated, async (req, res) => {
+    try {
+      const milestones = await storage.getJobMilestones(req.params.jobId);
+      res.json(milestones);
+    } catch (err: any) {
+      console.error("Error fetching job milestones:", err);
+      res.status(500).json({ message: "Failed to fetch job milestones" });
+    }
+  });
+
+  // Create job milestone
+  app.post("/api/jobs/:jobId/milestones", isAuthenticated, async (req, res) => {
+    try {
+      const validation = insertJobMilestoneSchema.safeParse({
+        ...req.body,
+        jobId: req.params.jobId,
+      });
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+      const milestone = await storage.createMilestone(validation.data);
+      res.status(201).json(milestone);
+    } catch (err: any) {
+      console.error("Error creating job milestone:", err);
+      res.status(500).json({ message: "Failed to create job milestone" });
+    }
+  });
+
+  // Update job milestone
+  app.patch("/api/job-milestones/:id", isAuthenticated, async (req, res) => {
+    try {
+      const partialSchema = insertJobMilestoneSchema.partial();
+      const validation = partialSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+      const updated = await storage.updateMilestone(req.params.id, validation.data);
+      if (!updated) {
+        return res.status(404).json({ message: "Job milestone not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating job milestone:", err);
+      res.status(500).json({ message: "Failed to update job milestone" });
+    }
+  });
+
+  // Delete job milestone
+  app.delete("/api/job-milestones/:id", isAuthenticated, async (req, res) => {
+    try {
+      await storage.deleteMilestone(req.params.id);
+      res.json({ deleted: true });
+    } catch (err: any) {
+      console.error("Error deleting job milestone:", err);
+      res.status(500).json({ message: "Failed to delete job milestone" });
+    }
+  });
+
+  // =====================
   // NOTIFICATION ROUTES
   // =====================
 
