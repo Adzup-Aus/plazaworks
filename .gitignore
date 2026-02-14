@@ -1,6 +1,9 @@
 node_modules
 .local
 dist
+logs
+.env.production
+attached_assets
 .DS_Store
 server/public
 vite.config.ts.*

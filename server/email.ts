@@ -1,49 +1,26 @@
-// Resend Email Integration
-// Uses Replit's secure connection management for API keys
+// Email sending via Resend (https://resend.com)
+// Free tier: 3,000 emails/month. No Replit required.
+// Set RESEND_API_KEY and FROM_EMAIL in .env (e.g. FROM_EMAIL=Plaza Works <onboarding@resend.dev>).
 
-import { Resend } from 'resend';
+import { Resend } from "resend";
 
-let connectionSettings: any;
-
-async function getCredentials() {
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY 
-    ? 'repl ' + process.env.REPL_IDENTITY 
-    : process.env.WEB_REPL_RENEWAL 
-    ? 'depl ' + process.env.WEB_REPL_RENEWAL 
-    : null;
-
-  if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
-  }
-
-  connectionSettings = await fetch(
-    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=resend',
-    {
-      headers: {
-        'Accept': 'application/json',
-        'X_REPLIT_TOKEN': xReplitToken
-      }
-    }
-  ).then(res => res.json()).then(data => data.items?.[0]);
-
-  if (!connectionSettings || (!connectionSettings.settings.api_key)) {
-    throw new Error('Resend not connected');
-  }
-  return { apiKey: connectionSettings.settings.api_key, fromEmail: connectionSettings.settings.from_email };
+function getFromEmail(): string {
+  const from = process.env.FROM_EMAIL;
+  if (from) return from;
+  // Resend free tier allows sending from onboarding@resend.dev
+  return "Plaza Works <onboarding@resend.dev>";
 }
 
-// WARNING: Never cache this client.
-// Access tokens expire, so a new client must be created each time.
-export async function getResendClient() {
-  const { apiKey, fromEmail } = await getCredentials();
-  return {
-    client: new Resend(apiKey),
-    fromEmail
-  };
+function getResendClient(): Resend {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "RESEND_API_KEY is not set. Add it to .env to send emails, or sign up at https://resend.com (free tier: 3,000 emails/month)."
+    );
+  }
+  return new Resend(apiKey);
 }
 
-// Email sending utilities
 export interface EmailOptions {
   to: string | string[];
   subject: string;
@@ -52,21 +29,27 @@ export interface EmailOptions {
 }
 
 export async function sendEmail(options: EmailOptions) {
-  const { client, fromEmail } = await getResendClient();
-  
+  const client = getResendClient();
+  const from = getFromEmail();
+
   const result = await client.emails.send({
-    from: fromEmail,
+    from,
     to: options.to,
     subject: options.subject,
     html: options.html,
     text: options.text,
   });
-  
+
   return result;
 }
 
-// Pre-built email templates
-export async function sendQuoteNotification(clientEmail: string, clientName: string, quoteNumber: string, quoteTotal: string, portalUrl: string) {
+export async function sendQuoteNotification(
+  clientEmail: string,
+  clientName: string,
+  quoteNumber: string,
+  quoteTotal: string,
+  portalUrl: string
+) {
   return sendEmail({
     to: clientEmail,
     subject: `New Quote #${quoteNumber} Ready for Review`,
@@ -87,7 +70,14 @@ export async function sendQuoteNotification(clientEmail: string, clientName: str
   });
 }
 
-export async function sendInvoiceNotification(clientEmail: string, clientName: string, invoiceNumber: string, invoiceTotal: string, dueDate: string, portalUrl: string) {
+export async function sendInvoiceNotification(
+  clientEmail: string,
+  clientName: string,
+  invoiceNumber: string,
+  invoiceTotal: string,
+  dueDate: string,
+  portalUrl: string
+) {
   return sendEmail({
     to: clientEmail,
     subject: `Invoice #${invoiceNumber} - Payment Due ${dueDate}`,
@@ -112,7 +102,7 @@ export async function sendInvoiceNotification(clientEmail: string, clientName: s
 export async function sendOtpEmail(email: string, otp: string) {
   return sendEmail({
     to: email,
-    subject: 'Your Login Code',
+    subject: "Your Login Code",
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2>Your Login Code</h2>
@@ -128,7 +118,12 @@ export async function sendOtpEmail(email: string, otp: string) {
   });
 }
 
-export async function sendJobCompletionNotification(clientEmail: string, clientName: string, jobTitle: string, completionDate: string) {
+export async function sendJobCompletionNotification(
+  clientEmail: string,
+  clientName: string,
+  jobTitle: string,
+  completionDate: string
+) {
   return sendEmail({
     to: clientEmail,
     subject: `Job Completed: ${jobTitle}`,
