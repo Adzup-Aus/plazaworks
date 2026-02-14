@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: plazaworks-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: plazaworks
+    ports:
+      - "5433:5432"
+    volumes:
+      - plazaworks_data:/var/lib/postgresql/data
+
+volumes:
+  plazaworks_data:
