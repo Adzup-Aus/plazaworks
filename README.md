@@ -55,6 +55,7 @@ SESSION_SECRET=your-session-secret-change-in-production
 - **`DATABASE_URL`** — Required. PostgreSQL connection string (e.g. `postgresql://user:password@localhost:5432/dbname`).
 - **`PORT`** — Port for the server (default: `5000`).
 - **`SESSION_SECRET`** — Secret for session signing. Use a strong random value in production.
+- **Email (optional)** — To send OTP, quote/invoice notifications, etc., set **`RESEND_API_KEY`** and **`FROM_EMAIL`** (e.g. `Plaza Works <onboarding@resend.dev>`). [Resend](https://resend.com) free tier: **3,000 emails/month**. Other free options: [Brevo](https://brevo.com) (300/day), [SendGrid](https://sendgrid.com) (100/day); the app is wired for Resend, so use Resend for zero code change.
 
 ### 3. Database
 
