@@ -82,3 +82,12 @@ npm start
 ```
 
 This serves the built frontend from `dist/` and expects `NODE_ENV=production` and `SESSION_SECRET` set.
+
+## Running tests
+
+- **Watch mode:** `npm run test`
+- **Single run:** `npm run test:run`
+
+Tests that hit the database (storage and API tests) run only when **`DATABASE_URL`** is set. Without it, those suites are skipped and only unit tests (e.g. auth-utils) run. To run the full suite locally, ensure your `.env` includes `DATABASE_URL` (same as for the app) and run the commands above.
+
+In CI, run `npm run test:run` (optionally with coverage). Set `DATABASE_URL` in the CI environment if you want storage and API tests to run; otherwise only unit tests run.

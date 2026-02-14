@@ -181,6 +181,7 @@ import {
 import { db } from "./db";
 import { eq, desc, and, gte, lte, lt, sql, inArray, isNull, or } from "drizzle-orm";
 import crypto from "crypto";
+import { AuthTenantRepository } from "./repositories/AuthTenantRepository";
 
 export interface IStorage {
   // Staff profile operations
@@ -309,7 +310,6 @@ export interface IStorage {
   // Invoice payment operations
   getInvoicePayments(invoiceId: string): Promise<InvoicePayment[]>;
   createInvoicePayment(payment: InsertInvoicePayment): Promise<InvoicePayment>;
-  getInvoiceByPaymentToken(token: string): Promise<Invoice | undefined>;
 
   // Organization settings operations
   getOrganizationSettings(organizationId: string): Promise<OrganizationSettings | undefined>;
@@ -531,6 +531,8 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  private readonly authRepo = new AuthTenantRepository(db);
+
   // Staff profile operations
   async getStaffProfiles(): Promise<(StaffProfile & { user?: User })[]> {
     const profiles = await db.select().from(staffProfiles).orderBy(desc(staffProfiles.createdAt));
@@ -1474,11 +1476,6 @@ export class DatabaseStorage implements IStorage {
     }
 
     return created;
-  }
-
-  async getInvoiceByPaymentToken(token: string): Promise<Invoice | undefined> {
-    const [invoice] = await db.select().from(invoices).where(eq(invoices.paymentLinkToken, token));
-    return invoice;
   }
 
   // =====================
@@ -2763,214 +2760,127 @@ export class DatabaseStorage implements IStorage {
   }
 
   // =====================
-  // MULTI-TENANT OPERATIONS
+  // MULTI-TENANT OPERATIONS (delegated to AuthTenantRepository)
   // =====================
 
-  // Organization operations
   async getOrganizations(): Promise<Organization[]> {
-    return db.select().from(organizations).orderBy(desc(organizations.createdAt));
+    return this.authRepo.getOrganizations();
   }
 
   async getOrganization(id: string): Promise<Organization | undefined> {
-    const [org] = await db.select().from(organizations).where(eq(organizations.id, id));
-    return org;
+    return this.authRepo.getOrganization(id);
   }
 
   async getOrganizationBySlug(slug: string): Promise<Organization | undefined> {
-    const [org] = await db.select().from(organizations).where(eq(organizations.slug, slug));
-    return org;
+    return this.authRepo.getOrganizationBySlug(slug);
   }
 
   async getOwnerOrganization(): Promise<Organization | undefined> {
-    const [org] = await db.select().from(organizations).where(eq(organizations.isOwner, true));
-    return org;
+    return this.authRepo.getOwnerOrganization();
   }
 
   async createOrganization(org: InsertOrganization): Promise<Organization> {
-    const [created] = await db.insert(organizations).values(org).returning();
-    return created;
+    return this.authRepo.createOrganization(org);
   }
 
   async updateOrganization(id: string, org: Partial<InsertOrganization>): Promise<Organization | undefined> {
-    const [updated] = await db
-      .update(organizations)
-      .set({ ...org, updatedAt: new Date() })
-      .where(eq(organizations.id, id))
-      .returning();
-    return updated;
+    return this.authRepo.updateOrganization(id, org);
   }
 
   async deleteOrganization(id: string): Promise<boolean> {
-    await db.delete(organizations).where(eq(organizations.id, id));
-    return true;
+    return this.authRepo.deleteOrganization(id);
   }
 
-  // Subscription operations
   async getOrganizationSubscription(organizationId: string): Promise<OrganizationSubscription | undefined> {
-    const [sub] = await db.select().from(organizationSubscriptions)
-      .where(eq(organizationSubscriptions.organizationId, organizationId));
-    return sub;
+    return this.authRepo.getOrganizationSubscription(organizationId);
   }
 
   async createOrganizationSubscription(sub: InsertOrganizationSubscription): Promise<OrganizationSubscription> {
-    const [created] = await db.insert(organizationSubscriptions).values(sub).returning();
-    return created;
+    return this.authRepo.createOrganizationSubscription(sub);
   }
 
   async updateOrganizationSubscription(id: string, sub: Partial<InsertOrganizationSubscription>): Promise<OrganizationSubscription | undefined> {
-    const [updated] = await db
-      .update(organizationSubscriptions)
-      .set({ ...sub, updatedAt: new Date() })
-      .where(eq(organizationSubscriptions.id, id))
-      .returning();
-    return updated;
+    return this.authRepo.updateOrganizationSubscription(id, sub);
   }
 
-  // Member operations
   async getOrganizationMembers(organizationId: string): Promise<OrganizationMember[]> {
-    return db.select().from(organizationMembers)
-      .where(eq(organizationMembers.organizationId, organizationId))
-      .orderBy(desc(organizationMembers.joinedAt));
+    return this.authRepo.getOrganizationMembers(organizationId);
   }
 
   async getOrganizationMember(organizationId: string, userId: string): Promise<OrganizationMember | undefined> {
-    const [member] = await db.select().from(organizationMembers)
-      .where(and(
-        eq(organizationMembers.organizationId, organizationId),
-        eq(organizationMembers.userId, userId)
-      ));
-    return member;
+    return this.authRepo.getOrganizationMember(organizationId, userId);
   }
 
   async getUserMemberships(userId: string): Promise<OrganizationMember[]> {
-    return db.select().from(organizationMembers)
-      .where(eq(organizationMembers.userId, userId));
+    return this.authRepo.getUserMemberships(userId);
   }
 
   async createOrganizationMember(member: InsertOrganizationMember): Promise<OrganizationMember> {
-    const [created] = await db.insert(organizationMembers).values(member).returning();
-    return created;
+    return this.authRepo.createOrganizationMember(member);
   }
 
   async updateOrganizationMember(id: string, member: Partial<InsertOrganizationMember>): Promise<OrganizationMember | undefined> {
-    const [updated] = await db
-      .update(organizationMembers)
-      .set({ ...member, updatedAt: new Date() })
-      .where(eq(organizationMembers.id, id))
-      .returning();
-    return updated;
+    return this.authRepo.updateOrganizationMember(id, member);
   }
 
   async deleteOrganizationMember(id: string): Promise<boolean> {
-    await db.delete(organizationMembers).where(eq(organizationMembers.id, id));
-    return true;
+    return this.authRepo.deleteOrganizationMember(id);
   }
 
-  // Auth identity operations
   async getAuthIdentities(userId: string): Promise<AuthIdentity[]> {
-    return db.select().from(authIdentities)
-      .where(eq(authIdentities.userId, userId));
+    return this.authRepo.getAuthIdentities(userId);
   }
 
   async getAuthIdentityByIdentifier(type: string, identifier: string): Promise<AuthIdentity | undefined> {
-    const [identity] = await db.select().from(authIdentities)
-      .where(and(
-        eq(authIdentities.type, type),
-        eq(authIdentities.identifier, identifier.toLowerCase())
-      ));
-    return identity;
+    return this.authRepo.getAuthIdentityByIdentifier(type, identifier);
   }
 
   async createAuthIdentity(identity: InsertAuthIdentity): Promise<AuthIdentity> {
-    const [created] = await db.insert(authIdentities).values({
-      ...identity,
-      identifier: identity.identifier.toLowerCase(),
-    }).returning();
-    return created;
+    return this.authRepo.createAuthIdentity(identity);
   }
 
   async updateAuthIdentity(id: string, identity: Partial<InsertAuthIdentity>): Promise<AuthIdentity | undefined> {
-    const updateData: any = { ...identity, updatedAt: new Date() };
-    if (identity.identifier) {
-      updateData.identifier = identity.identifier.toLowerCase();
-    }
-    const [updated] = await db
-      .update(authIdentities)
-      .set(updateData)
-      .where(eq(authIdentities.id, id))
-      .returning();
-    return updated;
+    return this.authRepo.updateAuthIdentity(id, identity);
   }
 
   async deleteAuthIdentity(id: string): Promise<boolean> {
-    await db.delete(authIdentities).where(eq(authIdentities.id, id));
-    return true;
+    return this.authRepo.deleteAuthIdentity(id);
   }
 
-  // Verification code operations
   async createVerificationCode(code: InsertVerificationCode): Promise<VerificationCode> {
-    const [created] = await db.insert(verificationCodes).values(code).returning();
-    return created;
+    return this.authRepo.createVerificationCode(code);
   }
 
   async getVerificationCode(code: string, email?: string, phone?: string): Promise<VerificationCode | undefined> {
-    let conditions = [eq(verificationCodes.code, code)];
-    if (email) {
-      conditions.push(eq(verificationCodes.email, email.toLowerCase()));
-    }
-    if (phone) {
-      conditions.push(eq(verificationCodes.phone, phone));
-    }
-    
-    const [result] = await db.select().from(verificationCodes)
-      .where(and(...conditions))
-      .orderBy(desc(verificationCodes.createdAt));
-    return result;
+    return this.authRepo.getVerificationCode(code, email, phone);
   }
 
   async markVerificationCodeUsed(id: string): Promise<void> {
-    await db.update(verificationCodes)
-      .set({ usedAt: new Date() })
-      .where(eq(verificationCodes.id, id));
+    return this.authRepo.markVerificationCodeUsed(id);
   }
 
   async cleanupExpiredCodes(): Promise<void> {
-    await db.delete(verificationCodes)
-      .where(lte(verificationCodes.expiresAt, new Date()));
+    return this.authRepo.cleanupExpiredCodes();
   }
 
-  // Invite operations
   async getOrganizationInvites(organizationId: string): Promise<OrganizationInvite[]> {
-    return db.select().from(organizationInvites)
-      .where(eq(organizationInvites.organizationId, organizationId))
-      .orderBy(desc(organizationInvites.createdAt));
+    return this.authRepo.getOrganizationInvites(organizationId);
   }
 
   async getInviteByCode(code: string): Promise<OrganizationInvite | undefined> {
-    const [invite] = await db.select().from(organizationInvites)
-      .where(eq(organizationInvites.inviteCode, code));
-    return invite;
+    return this.authRepo.getInviteByCode(code);
   }
 
   async createOrganizationInvite(invite: InsertOrganizationInvite): Promise<OrganizationInvite> {
-    const [created] = await db.insert(organizationInvites).values({
-      ...invite,
-      email: invite.email?.toLowerCase(),
-    }).returning();
-    return created;
+    return this.authRepo.createOrganizationInvite(invite);
   }
 
   async acceptInvite(id: string, userId: string): Promise<OrganizationInvite | undefined> {
-    const [updated] = await db.update(organizationInvites)
-      .set({ acceptedAt: new Date(), acceptedBy: userId })
-      .where(eq(organizationInvites.id, id))
-      .returning();
-    return updated;
+    return this.authRepo.acceptInvite(id, userId);
   }
 
   async deleteOrganizationInvite(id: string): Promise<boolean> {
-    await db.delete(organizationInvites).where(eq(organizationInvites.id, id));
-    return true;
+    return this.authRepo.deleteOrganizationInvite(id);
   }
 
   // =====================

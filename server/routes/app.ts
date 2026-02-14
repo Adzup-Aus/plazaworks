@@ -1,7 +1,6 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
-import { storage } from "./storage";
-import { setupAuth, isAuthenticated, registerAuthRoutes, authStorage } from "./replit_integrations/auth";
+import { storage } from "../storage";
+import { isAuthenticated, authStorage } from "../replit_integrations/auth";
 import {
   getUserId,
   requireUserId,
@@ -11,13 +10,13 @@ import {
   withOrganization,
   requireSuperAdmin,
   ensureStaffProfile,
-} from "./middleware";
+} from "../middleware";
 import {
   clientPortalAuth,
   createClientPortalToken,
   type ClientPortalRequest,
-} from "./middleware/clientPortalAuth";
-import { generateOTPCode } from "./lib/otp";
+} from "../middleware/clientPortalAuth";
+import { generateOTPCode } from "../lib/otp";
 import { 
   insertJobSchema, 
   insertScheduleEntrySchema, 
@@ -90,8 +89,8 @@ export async function registerRoutes(
   
   // Setup object storage routes (requires auth)
   const { registerObjectStorageRoutes } = await import("./replit_integrations/object_storage");
-  registerObjectStorageRoutes(app);
 
+export function registerAppRoutes(app: Express) {
   // =====================
   // OTP AUTHENTICATION ROUTES
   // =====================
@@ -4563,6 +4562,4 @@ export async function registerRoutes(
       res.status(500).json({ message: "Failed to record payment" });
     }
   });
-
-  return httpServer;
 }
