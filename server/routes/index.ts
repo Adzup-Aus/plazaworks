@@ -4,27 +4,27 @@ import {
   setupAuth,
   registerAuthRoutes as registerReplitAuthRoutes,
 } from "../replit_integrations/auth";
-import { registerAuthRoutes } from "./auth";
-import { registerOrganizationsRoutes } from "./organizations";
-import { registerStaffRoutes } from "./staff";
-import { registerJobsRoutes } from "./jobs";
-import { registerScheduleRoutes } from "./schedule";
-import { registerPCItemsRoutes } from "./pcItems";
-import { registerJobMilestonesRoutes } from "./jobMilestones";
-import { registerNotificationsRoutes } from "./notifications";
-import { registerClientPortalRoutes } from "./clientPortal";
-import { registerQuotesRoutes } from "./quotes";
-import { registerInvoicesRoutes } from "./invoices";
-import { registerLineItemsRoutes } from "./lineItems";
-import { registerPaymentsRoutes } from "./payments";
-import { registerVehiclesRoutes } from "./vehicles";
-import { registerJobPhotosRoutes } from "./jobPhotos";
-import { registerJobReceiptsRoutes } from "./jobReceipts";
-import { registerProductivityRoutes } from "./productivity";
-import { registerKpiRoutes } from "./kpi";
-import { registerClientsRoutes } from "./clients";
-import { registerMilestonesRoutes } from "./milestones";
-import { registerPayRoutes } from "./pay";
+import { registerAuthRoutes } from "../modules/auth/routes";
+import { registerOrganizationsRoutes } from "../modules/organizations/routes";
+import { registerStaffRoutes } from "../modules/staff/routes";
+import { registerJobsRoutes } from "../modules/jobs/routes";
+import { registerScheduleRoutes } from "../modules/schedule/routes";
+import { registerPCItemsRoutes } from "../modules/pcItems/routes";
+import { registerJobMilestonesRoutes } from "../modules/jobMilestones/routes";
+import { registerNotificationsRoutes } from "../modules/notifications/routes";
+import { registerClientPortalRoutes } from "../modules/clientPortal/routes";
+import { registerQuotesRoutes } from "../modules/quotes/routes";
+import { registerInvoicesRoutes } from "../modules/invoices/routes";
+import { registerLineItemsRoutes } from "../modules/lineItems/routes";
+import { registerPaymentsRoutes } from "../modules/payments/routes";
+import { registerVehiclesRoutes } from "../modules/vehicles/routes";
+import { registerJobPhotosRoutes } from "../modules/jobPhotos/routes";
+import { registerJobReceiptsRoutes } from "../modules/jobReceipts/routes";
+import { registerProductivityRoutes } from "../modules/productivity/routes";
+import { registerKpiRoutes } from "../modules/kpi/routes";
+import { registerClientsRoutes } from "../modules/clients/routes";
+import { registerMilestonesRoutes } from "../modules/milestones/routes";
+import { registerPayRoutes } from "../modules/pay/routes";
 
 /**
  * Register all API routes. Order matters for middleware and feature gating.

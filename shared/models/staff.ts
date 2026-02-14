@@ -1,0 +1,116 @@
+import { sql, relations } from "drizzle-orm";
+import { pgTable, text, varchar, timestamp, boolean, date, index, integer, decimal } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod";
+import { organizations } from "./organizations";
+
+// User roles enum
+export const userRoles = [
+  "plumber",
+  "plumbing_manager",
+  "project_manager",
+  "carpenter",
+  "waterproofer",
+  "tiler",
+  "electrician",
+  "admin"
+] as const;
+export type UserRole = typeof userRoles[number];
+
+// Employment types
+export const employmentTypes = ["permanent", "contractor"] as const;
+export type EmploymentType = typeof employmentTypes[number];
+
+// User permissions
+export const userPermissions = [
+  "view_jobs",
+  "create_jobs",
+  "edit_jobs",
+  "delete_jobs",
+  "view_users",
+  "create_users",
+  "edit_users",
+  "delete_users",
+  "view_schedule",
+  "manage_schedule",
+  "view_reports",
+  "admin_settings"
+] as const;
+export type UserPermission = typeof userPermissions[number];
+
+// Salary types
+export const salaryTypes = ["annual", "hourly"] as const;
+export type SalaryType = typeof salaryTypes[number];
+
+// Staff profiles - extends auth users with role info
+export const staffProfiles = pgTable("staff_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().unique(),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  roles: text("roles").array().notNull().default(sql`ARRAY['plumber']::text[]`),
+  employmentType: varchar("employment_type", { length: 20 }).notNull().default("permanent"),
+  permissions: text("permissions").array().notNull().default(sql`ARRAY[]::text[]`),
+  phone: varchar("phone", { length: 20 }),
+  skills: text("skills").array().default(sql`ARRAY[]::text[]`),
+  isActive: boolean("is_active").notNull().default(true),
+  salaryType: varchar("salary_type", { length: 20 }).default("hourly"),
+  salaryAmount: decimal("salary_amount", { precision: 12, scale: 2 }),
+  overtimeRateMultiplier: decimal("overtime_rate_multiplier", { precision: 4, scale: 2 }).default("1.5"),
+  overtimeThresholdHours: decimal("overtime_threshold_hours", { precision: 5, scale: 2 }).default("38"),
+  emailSignature: text("email_signature"),
+  timezone: varchar("timezone", { length: 50 }).default("Australia/Brisbane"),
+  lunchBreakMinutes: integer("lunch_break_minutes").default(30),
+  lunchBreakPaid: boolean("lunch_break_paid").default(false),
+  hourlyCostLoaded: decimal("hourly_cost_loaded", { precision: 10, scale: 2 }),
+  dailyCostLoaded: decimal("daily_cost_loaded", { precision: 10, scale: 2 }),
+  salesPhase: integer("sales_phase").default(1),
+  phaseStartDate: date("phase_start_date"),
+  weeklyLaborTarget: decimal("weekly_labor_target", { precision: 10, scale: 2 }).default("10000"),
+  dailyLaborTarget: decimal("daily_labor_target", { precision: 10, scale: 2 }).default("2000"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_staff_user_id").on(table.userId),
+  index("idx_staff_org").on(table.organizationId),
+  index("idx_staff_active").on(table.isActive),
+]);
+
+// User working hours - per-day schedule for each staff member
+export const userWorkingHours = pgTable("user_working_hours", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  staffId: varchar("staff_id").notNull().references(() => staffProfiles.id, { onDelete: "cascade" }),
+  dayOfWeek: integer("day_of_week").notNull(),
+  isWorkingDay: boolean("is_working_day").notNull().default(true),
+  startTime: varchar("start_time", { length: 10 }).default("07:00"),
+  endTime: varchar("end_time", { length: 10 }).default("15:30"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_working_hours_staff").on(table.staffId),
+  index("idx_working_hours_day").on(table.dayOfWeek),
+]);
+
+export const staffProfilesRelations = relations(staffProfiles, ({ one }) => ({}));
+export const userWorkingHoursRelations = relations(userWorkingHours, ({ one }) => ({
+  staff: one(staffProfiles, {
+    fields: [userWorkingHours.staffId],
+    references: [staffProfiles.id],
+  }),
+}));
+
+export const insertStaffProfileSchema = createInsertSchema(staffProfiles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertUserWorkingHoursSchema = createInsertSchema(userWorkingHours).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type StaffProfile = typeof staffProfiles.$inferSelect;
+export type InsertStaffProfile = z.infer<typeof insertStaffProfileSchema>;
+export type UserWorkingHours = typeof userWorkingHours.$inferSelect;
+export type InsertUserWorkingHours = z.infer<typeof insertUserWorkingHoursSchema>;
