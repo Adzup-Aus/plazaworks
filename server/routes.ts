@@ -2,7 +2,8 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { createHmac, randomBytes } from "crypto";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
+import { setupAuth, isAuthenticated, registerAuthRoutes, authStorage } from "./replit_integrations/auth";
+import { getUserId, requireUserId } from "./auth-utils";
 
 // Client portal session token utilities
 // Require SESSION_SECRET in production; allow fallback only in development
@@ -263,11 +264,21 @@ export async function registerRoutes(
           isVerified: true,
           isPrimary: true,
         });
+        // Ensure user row exists for /api/auth/user
+        await authStorage.upsertUser({
+          id: newUserId,
+          ...(identityType === "email" ? { email: identifier } : {}),
+        });
       } else {
         // Update last used time
         await storage.updateAuthIdentity(identity.id, {
           lastUsedAt: new Date(),
           isVerified: true,
+        });
+        // Ensure user row exists for /api/auth/user
+        await authStorage.upsertUser({
+          id: identity.userId,
+          ...(identityType === "email" ? { email: identifier } : {}),
         });
       }
 
@@ -295,30 +306,20 @@ export async function registerRoutes(
     }
   });
 
-  // Get current session info for OTP-authenticated users
+  // Get current session info
   app.get("/api/auth/session", async (req: any, res) => {
     try {
-      // Check for Replit Auth first
-      if (req.user?.claims?.sub) {
-        return res.json({
-          isAuthenticated: true,
-          authType: "replit",
-          userId: req.user.claims.sub,
-          user: req.user.claims,
-        });
-      }
-
-      // Check for OTP session
-      if (req.session?.isAuthenticated && req.session?.userId) {
-        const memberships = await storage.getUserMemberships(req.session.userId);
-        const identities = await storage.getAuthIdentities(req.session.userId);
+      const userId = getUserId(req);
+      if (req.session?.isAuthenticated && userId) {
+        const memberships = await storage.getUserMemberships(userId);
+        const identities = await storage.getAuthIdentities(userId);
         
         return res.json({
           isAuthenticated: true,
           authType: req.session.authType,
-          userId: req.session.userId,
+          userId,
           memberships,
-          identities: identities.map(i => ({
+          identities: identities.map((i: any) => ({
             type: i.type,
             identifier: i.identifier,
             isVerified: i.isVerified,
@@ -384,6 +385,14 @@ export async function registerRoutes(
         passwordHash,
         isVerified: false, // Require email verification
         isPrimary: true,
+      });
+
+      // Ensure user row exists for /api/auth/user
+      await authStorage.upsertUser({
+        id: newUserId,
+        email: email.toLowerCase(),
+        firstName: firstName || undefined,
+        lastName: lastName || undefined,
       });
 
       // Send verification code
@@ -452,6 +461,12 @@ export async function registerRoutes(
         req.session.authType = "email";
         req.session.isAuthenticated = true;
       }
+
+      // Ensure user row exists for /api/auth/user (users table is separate from auth_identities)
+      await authStorage.upsertUser({
+        id: identity.userId,
+        email: identity.identifier,
+      });
 
       // Get user memberships
       const memberships = await storage.getUserMemberships(identity.userId);
@@ -606,7 +621,7 @@ export async function registerRoutes(
   // Change password (authenticated)
   app.post("/api/auth/change-password", async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub || req.session?.userId;
+      const userId = getUserId(req);
       if (!userId) {
         return res.status(401).json({ message: "Authentication required" });
       }
@@ -653,7 +668,7 @@ export async function registerRoutes(
   // Add password to existing OTP account
   app.post("/api/auth/set-password", async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub || req.session?.userId;
+      const userId = getUserId(req);
       if (!userId) {
         return res.status(401).json({ message: "Authentication required" });
       }
@@ -718,7 +733,7 @@ export async function registerRoutes(
   // Middleware to check if a feature is available for the user's organization
   const requireFeature = (feature: string) => async (req: any, res: any, next: any) => {
     try {
-      const userId = req.user?.claims?.sub || req.session?.userId;
+      const userId = getUserId(req);
       if (!userId) {
         return res.status(401).json({ message: "Authentication required" });
       }
@@ -850,7 +865,7 @@ export async function registerRoutes(
   // Auto-creates a default organization for users without one
   const withOrganization = async (req: any, res: any, next: any) => {
     try {
-      const userId = req.user?.claims?.sub || req.session?.userId;
+      const userId = getUserId(req);
       if (!userId) {
         return next(); // Not authenticated
       }
@@ -859,10 +874,10 @@ export async function registerRoutes(
       
       // Auto-create default organization if user has no memberships
       if (memberships.length === 0) {
-        // Use OIDC claims for user name if available
-        const claims = req.user?.claims || {};
-        const firstName = claims.first_name || claims.given_name || "";
-        const lastName = claims.last_name || claims.family_name || "";
+        // Look up user for name
+        const dbUser = await authStorage.getUser(userId);
+        const firstName = dbUser?.firstName || "";
+        const lastName = dbUser?.lastName || "";
         const orgName = firstName && lastName 
           ? `${firstName} ${lastName}'s Organization`
           : `Organization ${userId.substring(0, 8)}`;
@@ -914,7 +929,7 @@ export async function registerRoutes(
   // Super-admin check middleware
   const requireSuperAdmin = async (req: any, res: any, next: any) => {
     try {
-      const userId = req.user?.claims?.sub || req.session?.userId;
+      const userId = getUserId(req);
       if (!userId) {
         return res.status(401).json({ message: "Authentication required" });
       }
@@ -953,7 +968,7 @@ export async function registerRoutes(
   // Check if current user is super-admin
   app.get("/api/auth/is-super-admin", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub || req.session?.userId;
+      const userId = getUserId(req);
       if (!userId) {
         return res.json({ isSuperAdmin: false });
       }
@@ -1044,7 +1059,7 @@ export async function registerRoutes(
       });
 
       // Add the creating user as owner
-      const userId = req.user?.claims?.sub || req.session?.userId;
+      const userId = getUserId(req);
       if (userId) {
         await storage.createOrganizationMember({
           organizationId: org.id,
@@ -1156,7 +1171,7 @@ export async function registerRoutes(
         organizationId: req.params.id,
         userId,
         role,
-        invitedBy: req.user?.claims?.sub || req.session?.userId,
+        invitedBy: requireUserId(req),
         invitedAt: new Date(),
         joinedAt: new Date(),
         isActive: true,
@@ -1234,7 +1249,7 @@ export async function registerRoutes(
         phone,
         role: role || "staff",
         inviteCode,
-        invitedBy: req.user?.claims?.sub || req.session?.userId,
+        invitedBy: requireUserId(req),
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
       });
 
@@ -1268,7 +1283,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invite has expired" });
       }
 
-      const userId = req.user?.claims?.sub || req.session?.userId;
+      const userId = getUserId(req);
       if (!userId) {
         return res.status(401).json({ message: "Authentication required" });
       }
@@ -1321,7 +1336,7 @@ export async function registerRoutes(
   // Middleware to auto-create staff profile for authenticated users
   const ensureStaffProfile = async (req: any, res: any, next: any) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = getUserId(req);
       if (userId) {
         const existingProfile = await storage.getStaffProfileByUserId(userId);
         if (!existingProfile) {
@@ -1462,7 +1477,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: validation.error.errors[0].message });
       }
 
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const job = await storage.createJob({
         ...validation.data,
         createdById: userId,
@@ -1552,7 +1567,7 @@ export async function registerRoutes(
   app.post("/api/schedule", isAuthenticated, async (req: any, res) => {
     try {
       // Get the user's staff profile as fallback if no staffId provided
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const staffProfile = await storage.getStaffProfileByUserId(userId);
       if (!staffProfile) {
         return res.status(400).json({ message: "Staff profile not found" });
@@ -1586,7 +1601,7 @@ export async function registerRoutes(
   // Create multiple schedule entries at once (for multi-day scheduling)
   app.post("/api/schedule/bulk", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const staffProfile = await storage.getStaffProfileByUserId(userId);
       if (!staffProfile) {
         return res.status(400).json({ message: "Staff profile not found" });
@@ -1829,7 +1844,7 @@ export async function registerRoutes(
   // Complete PC item
   app.post("/api/pc-items/:id/complete", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const completed = await storage.completePCItem(req.params.id, userId);
       if (!completed) {
         return res.status(404).json({ message: "PC item not found" });
@@ -1949,7 +1964,7 @@ export async function registerRoutes(
   // Get notifications for current user
   app.get("/api/notifications", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const notificationsList = await storage.getNotifications(userId);
       res.json(notificationsList);
     } catch (err: any) {
@@ -1961,7 +1976,7 @@ export async function registerRoutes(
   // Get unread notification count
   app.get("/api/notifications/unread-count", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const count = await storage.getUnreadNotificationCount(userId);
       res.json({ count });
     } catch (err: any) {
@@ -1987,7 +2002,7 @@ export async function registerRoutes(
   // Mark all notifications as read
   app.patch("/api/notifications/read-all", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       await storage.markAllNotificationsRead(userId);
       res.json({ success: true });
     } catch (err: any) {
@@ -2017,7 +2032,7 @@ export async function registerRoutes(
   // Generate share link for a job
   app.post("/api/jobs/:jobId/share", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const job = await storage.getJob(req.params.jobId);
       if (!job) {
         return res.status(404).json({ message: "Job not found" });
@@ -2185,7 +2200,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: validation.error.errors[0].message });
       }
 
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const quote = await storage.createQuote({
         ...validation.data,
         createdById: userId,
@@ -2365,7 +2380,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: validation.error.errors[0].message });
       }
 
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const invoice = await storage.createInvoice({
         ...validation.data,
         createdById: userId,
@@ -2380,7 +2395,7 @@ export async function registerRoutes(
   // Create invoice from job
   app.post("/api/jobs/:jobId/invoice", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const invoice = await storage.createInvoiceFromJob(req.params.jobId, userId);
       if (!invoice) {
         return res.status(404).json({ message: "Job not found" });
@@ -2395,7 +2410,7 @@ export async function registerRoutes(
   // Create invoice from quote
   app.post("/api/quotes/:quoteId/invoice", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const invoice = await storage.createInvoiceFromQuote(req.params.quoteId, userId);
       if (!invoice) {
         return res.status(404).json({ message: "Quote not found" });
@@ -2458,7 +2473,7 @@ export async function registerRoutes(
   // Generate invoice from job
   app.post("/api/invoices/generate/job/:jobId", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const invoice = await storage.createInvoiceFromJob(req.params.jobId, userId);
       if (!invoice) {
         return res.status(404).json({ message: "Job not found" });
@@ -2473,7 +2488,7 @@ export async function registerRoutes(
   // Generate invoice from quote
   app.post("/api/invoices/generate/quote/:quoteId", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const invoice = await storage.createInvoiceFromQuote(req.params.quoteId, userId);
       if (!invoice) {
         return res.status(404).json({ message: "Quote not found" });
@@ -2747,7 +2762,7 @@ export async function registerRoutes(
     try {
       const parsed = insertTermsTemplateSchema.safeParse({
         ...req.body,
-        createdById: req.user?.id,
+        createdById: requireUserId(req),
       });
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid template data", errors: parsed.error.issues });
@@ -3172,7 +3187,7 @@ export async function registerRoutes(
   // Upload photo metadata (actual file upload handled separately)
   app.post("/api/jobs/:jobId/photos", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const staffProfile = await storage.getStaffProfileByUserId(userId);
 
       // Generate filename from URL if not provided
@@ -3270,7 +3285,7 @@ export async function registerRoutes(
   // Upload receipt (scan or file)
   app.post("/api/jobs/:jobId/receipts", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const staffProfile = await storage.getStaffProfileByUserId(userId);
 
       // Generate filename from URL if not provided
@@ -3379,7 +3394,7 @@ export async function registerRoutes(
   // Create maintenance record
   app.post("/api/vehicles/:vehicleId/maintenance", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const validation = insertVehicleMaintenanceSchema.safeParse({
         ...req.body,
         vehicleId: req.params.vehicleId,
@@ -3476,7 +3491,7 @@ export async function registerRoutes(
         entries = await storage.getTimeEntriesByDateRange(dateFrom, dateTo);
       } else {
         // Get current user's entries
-        const userId = req.user?.claims?.sub;
+        const userId = requireUserId(req);
         const staffProfile = await storage.getStaffProfileByUserId(userId);
         if (staffProfile) {
           entries = await storage.getTimeEntriesByStaff(staffProfile.id);
@@ -3494,7 +3509,7 @@ export async function registerRoutes(
 
   app.post("/api/jobs/:jobId/time-entries", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const staffProfile = await storage.getStaffProfileByUserId(userId);
 
       const validation = insertJobTimeEntrySchema.safeParse({
@@ -3559,7 +3574,7 @@ export async function registerRoutes(
 
   app.post("/api/jobs/:jobId/cost-entries", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const staffProfile = await storage.getStaffProfileByUserId(userId);
 
       const validation = insertJobCostEntrySchema.safeParse({
@@ -3675,7 +3690,7 @@ export async function registerRoutes(
         timeOff = await storage.getTimeOffByDateRange(dateFrom, dateTo);
       } else {
         // Get current user's time off
-        const userId = req.user?.claims?.sub;
+        const userId = requireUserId(req);
         const staffProfile = await storage.getStaffProfileByUserId(userId);
         if (staffProfile) {
           timeOff = await storage.getStaffTimeOff(staffProfile.id);
@@ -3693,7 +3708,7 @@ export async function registerRoutes(
 
   app.post("/api/time-off", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const staffProfile = await storage.getStaffProfileByUserId(userId);
 
       const validation = insertStaffTimeOffSchema.safeParse({
@@ -3714,7 +3729,7 @@ export async function registerRoutes(
 
   app.post("/api/time-off/:id/approve", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const staffProfile = await storage.getStaffProfileByUserId(userId);
       
       const approved = await storage.approveTimeOff(req.params.id, staffProfile?.id || "");
@@ -3730,7 +3745,7 @@ export async function registerRoutes(
 
   app.post("/api/time-off/:id/reject", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const staffProfile = await storage.getStaffProfileByUserId(userId);
       
       const rejected = await storage.rejectTimeOff(req.params.id, staffProfile?.id || "");
@@ -3952,7 +3967,7 @@ export async function registerRoutes(
 
   app.post("/api/kpi/alerts/:id/acknowledge", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const alert = await storage.acknowledgeKpiAlert(req.params.id, userId);
       if (!alert) {
         return res.status(404).json({ message: "Alert not found" });
@@ -3991,7 +4006,7 @@ export async function registerRoutes(
 
   app.post("/api/kpi/bonus/:id/approve", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const period = await storage.approveBonusPeriod(req.params.id, userId);
       if (!period) {
         return res.status(404).json({ message: "Bonus period not found" });
@@ -4029,7 +4044,7 @@ export async function registerRoutes(
 
   app.post("/api/kpi/staff/:staffId/advance-phase", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const { notes } = req.body;
       await storage.advanceSalesPhase(req.params.staffId, userId, notes);
       res.json({ success: true, message: "Sales phase advanced successfully" });
@@ -4055,7 +4070,7 @@ export async function registerRoutes(
 
   app.post("/api/kpi/phase-checklist/:id/toggle", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const item = await storage.togglePhaseChecklistItem(req.params.id, userId);
       if (!item) {
         return res.status(404).json({ message: "Checklist item not found" });
@@ -4241,7 +4256,7 @@ export async function registerRoutes(
   // Complete milestone
   app.post("/api/milestones/:id/complete", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const staffProfile = await storage.getStaffProfileByUserId(userId);
       
       const updated = await storage.completeMilestone(req.params.id, staffProfile?.id || userId);
@@ -4295,7 +4310,7 @@ export async function registerRoutes(
   // Create milestone payment
   app.post("/api/milestones/:milestoneId/payments", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const staffProfile = await storage.getStaffProfileByUserId(userId);
       
       const parsed = insertMilestonePaymentSchema.safeParse({
@@ -4375,7 +4390,7 @@ export async function registerRoutes(
   // Create milestone media (photo or note)
   app.post("/api/milestones/:milestoneId/media", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = requireUserId(req);
       const staffProfile = await storage.getStaffProfileByUserId(userId);
       
       // Get the milestone to find the jobId

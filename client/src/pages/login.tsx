@@ -274,23 +274,6 @@ export default function Login() {
               </p>
             </div>
             
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
-              </div>
-            </div>
-            
-            <Button 
-              variant="outline" 
-              className="w-full" 
-              asChild
-              data-testid="button-replit-auth"
-            >
-              <a href="/api/login">Replit Account</a>
-            </Button>
           </CardContent>
         </Card>
       </main>
