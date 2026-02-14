@@ -1,0 +1,51 @@
+---
+description: Project constitution — backend module structure, frontend conventions, tests, and verification. Follow when adding or modifying features.
+alwaysApply: true
+---
+
+# Speckit Constitution (Cursor Rule)
+
+This project follows the **Speckit Constitution**. All new features and modifications MUST comply with it.
+
+## Where to read the full constitution
+
+- **Root (canonical):** `SPECKIT_CONSTITUTION.md`
+- **Spec-kit memory:** `.specify/memory/constitution.md`
+
+When in doubt, read one of these files. Below is a short reference only.
+
+---
+
+## Backend (mandatory)
+
+- **Module structure:** Every feature lives in `server/modules/<featureName>/` with:
+  - `routes.ts` — export `register<Feature>Routes(app: Express): void`; use `../../routes/shared` and `./model`.
+  - `model.ts` — re-export from `@shared/schema` only (no new table definitions here).
+- **Registration:** Add the module in `server/routes/index.ts` (import from `../modules/<name>/routes` and call the register function).
+- **New tables/enums:** Define in `shared/schema.ts` or `shared/models/<domain>.ts`; re-export from `shared/schema.ts`.
+- **Tests:** Add API tests in `server/__tests__/api.<feature>.test.ts` (and optionally storage tests). Cover happy paths, auth (401), validation (400).
+- **Verification:** After any backend or API change, run **`npm run test:env`** and fix any failing tests before considering the change done.
+
+Do **not** add new feature routes as loose files under `server/routes/`. All feature routes live under `server/modules/<featureName>/routes.ts`.
+
+---
+
+## Frontend (mandatory)
+
+- **New screen:** Add a page in `client/src/pages/<name>.tsx` (default export) and a `Route` in `App.tsx` (in `PublicRouter` or `AuthenticatedRouter`).
+- **Data:** Use TanStack Query; prefer `queryKey: ["/api/..."]`; invalidate queries after mutations. Types from `@shared/schema` or `@shared/models/*`.
+- **Imports:** Use `@/` for client code and `@shared/` for shared types. Do not duplicate backend types.
+- **UI:** Compose from `@/components/ui/`; use Tailwind and theme tokens; use `cn()` for conditional classes. Use `useAuth()` from `@/hooks/use-auth` when needed.
+- If the change touches an API, backend tests must still pass: run **`npm run test:env`**.
+
+---
+
+## Verification
+
+After any backend or API-touching change, you **must** run:
+
+```bash
+npm run test:env
+```
+
+All tests must pass. Do not merge or ship without this.
