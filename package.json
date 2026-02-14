@@ -11,7 +11,8 @@
     "db:push": "drizzle-kit push",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:run:env": "node -r dotenv/config node_modules/.bin/vitest run"
+    "test:run:env": "node -r dotenv/config node_modules/.bin/vitest run",
+    "test:env": "node -r dotenv/config node_modules/.bin/vitest run"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.18.0",
