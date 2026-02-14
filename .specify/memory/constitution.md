@@ -2,7 +2,7 @@
 
 This document defines the **backend and frontend structure** and **mandatory rules** for adding or changing features. All contributors and tooling MUST follow it.
 
-**Cursor / Spec-kit:** This project has speckit initialized for Cursor. The same constitution is available at `.specify/memory/constitution.md` for spec-kit tools, and Cursor applies it via the always-on rule in `.cursor/rules/speckit-constitution.mdc`.
+**Canonical source:** `SPECKIT_CONSTITUTION.md` in the project root. This file is the spec-kit memory copy and MUST match that structure and content.
 
 ---
 
