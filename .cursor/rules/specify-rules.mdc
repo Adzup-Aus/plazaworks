@@ -1,0 +1,29 @@
+# Plaza-Works Development Guidelines
+
+Auto-generated from all feature plans. Last updated: 2026-02-16
+
+## Active Technologies
+
+- TypeScript 5.6 + Express, React 18, Vite, Drizzle ORM, TanStack Query, Zod, bcrypt, Resend (email) (001-admin-invite-users)
+
+## Project Structure
+
+```text
+src/
+tests/
+```
+
+## Commands
+
+npm test && npm run lint
+
+## Code Style
+
+TypeScript 5.6: Follow standard conventions
+
+## Recent Changes
+
+- 001-admin-invite-users: Added TypeScript 5.6 + Express, React 18, Vite, Drizzle ORM, TanStack Query, Zod, bcrypt, Resend (email)
+
+<!-- MANUAL ADDITIONS START -->
+<!-- MANUAL ADDITIONS END -->

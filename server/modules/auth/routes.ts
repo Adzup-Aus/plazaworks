@@ -6,6 +6,7 @@ import {
   authStorage,
   generateOTPCode,
 } from "../../routes/shared";
+import { sendOtpEmail } from "../../email";
 
 export function registerAuthRoutes(app: Express): void {
   // Request OTP code (email or phone)
@@ -28,6 +29,13 @@ export function registerAuthRoutes(app: Express): void {
         expiresAt,
       });
 
+      if (email) {
+        try {
+          await sendOtpEmail(email, code);
+        } catch (e) {
+          console.error("Failed to send OTP email:", e);
+        }
+      }
       console.log(`OTP Code for ${email || phone}: ${code}`);
 
       res.json({
@@ -203,6 +211,12 @@ export function registerAuthRoutes(app: Express): void {
         expiresAt,
       });
 
+      try {
+        await sendOtpEmail(email, code);
+        console.log(`Verification email sent to ${email}`);
+      } catch (e) {
+        console.error("Failed to send verification email:", e);
+      }
       console.log(`Verification code for ${email}: ${code}`);
 
       res.status(201).json({
@@ -335,6 +349,11 @@ export function registerAuthRoutes(app: Express): void {
           expiresAt,
         });
 
+        try {
+          await sendOtpEmail(email, code);
+        } catch (e) {
+          console.error("Failed to send password reset email:", e);
+        }
         console.log(`Password reset code for ${email}: ${code}`);
       }
 

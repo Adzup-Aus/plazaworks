@@ -7,6 +7,7 @@ import {
   createClientPortalToken,
   type ClientPortalRequest,
 } from "../../routes/shared";
+import { sendOtpEmail } from "../../email";
 
 export function registerClientPortalRoutes(app: Express): void {
   // Share link for job
@@ -158,6 +159,11 @@ export function registerClientPortalRoutes(app: Express): void {
         "login"
       );
 
+      try {
+        await sendOtpEmail(email, verificationCode.code);
+      } catch (e) {
+        console.error("[CLIENT PORTAL] Failed to send OTP email:", e);
+      }
       console.log(`[CLIENT PORTAL] OTP code for ${email}: ${verificationCode.code}`);
 
       res.json({

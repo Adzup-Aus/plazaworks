@@ -4,14 +4,15 @@
 # Example: ./deploy/deploy-remote.sh 46.62.225.112
 # Requires: rsync, ssh. Run from project root.
 #
+# App domain: app.plazaworks.com.au (set APP_URL to override final message).
 # Env file: uses .env.production if present (server DB is port 5432), else .env.
-# Create .env.production with DATABASE_URL from install-server.sh output.
 
 set -e
 
 SERVER="${1:-46.62.225.112}"
 REMOTE_USER="${REMOTE_USER:-root}"
 APP_DIR="/var/www/plazaworks"
+APP_URL="${APP_URL:-https://app.plazaworks.com.au}"
 
 echo "Deploying to ${REMOTE_USER}@${SERVER}:${APP_DIR}"
 
@@ -43,4 +44,4 @@ fi
 # On server: run deploy
 ssh "${REMOTE_USER}@${SERVER}" "cd ${APP_DIR} && bash deploy/deploy.sh"
 
-echo "Deploy complete. Open http://${SERVER}"
+echo "Deploy complete. Open ${APP_URL}"

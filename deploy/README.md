@@ -1,6 +1,15 @@
 # Deploy Plaza Works to Hetzner (Ubuntu)
 
-Server: **46.62.225.112** (replace with your IP if different).
+- **Server:** 46.62.225.112 (replace with your IP if different)
+- **App URL:** https://app.plazaworks.com.au (domain on Cloudflare → point DNS to server IP)
+
+---
+
+## Domain (Cloudflare)
+
+1. In Cloudflare, add an **A** record: **app** → your server IP (e.g. 46.62.225.112). Proxy (orange cloud) is optional; turn it off if you want Let’s Encrypt to issue certificates directly to your server.
+2. Nginx is configured for **server_name app.plazaworks.com.au**. After enabling the site and reloading nginx, the app is available at http://app.plazaworks.com.au.
+3. For HTTPS: on the server run `certbot --nginx -d app.plazaworks.com.au` (see [HTTPS](#https-required-for-cloudflare-full--full-strict) below).
 
 ---
 
@@ -130,13 +139,22 @@ nginx -t && systemctl reload nginx
 
 ---
 
-## HTTPS (optional)
+## HTTPS (required for Cloudflare Full / Full (strict))
 
-For TLS with Let’s Encrypt:
+Origin must serve HTTPS so Cloudflare can use Full or Full (strict). One-time on the server:
+
+```bash
+ssh root@46.62.225.112
+cd /var/www/plazaworks
+CERTBOT_EMAIL=your@email.com sudo -E bash deploy/setup-https.sh
+```
+
+Or: `sudo bash deploy/setup-https.sh` (will prompt for email). The script installs certbot, gets a cert for **app.plazaworks.com.au**, and configures nginx for 443. Then in Cloudflare set SSL/TLS to **Full** or **Full (strict)**.
+
+**Manual alternative:**
 
 ```bash
 apt install -y certbot python3-certbot-nginx
-certbot --nginx -d yourdomain.com
+certbot --nginx -d app.plazaworks.com.au --agree-tos -m your@email.com
 ```
 
-Then in nginx config, use `listen 443 ssl` and the paths Certbot adds. Restart nginx after changes.
