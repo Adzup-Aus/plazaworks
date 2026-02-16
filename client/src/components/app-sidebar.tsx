@@ -37,6 +37,7 @@ import {
   Target,
   Shield,
   UserCircle,
+  UserPlus,
   Settings,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
@@ -107,6 +108,11 @@ const adminNavItems = [
     title: "Super Admin",
     url: "/admin",
     icon: Shield,
+  },
+  {
+    title: "Invite users",
+    url: "/admin/invites",
+    icon: UserPlus,
   },
 ];
 

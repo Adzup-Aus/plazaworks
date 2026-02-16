@@ -108,6 +108,22 @@ export async function sendInvoiceNotification(
   });
 }
 
+export async function sendUserInviteEmail(email: string, acceptInviteUrl: string) {
+  return sendEmail({
+    to: email,
+    subject: "You're invited to Plaza Works",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>You're invited to Plaza Works</h2>
+        <p>An administrator has invited you to create an account. Click the link below to set your password and get started:</p>
+        <a href="${acceptInviteUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 10px 0;">Set your password</a>
+        <p style="color: #666; font-size: 14px;">This link will expire in 7 days. If you didn't expect this invite, you can ignore this email.</p>
+      </div>
+    `,
+    text: `You're invited to Plaza Works. Set your password and get started: ${acceptInviteUrl}. This link expires in 7 days.`,
+  });
+}
+
 export async function sendOtpEmail(email: string, otp: string) {
   return sendEmail({
     to: email,

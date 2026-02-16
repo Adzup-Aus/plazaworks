@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import crypto from "crypto";
 import {
   storage,
   isAuthenticated,
@@ -6,7 +7,7 @@ import {
   authStorage,
   generateOTPCode,
 } from "../../routes/shared";
-import { sendOtpEmail } from "../../email";
+import { sendOtpEmail, sendUserInviteEmail } from "../../email";
 
 export function registerAuthRoutes(app: Express): void {
   // Request OTP code (email or phone)
@@ -162,72 +163,9 @@ export function registerAuthRoutes(app: Express): void {
     }
   });
 
-  // Register with email/password
-  app.post("/api/auth/register", async (req: any, res) => {
-    try {
-      const { email, password, firstName, lastName } = req.body;
-
-      if (!email || !password) {
-        return res.status(400).json({ message: "Email and password are required" });
-      }
-
-      if (password.length < 8) {
-        return res.status(400).json({ message: "Password must be at least 8 characters" });
-      }
-
-      const existing = await storage.getAuthIdentityByIdentifier("email", email.toLowerCase());
-      if (existing) {
-        return res.status(400).json({ message: "Email is already registered" });
-      }
-
-      const bcrypt = await import("bcrypt");
-      const passwordHash = await bcrypt.hash(password, 12);
-
-      const newUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      await storage.createAuthIdentity({
-        userId: newUserId,
-        type: "email",
-        identifier: email.toLowerCase(),
-        passwordHash,
-        isVerified: false,
-        isPrimary: true,
-      });
-
-      await authStorage.upsertUser({
-        id: newUserId,
-        email: email.toLowerCase(),
-        firstName: firstName || undefined,
-        lastName: lastName || undefined,
-      });
-
-      const code = generateOTPCode();
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-      await storage.createVerificationCode({
-        email: email.toLowerCase(),
-        code,
-        purpose: "verify_email",
-        expiresAt,
-      });
-
-      try {
-        await sendOtpEmail(email, code);
-        console.log(`Verification email sent to ${email}`);
-      } catch (e) {
-        console.error("Failed to send verification email:", e);
-      }
-      console.log(`Verification code for ${email}: ${code}`);
-
-      res.status(201).json({
-        message: "Account created. Please verify your email.",
-        userId: newUserId,
-        requiresVerification: true,
-      });
-    } catch (err: any) {
-      console.error("Error registering:", err);
-      res.status(500).json({ message: "Failed to create account" });
-    }
+  // Register with email/password – disabled; registration is by invite only.
+  app.post("/api/auth/register", (_req: any, res) => {
+    res.status(410).json({ message: "Registration is by invite only." });
   });
 
   app.post("/api/auth/login", async (req: any, res) => {
@@ -527,6 +465,175 @@ export function registerAuthRoutes(app: Express): void {
     } catch (err) {
       console.error("Error checking super-admin:", err);
       res.json({ isSuperAdmin: false });
+    }
+  });
+
+  async function isSuperAdmin(req: any): Promise<boolean> {
+    const userId = getUserId(req);
+    if (!userId) return false;
+    const memberships = await storage.getUserMemberships(userId);
+    for (const m of memberships) {
+      const org = await storage.getOrganization(m.organizationId);
+      if (org?.isOwner && (m.role === "owner" || m.role === "admin")) return true;
+    }
+    return false;
+  }
+
+  const INVITE_EXPIRY_DAYS = 7;
+
+  app.post("/api/invites", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      if (!(await isSuperAdmin(req))) {
+        return res.status(403).json({ message: "Only an admin can invite users" });
+      }
+
+      const { email } = req.body;
+      const normalized = typeof email === "string" ? email.trim().toLowerCase() : "";
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!normalized || !emailRegex.test(normalized)) {
+        return res.status(400).json({ message: "Invalid email" });
+      }
+
+      const existingIdentity = await storage.getAuthIdentityByIdentifier("email", normalized);
+      if (existingIdentity) {
+        return res.status(400).json({ message: "Email is already registered" });
+      }
+
+      const token = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+
+      const existingInvites = await storage.listUserInvites({ status: "pending" });
+      const pendingForEmail = existingInvites.find((i) => i.email === normalized);
+      let invite;
+      if (pendingForEmail) {
+        const updated = await storage.updateUserInvite(pendingForEmail.id, { token, expiresAt });
+        invite = updated ?? pendingForEmail;
+      } else {
+        invite = await storage.createUserInvite({
+          email: normalized,
+          token,
+          invitedBy: userId,
+          expiresAt,
+        });
+      }
+
+      const baseUrl = process.env.BASE_URL || (req.protocol + "://" + req.get("host"));
+      const acceptUrl = `${baseUrl}/accept-invite?token=${token}`;
+      try {
+        await sendUserInviteEmail(normalized, acceptUrl);
+      } catch (e) {
+        console.error("Failed to send invite email:", e);
+      }
+
+      return res.status(201).json({
+        message: "Invitation sent",
+        inviteId: invite.id,
+        email: normalized,
+        expiresAt: invite.expiresAt.toISOString(),
+      });
+    } catch (err: any) {
+      console.error("Error creating invite:", err);
+      res.status(500).json({ message: "Failed to send invitation" });
+    }
+  });
+
+  app.get("/api/invites", isAuthenticated, async (req: any, res) => {
+    try {
+      if (!(await isSuperAdmin(req))) {
+        return res.status(403).json({ message: "Only an admin can list invites" });
+      }
+      const status = req.query.status as string | undefined;
+      const validStatus = status === "pending" || status === "used" || status === "expired" ? status : undefined;
+      const invites = await storage.listUserInvites(validStatus ? { status: validStatus } : undefined);
+      return res.json({
+        invites: invites.map((i) => ({
+          id: i.id,
+          email: i.email,
+          expiresAt: i.expiresAt,
+          usedAt: i.usedAt,
+          createdAt: i.createdAt,
+          invitedBy: i.invitedBy,
+        })),
+      });
+    } catch (err: any) {
+      console.error("Error listing invites:", err);
+      res.status(500).json({ message: "Failed to list invites" });
+    }
+  });
+
+  app.get("/api/invites/accept", async (req: any, res) => {
+    try {
+      const token = typeof req.query.token === "string" ? req.query.token.trim() : "";
+      if (!token) {
+        return res.status(400).json({ message: "Invalid or expired invite link", valid: false });
+      }
+      const invite = await storage.getUserInviteByToken(token);
+      if (!invite) {
+        return res.status(400).json({ message: "Invalid or expired invite link", valid: false });
+      }
+      if (invite.usedAt) {
+        return res.status(400).json({ message: "Invalid or expired invite link", valid: false });
+      }
+      if (new Date() > invite.expiresAt) {
+        return res.status(400).json({ message: "Invalid or expired invite link", valid: false });
+      }
+      return res.json({ email: invite.email, valid: true, inviteId: invite.id });
+    } catch (err: any) {
+      console.error("Error validating invite:", err);
+      res.status(500).json({ message: "Invalid or expired invite link", valid: false });
+    }
+  });
+
+  app.post("/api/invites/accept", async (req: any, res) => {
+    try {
+      const { token, password } = req.body;
+      const t = typeof token === "string" ? token.trim() : "";
+      if (!t) {
+        return res.status(400).json({ message: "Invalid or expired invite link" });
+      }
+      if (!password || typeof password !== "string" || password.length < 8) {
+        return res.status(400).json({ message: "Password must be at least 8 characters" });
+      }
+      const invite = await storage.getUserInviteByToken(t);
+      if (!invite) {
+        return res.status(400).json({ message: "Invalid or expired invite link" });
+      }
+      if (invite.usedAt) {
+        return res.status(400).json({ message: "Invalid or expired invite link" });
+      }
+      if (new Date() > invite.expiresAt) {
+        return res.status(400).json({ message: "Invalid or expired invite link" });
+      }
+
+      const bcrypt = await import("bcrypt");
+      const passwordHash = await bcrypt.hash(password, 12);
+      const newUserId = `user_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+
+      await authStorage.upsertUser({
+        id: newUserId,
+        email: invite.email,
+      });
+      await storage.createAuthIdentity({
+        userId: newUserId,
+        type: "email",
+        identifier: invite.email,
+        passwordHash,
+        isVerified: true,
+        isPrimary: true,
+      });
+      await storage.markUserInviteUsed(invite.id);
+
+      return res.status(201).json({
+        message: "Account created. You can now sign in.",
+        userId: newUserId,
+      });
+    } catch (err: any) {
+      console.error("Error accepting invite:", err);
+      res.status(500).json({ message: "Failed to create account" });
     }
   });
 }

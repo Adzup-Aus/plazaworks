@@ -24,8 +24,8 @@
 
 **Purpose**: Ensure script and test structure for seed and auth/invite tests.
 
-- [ ] T001 Create `scripts/` directory at repo root and add npm script to run admin seed (e.g. `"seed:admin": "tsx scripts/seed-admin.ts"` in package.json) if not present.
-- [ ] T002 [P] Ensure `server/__tests__/api.auth.test.ts` exists (create minimal file if missing) for auth and invite API tests.
+- [x] T001 Create `scripts/` directory at repo root and add npm script to run admin seed (e.g. `"seed:admin": "tsx scripts/seed-admin.ts"` in package.json) if not present.
+- [x] T002 [P] Ensure `server/__tests__/api.auth.test.ts` exists (create minimal file if missing) for auth and invite API tests.
 
 ---
 
@@ -35,10 +35,10 @@
 
 **Checkpoint**: After this phase, user_invites table exists and storage can create/list/accept invites.
 
-- [ ] T003 [P] Add `user_invites` table to `shared/models/auth.ts` (id, email, token, invitedBy, expiresAt, usedAt, createdAt) with indexes on email, token (unique), and (expiresAt, usedAt).
-- [ ] T004 Re-export `userInvites` and related types from `shared/schema.ts` (import from shared/models/auth and export; add to schema if not auto-exported).
-- [ ] T005 Add user-invite storage methods in `server/storage.ts` (or AuthTenantRepository): createUserInvite, getUserInviteByToken, listUserInvites, markUserInviteUsed; ensure repository/db uses shared user_invites table.
-- [ ] T006 Re-export userInvites and invite types from `server/modules/auth/model.ts` for use in auth routes.
+- [x] T003 [P] Add `user_invites` table to `shared/models/auth.ts` (id, email, token, invitedBy, expiresAt, usedAt, createdAt) with indexes on email, token (unique), and (expiresAt, usedAt).
+- [x] T004 Re-export `userInvites` and related types from `shared/schema.ts` (import from shared/models/auth and export; add to schema if not auto-exported).
+- [x] T005 Add user-invite storage methods in `server/storage.ts` (or AuthTenantRepository): createUserInvite, getUserInviteByToken, listUserInvites, markUserInviteUsed; ensure repository/db uses shared user_invites table.
+- [x] T006 Re-export userInvites and invite types from `server/modules/auth/model.ts` for use in auth routes.
 
 ---
 
@@ -50,11 +50,11 @@
 
 ### Implementation for User Story 1
 
-- [ ] T007 [US1] Implement admin seed script in `scripts/seed-admin.ts`: create or get owner organization, create user with email cliff@gmail.com, create auth_identity with bcrypt hash for secret1234, add user as organization_member (owner or admin) of owner org; idempotent (skip if admin user already exists).
-- [ ] T008 [US1] Disable public registration in `server/modules/auth/routes.ts`: change POST /api/auth/register to return 410 Gone (or 404) with body `{ "message": "Registration is by invite only." }`.
-- [ ] T009 [US1] Remove register route and link from client: in `client/src/App.tsx` remove Register import and `<Route path="/register" component={Register} />`; remove `/register` from isPublicRoute check; remove any “Sign up” link to /register from `client/src/pages/login.tsx` (or equivalent).
-- [ ] T010 [US1] Optionally redirect /register to login: if keeping a `/register` path for bookmarks, add a single route that redirects to /login with a query or message that registration is by invite only (otherwise omit /register entirely).
-- [ ] T011 [US1] Add or update API tests in `server/__tests__/api.auth.test.ts`: test POST /api/auth/login with cliff@gmail.com and correct password returns 200 and session; test POST /api/auth/register returns 410 (or 404) with expected message; test unauthenticated GET /api/auth/session returns isAuthenticated false.
+- [x] T007 [US1] Implement admin seed script in `scripts/seed-admin.ts`: create or get owner organization, create user with email cliff@gmail.com, create auth_identity with bcrypt hash for secret1234, add user as organization_member (owner or admin) of owner org; idempotent (skip if admin user already exists).
+- [x] T008 [US1] Disable public registration in `server/modules/auth/routes.ts`: change POST /api/auth/register to return 410 Gone (or 404) with body `{ "message": "Registration is by invite only." }`.
+- [x] T009 [US1] Remove register route and link from client: in `client/src/App.tsx` remove Register import and `<Route path="/register" component={Register} />`; remove `/register` from isPublicRoute check; remove any “Sign up” link to /register from `client/src/pages/login.tsx` (or equivalent).
+- [x] T010 [US1] Optionally redirect /register to login: if keeping a `/register` path for bookmarks, add a single route that redirects to /login with a query or message that registration is by invite only (otherwise omit /register entirely).
+- [x] T011 [US1] Add or update API tests in `server/__tests__/api.auth.test.ts`: test POST /api/auth/login with cliff@gmail.com and correct password returns 200 and session; test POST /api/auth/register returns 410 (or 404) with expected message; test unauthenticated GET /api/auth/session returns isAuthenticated false.
 
 **Checkpoint**: Admin can log in; registration is disabled; api.auth tests pass.
 
@@ -68,12 +68,12 @@
 
 ### Implementation for User Story 2
 
-- [ ] T012 [US2] Implement POST /api/invites in `server/modules/auth/routes.ts`: require auth and super-admin (or seeded admin email cliff@gmail.com); validate body (email required, valid format); if auth_identity exists for email return 400 “Email is already registered”; create or resend user_invite (new token, expiresAt e.g. 7 days), send invite email with link to /accept-invite?token=; return 201 with inviteId, email, expiresAt.
-- [ ] T013 [US2] Implement GET /api/invites in `server/modules/auth/routes.ts`: require auth and super-admin; optional query status=pending|used|expired; return 200 with invites array (id, email, expiresAt, usedAt, createdAt, invitedBy).
-- [ ] T014 [US2] Add invite email sending in `server/email.ts` (or existing email module): function to send user-invite email with accept-invite link (base URL + /accept-invite?token=); call from POST /api/invites.
-- [ ] T015 [US2] Add admin invite page in `client/src/pages/invite.tsx`: list invites (GET /api/invites), form to submit email (POST /api/invites); show success/error toasts; gate by isSuperAdmin (redirect or hide if not admin).
-- [ ] T016 [US2] Add route and nav for invite page: in `client/src/App.tsx` add Route for invite page (e.g. path `/admin/invites` or `/invite` under AuthenticatedRouter); in `client/src/components/app-sidebar.tsx` (or nav) add “Invite users” link for super-admin only.
-- [ ] T017 [US2] Add API tests in `server/__tests__/api.auth.test.ts`: POST /api/invites unauthenticated returns 401; POST as non-admin returns 403; POST with valid email as admin returns 201; POST with already-registered email returns 400; GET /api/invites as admin returns 200 with array.
+- [x] T012 [US2] Implement POST /api/invites in `server/modules/auth/routes.ts`: require auth and super-admin (or seeded admin email cliff@gmail.com); validate body (email required, valid format); if auth_identity exists for email return 400 “Email is already registered”; create or resend user_invite (new token, expiresAt e.g. 7 days), send invite email with link to /accept-invite?token=; return 201 with inviteId, email, expiresAt.
+- [x] T013 [US2] Implement GET /api/invites in `server/modules/auth/routes.ts`: require auth and super-admin; optional query status=pending|used|expired; return 200 with invites array (id, email, expiresAt, usedAt, createdAt, invitedBy).
+- [x] T014 [US2] Add invite email sending in `server/email.ts` (or existing email module): function to send user-invite email with accept-invite link (base URL + /accept-invite?token=); call from POST /api/invites.
+- [x] T015 [US2] Add admin invite page in `client/src/pages/invite.tsx`: list invites (GET /api/invites), form to submit email (POST /api/invites); show success/error toasts; gate by isSuperAdmin (redirect or hide if not admin).
+- [x] T016 [US2] Add route and nav for invite page: in `client/src/App.tsx` add Route for invite page (e.g. path `/admin/invites` or `/invite` under AuthenticatedRouter); in `client/src/components/app-sidebar.tsx` (or nav) add “Invite users” link for super-admin only.
+- [x] T017 [US2] Add API tests in `server/__tests__/api.auth.test.ts`: POST /api/invites unauthenticated returns 401; POST as non-admin returns 403; POST with valid email as admin returns 201; POST with already-registered email returns 400; GET /api/invites as admin returns 200 with array.
 
 **Checkpoint**: Admin can create and list invites; invite email sent; tests pass.
 
@@ -87,11 +87,11 @@
 
 ### Implementation for User Story 3
 
-- [ ] T018 [US3] Implement GET /api/invites/accept in `server/modules/auth/routes.ts`: query token; if missing or invalid/expired/used return 400 `{ "message": "Invalid or expired invite link", "valid": false }`; else return 200 with email (masked or full), valid: true, inviteId.
-- [ ] T019 [US3] Implement POST /api/invites/accept in `server/modules/auth/routes.ts`: body token, password (min 8 chars); validate token and invite (pending, not expired); create user (users table) and auth_identity (email + password hash); mark invite usedAt; return 201 with message and userId.
-- [ ] T020 [US3] Add accept-user-invite page in `client/src/pages/accept-user-invite.tsx`: on mount read token from query, GET /api/invites/accept?token=; if invalid/expired show message and link to login or “contact admin”; if valid show form (password, confirm password), POST /api/invites/accept on submit; on success redirect to /login with success message.
-- [ ] T021 [US3] Add public route for accept-invite: in `client/src/App.tsx` add Route path `/accept-invite` component AcceptUserInvite in PublicRouter; add `/accept-invite` to isPublicRoute check so unauthenticated users can open the page.
-- [ ] T022 [US3] Add API tests in `server/__tests__/api.auth.test.ts`: GET /api/invites/accept without token or with bad token returns 400; POST /api/invites/accept with valid token and password creates user and returns 201; POST with expired/used token returns 400; after accept, login with new email/password succeeds.
+- [x] T018 [US3] Implement GET /api/invites/accept in `server/modules/auth/routes.ts`: query token; if missing or invalid/expired/used return 400 `{ "message": "Invalid or expired invite link", "valid": false }`; else return 200 with email (masked or full), valid: true, inviteId.
+- [x] T019 [US3] Implement POST /api/invites/accept in `server/modules/auth/routes.ts`: body token, password (min 8 chars); validate token and invite (pending, not expired); create user (users table) and auth_identity (email + password hash); mark invite usedAt; return 201 with message and userId.
+- [x] T020 [US3] Add accept-user-invite page in `client/src/pages/accept-user-invite.tsx`: on mount read token from query, GET /api/invites/accept?token=; if invalid/expired show message and link to login or “contact admin”; if valid show form (password, confirm password), POST /api/invites/accept on submit; on success redirect to /login with success message.
+- [x] T021 [US3] Add public route for accept-invite: in `client/src/App.tsx` add Route path `/accept-invite` component AcceptUserInvite in PublicRouter; add `/accept-invite` to isPublicRoute check so unauthenticated users can open the page.
+- [x] T022 [US3] Add API tests in `server/__tests__/api.auth.test.ts`: GET /api/invites/accept without token or with bad token returns 400; POST /api/invites/accept with valid token and password creates user and returns 201; POST with expired/used token returns 400; after accept, login with new email/password succeeds.
 
 **Checkpoint**: Invitee can set password and sign in; expired/used handled; tests pass.
 
@@ -101,9 +101,9 @@
 
 **Purpose**: Cleanup, validation, and full suite pass.
 
-- [ ] T023 Remove or repurpose `client/src/pages/register.tsx`: delete file or replace with redirect to login with “Registration is by invite only” message so no dead code remains.
-- [ ] T024 Run `npm run test:env` and fix any failing tests; ensure all new and updated tests in `server/__tests__/api.auth.test.ts` pass.
-- [ ] T025 [P] Run through `specs/001-admin-invite-users/quickstart.md`: seed admin, login, create invite, accept invite, sign in as invitee; document any env (e.g. RESEND_API_KEY) needed for email.
+- [x] T023 Remove or repurpose `client/src/pages/register.tsx`: delete file or replace with redirect to login with “Registration is by invite only” message so no dead code remains.
+- [x] T024 Run `npm run test:env` and fix any failing tests; ensure all new and updated tests in `server/__tests__/api.auth.test.ts` pass.
+- [x] T025 [P] Run through `specs/001-admin-invite-users/quickstart.md`: seed admin, login, create invite, accept invite, sign in as invitee; document any env (e.g. RESEND_API_KEY) needed for email.
 
 ---
 

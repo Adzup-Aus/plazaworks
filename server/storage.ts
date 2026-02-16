@@ -91,6 +91,8 @@ import {
   type InsertVerificationCode,
   type OrganizationInvite,
   type InsertOrganizationInvite,
+  type UserInvite,
+  type InsertUserInvite,
   // Client Portal types
   type Client,
   type InsertClient,
@@ -471,6 +473,13 @@ export interface IStorage {
   createOrganizationInvite(invite: InsertOrganizationInvite): Promise<OrganizationInvite>;
   acceptInvite(id: string, userId: string): Promise<OrganizationInvite | undefined>;
   deleteOrganizationInvite(id: string): Promise<boolean>;
+
+  // User invites (admin invites new app user by email)
+  createUserInvite(invite: InsertUserInvite): Promise<UserInvite>;
+  getUserInviteByToken(token: string): Promise<UserInvite | undefined>;
+  listUserInvites(opts?: { status?: "pending" | "used" | "expired" }): Promise<UserInvite[]>;
+  markUserInviteUsed(id: string): Promise<void>;
+  updateUserInvite(id: string, data: { token: string; expiresAt: Date }): Promise<UserInvite | undefined>;
 
   // Client operations
   getClients(organizationId: string): Promise<Client[]>;
@@ -2881,6 +2890,26 @@ export class DatabaseStorage implements IStorage {
 
   async deleteOrganizationInvite(id: string): Promise<boolean> {
     return this.authRepo.deleteOrganizationInvite(id);
+  }
+
+  async createUserInvite(invite: InsertUserInvite): Promise<UserInvite> {
+    return this.authRepo.createUserInvite(invite);
+  }
+
+  async getUserInviteByToken(token: string): Promise<UserInvite | undefined> {
+    return this.authRepo.getUserInviteByToken(token);
+  }
+
+  async listUserInvites(opts?: { status?: "pending" | "used" | "expired" }): Promise<UserInvite[]> {
+    return this.authRepo.listUserInvites(opts);
+  }
+
+  async markUserInviteUsed(id: string): Promise<void> {
+    return this.authRepo.markUserInviteUsed(id);
+  }
+
+  async updateUserInvite(id: string, data: { token: string; expiresAt: Date }): Promise<UserInvite | undefined> {
+    return this.authRepo.updateUserInvite(id, data);
   }
 
   // =====================
