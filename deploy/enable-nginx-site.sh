@@ -18,5 +18,5 @@ cp "${APP_DIR}/deploy/nginx-plazaworks.conf" /etc/nginx/sites-available/plazawor
 ln -sf /etc/nginx/sites-available/plazaworks /etc/nginx/sites-enabled/
 
 nginx -t && systemctl reload nginx
-echo "Done. Visit http://$(curl -s -4 ifconfig.co 2>/dev/null || echo 'your-server-ip')/"
+echo "Done. Visit https://app.plazaworks.com.au (or http:// until HTTPS is set up)"
 echo "If the app does not load, check: pm2 status plazaworks && pm2 logs plazaworks"

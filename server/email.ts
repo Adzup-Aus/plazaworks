@@ -40,6 +40,15 @@ export async function sendEmail(options: EmailOptions) {
     text: options.text,
   });
 
+  // Resend returns { data, error } and does not throw; check for API errors
+  if (result.error) {
+    const err = new Error(
+      `Resend API error: ${result.error.message ?? JSON.stringify(result.error)}`
+    );
+    (err as any).resendError = result.error;
+    throw err;
+  }
+
   return result;
 }
 

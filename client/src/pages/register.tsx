@@ -70,7 +70,7 @@ export default function Register() {
       await apiRequest("POST", "/api/auth/login", { email, password });
       
       toast({ title: "Email verified", description: "Welcome to Plaza Works!" });
-      navigate("/onboarding");
+      window.location.href = "/jobs";
     } catch (err: any) {
       toast({ title: "Verification failed", description: err.message, variant: "destructive" });
     } finally {
