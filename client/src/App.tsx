@@ -32,6 +32,8 @@ import Productivity from "@/pages/productivity";
 import Capacity from "@/pages/capacity";
 import KpiDashboard from "@/pages/kpi-dashboard";
 import Admin from "@/pages/admin";
+import Invite from "@/pages/invite";
+import AcceptUserInvite from "@/pages/accept-user-invite";
 import Clients from "@/pages/clients";
 import Settings from "@/pages/settings";
 import ClientPortalLogin from "@/pages/client-portal-login";
@@ -61,6 +63,7 @@ function AuthenticatedRouter() {
       <Route path="/clients" component={Clients} />
       <Route path="/settings" component={Settings} />
       <Route path="/admin" component={Admin} />
+      <Route path="/admin/invites" component={Invite} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -115,6 +118,7 @@ function PublicRouter() {
       <Route path="/" component={Landing} />
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
+      <Route path="/accept-invite" component={AcceptUserInvite} />
       <Route path="/invite/:code" component={AcceptInvite} />
       <Route path="/portal/login" component={ClientPortalLogin} />
       <Route path="/portal/dashboard" component={ClientPortalDashboard} />
@@ -131,10 +135,16 @@ function AppContent() {
   const pathname = typeof window !== "undefined" ? window.location.pathname : "";
   const isPublicRoute = pathname === "/" || 
                         pathname === "/login" || 
-                        pathname === "/register" || 
+                        pathname === "/register" ||
                         pathname.startsWith("/invite/") ||
+                        pathname.startsWith("/accept-invite") ||
                         pathname.startsWith("/portal/") ||
                         pathname.startsWith("/pay/");
+
+  // Accept-invite must be reachable whether user is logged in or not (invite link in email).
+  if (pathname.startsWith("/accept-invite")) {
+    return <PublicRouter />;
+  }
 
   if (isPublicRoute && !isAuthenticated) {
     return <PublicRouter />;

@@ -11,6 +11,8 @@ import type {
   InsertVerificationCode,
   OrganizationInvite,
   InsertOrganizationInvite,
+  UserInvite,
+  InsertUserInvite,
 } from "@shared/schema";
 import {
   organizations,
@@ -19,8 +21,9 @@ import {
   authIdentities,
   verificationCodes,
   organizationInvites,
+  userInvites,
 } from "@shared/schema";
-import { eq, and, desc, lte } from "drizzle-orm";
+import { eq, and, desc, lte, gt, isNull, isNotNull } from "drizzle-orm";
 import { db } from "../db";
 
 export class AuthTenantRepository {
@@ -247,5 +250,58 @@ export class AuthTenantRepository {
   async deleteOrganizationInvite(id: string): Promise<boolean> {
     await this.db.delete(organizationInvites).where(eq(organizationInvites.id, id));
     return true;
+  }
+
+  // User invites (admin invites new app user by email)
+  async createUserInvite(invite: InsertUserInvite): Promise<UserInvite> {
+    const [created] = await this.db.insert(userInvites).values(invite).returning();
+    return created;
+  }
+
+  async getUserInviteByToken(token: string): Promise<UserInvite | undefined> {
+    const [invite] = await this.db
+      .select()
+      .from(userInvites)
+      .where(eq(userInvites.token, token));
+    return invite;
+  }
+
+  async listUserInvites(opts?: { status?: "pending" | "used" | "expired" }): Promise<UserInvite[]> {
+    const now = new Date();
+    if (opts?.status === "pending") {
+      return this.db
+        .select()
+        .from(userInvites)
+        .where(and(isNull(userInvites.usedAt), gt(userInvites.expiresAt, now)))
+        .orderBy(desc(userInvites.createdAt));
+    }
+    if (opts?.status === "used") {
+      return this.db
+        .select()
+        .from(userInvites)
+        .where(isNotNull(userInvites.usedAt))
+        .orderBy(desc(userInvites.createdAt));
+    }
+    if (opts?.status === "expired") {
+      return this.db
+        .select()
+        .from(userInvites)
+        .where(and(isNull(userInvites.usedAt), lte(userInvites.expiresAt, now)))
+        .orderBy(desc(userInvites.createdAt));
+    }
+    return this.db.select().from(userInvites).orderBy(desc(userInvites.createdAt));
+  }
+
+  async markUserInviteUsed(id: string): Promise<void> {
+    await this.db.update(userInvites).set({ usedAt: new Date() }).where(eq(userInvites.id, id));
+  }
+
+  async updateUserInvite(id: string, data: { token: string; expiresAt: Date }): Promise<UserInvite | undefined> {
+    const [updated] = await this.db
+      .update(userInvites)
+      .set({ token: data.token, expiresAt: data.expiresAt })
+      .where(eq(userInvites.id, id))
+      .returning();
+    return updated;
   }
 }

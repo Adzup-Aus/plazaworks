@@ -23,5 +23,26 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// User invites: pending invite by email to create a new app user (admin-only).
+export const userInvites = pgTable(
+  "user_invites",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    email: varchar("email", { length: 255 }).notNull(),
+    token: varchar("token", { length: 64 }).notNull().unique(),
+    invitedBy: varchar("invited_by").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    usedAt: timestamp("used_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_user_invites_email").on(table.email),
+    index("idx_user_invites_token").on(table.token),
+    index("idx_user_invites_expires_used").on(table.expiresAt, table.usedAt),
+  ]
+);
+
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
+export type UserInvite = typeof userInvites.$inferSelect;
+export type InsertUserInvite = typeof userInvites.$inferInsert;
