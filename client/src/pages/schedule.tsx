@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,7 +46,20 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { ListTodo, Pencil, Loader2 } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { ListTodo, Pencil, Loader2, ChevronDown } from "lucide-react";
 import type { Activity, Job, ScheduleEntry, StaffProfile } from "@shared/schema";
 
 type ScheduleDayEntry = {
@@ -114,9 +127,26 @@ export default function Schedule() {
   const [globalNotes, setGlobalNotes] = useState<string>("");
   const [dragSelection, setDragSelection] = useState<DragSelection | null>(null);
   const [rightSheetOpen, setRightSheetOpen] = useState(false);
+  const [slotStartTime, setSlotStartTime] = useState("");
+  const [slotEndTime, setSlotEndTime] = useState("");
+  const [selectedSlotJobId, setSelectedSlotJobId] = useState<string | null>(null);
+  const [selectedSlotActivityId, setSelectedSlotActivityId] = useState<string | null>(null);
   const [activityEditId, setActivityEditId] = useState<string | null>(null);
   const [newActivityName, setNewActivityName] = useState("");
+  const [jobComboboxOpen, setJobComboboxOpen] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (rightSheetOpen && dragSelection) {
+      const start = Math.min(dragSelection.startHour, dragSelection.endHour);
+      const end = Math.max(dragSelection.startHour, dragSelection.endHour);
+      const endHour = end === 23 ? 24 : end + 1;
+      setSlotStartTime(`${String(start).padStart(2, "0")}:00`);
+      setSlotEndTime(`${String(endHour).padStart(2, "0")}:00`);
+      setSelectedSlotJobId(null);
+      setSelectedSlotActivityId(null);
+    }
+  }, [rightSheetOpen, dragSelection]);
 
   const { data: jobs, isLoading: jobsLoading } = useQuery<Job[]>({
     queryKey: ["/api/jobs"],
@@ -466,19 +496,17 @@ export default function Schedule() {
   };
 
   const handleConfirmAssignment = (jobId?: string, activityId?: string) => {
-    if (!dragSelection || (!jobId && !activityId)) return;
-    const start = Math.min(dragSelection.startHour, dragSelection.endHour);
-    const end = Math.max(dragSelection.startHour, dragSelection.endHour);
-    const startTime = `${String(start).padStart(2, "0")}:00`;
-    const endHour = end === 23 ? 24 : end + 1;
-    const endTime = `${String(endHour).padStart(2, "0")}:00`;
+    const id = jobId ?? selectedSlotJobId ?? activityId ?? selectedSlotActivityId;
+    if (!dragSelection || !id) return;
+    const startTime = slotStartTime || "09:00";
+    const endTime = slotEndTime || "10:00";
     createScheduleEntryMutation.mutate({
       staffId: dragSelection.staffId,
       scheduledDate: dragSelection.scheduledDate,
       startTime,
       endTime,
-      ...(jobId ? { jobId } : {}),
-      ...(activityId ? { activityId } : {}),
+      ...(jobId ?? selectedSlotJobId ? { jobId: jobId ?? selectedSlotJobId! } : {}),
+      ...(activityId ?? selectedSlotActivityId ? { activityId: activityId ?? selectedSlotActivityId! } : {}),
     });
   };
 
@@ -1108,35 +1136,75 @@ export default function Schedule() {
           {dragSelection && (
             <div className="mt-4 space-y-4">
               <p className="text-sm text-muted-foreground">
-                {selectedDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}, staff row · {formatHour(Math.min(dragSelection.startHour, dragSelection.endHour))} – {formatHour(Math.max(dragSelection.startHour, dragSelection.endHour) + (dragSelection.startHour === dragSelection.endHour ? 1 : 0))}
+                {selectedDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}, staff row
               </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label className="text-sm">Start time</Label>
+                  <Input
+                    type="time"
+                    value={slotStartTime}
+                    onChange={(e) => setSlotStartTime(e.target.value)}
+                    className="w-full"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm">End time</Label>
+                  <Input
+                    type="time"
+                    value={slotEndTime}
+                    onChange={(e) => setSlotEndTime(e.target.value)}
+                    className="w-full"
+                  />
+                </div>
+              </div>
               <div>
-                <h3 className="text-sm font-medium mb-2">Jobs</h3>
-                <ScrollArea className="h-40 rounded border p-2">
-                  {jobs?.filter((j) => j.status !== "completed" && j.status !== "cancelled").length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No jobs available</p>
-                  ) : (
-                    <ul className="space-y-1">
-                      {jobs?.filter((j) => j.status !== "completed" && j.status !== "cancelled").map((job) => (
-                        <li key={job.id}>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full justify-start"
-                            onClick={() => handleConfirmAssignment(job.id)}
-                            disabled={createScheduleEntryMutation.isPending}
-                          >
-                            {job.clientName} – {job.jobType}
-                          </Button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </ScrollArea>
+                <Label className="text-sm font-medium mb-2 block">Job</Label>
+                <Popover open={jobComboboxOpen} onOpenChange={setJobComboboxOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={jobComboboxOpen}
+                      className="w-full justify-between font-normal"
+                    >
+                      {selectedSlotJobId
+                        ? (() => {
+                            const j = jobs?.find((x) => x.id === selectedSlotJobId);
+                            return j ? `${j.clientName} – ${j.jobType}` : "Select job...";
+                          })()
+                        : "Select job..."}
+                      <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search jobs..." />
+                      <CommandList>
+                        <CommandEmpty>No job found.</CommandEmpty>
+                        <CommandGroup>
+                          {jobs?.filter((j) => j.status !== "completed" && j.status !== "cancelled").map((job) => (
+                            <CommandItem
+                              key={job.id}
+                              value={`${job.clientName} ${job.jobType}`}
+                              onSelect={() => {
+                                setSelectedSlotJobId(job.id);
+                                setSelectedSlotActivityId(null);
+                                setJobComboboxOpen(false);
+                              }}
+                            >
+                              {job.clientName} – {job.jobType}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
               <div>
                 <h3 className="text-sm font-medium mb-2">Activities</h3>
-                <ScrollArea className="h-40 rounded border p-2">
+                <ScrollArea className="h-32 rounded border p-2">
                   {(activities ?? []).length === 0 ? (
                     <p className="text-sm text-muted-foreground">No activities</p>
                   ) : (
@@ -1146,8 +1214,11 @@ export default function Schedule() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="w-full justify-start bg-violet-500/10 border-violet-500/30"
-                            onClick={() => handleConfirmAssignment(undefined, a.id)}
+                            className={`w-full justify-start ${selectedSlotActivityId === a.id ? "bg-violet-500/20 border-violet-500" : "bg-violet-500/10 border-violet-500/30"}`}
+                            onClick={() => {
+                              setSelectedSlotActivityId(a.id);
+                              setSelectedSlotJobId(null);
+                            }}
                             disabled={createScheduleEntryMutation.isPending}
                           >
                             {a.name}
@@ -1158,13 +1229,21 @@ export default function Schedule() {
                   )}
                 </ScrollArea>
               </div>
-              <Button
-                variant="ghost"
-                className="w-full"
-                onClick={() => { setRightSheetOpen(false); setDragSelection(null); }}
-              >
-                Cancel
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1"
+                  disabled={(!selectedSlotJobId && !selectedSlotActivityId) || createScheduleEntryMutation.isPending}
+                  onClick={() => handleConfirmAssignment()}
+                >
+                  {createScheduleEntryMutation.isPending ? "Assigning..." : "Assign"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => { setRightSheetOpen(false); setDragSelection(null); }}
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
           )}
         </SheetContent>
