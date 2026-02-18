@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -158,6 +158,16 @@ export default function Schedule() {
   const [editingEntry, setEditingEntry] = useState<ScheduleEntry | null>(null);
   const [dragCurrentTime, setDragCurrentTime] = useState<string | null>(null);
   const [dragTooltipPos, setDragTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  const [pendingEntryDrag, setPendingEntryDrag] = useState<{ entry: ScheduleEntry; durationSlots: number } | null>(null);
+  const [entryDrag, setEntryDrag] = useState<{ entry: ScheduleEntry; durationSlots: number } | null>(null);
+  const [dropTargetSlot, setDropTargetSlot] = useState<number | null>(null);
+  const dropTargetSlotRef = useRef<number | null>(null);
+  const entryDragRef = useRef<{ entry: ScheduleEntry; durationSlots: number } | null>(null);
+  const pendingEntryDragRef = useRef<{ entry: ScheduleEntry; durationSlots: number } | null>(null);
+  const hasMovedRef = useRef(false);
+  dropTargetSlotRef.current = dropTargetSlot;
+  entryDragRef.current = entryDrag;
+  pendingEntryDragRef.current = pendingEntryDrag;
   const { toast } = useToast();
 
   useEffect(() => {
@@ -181,6 +191,52 @@ export default function Schedule() {
       setSelectedSlotActivityId(null);
     }
   }, [rightSheetOpen, dragSelection]);
+
+  useEffect(() => {
+    if (!pendingEntryDrag && !entryDrag) return;
+    const onPointerMove = () => {
+      const pending = pendingEntryDragRef.current;
+      if (pending && !hasMovedRef.current) {
+        hasMovedRef.current = true;
+        const startSlot = timeToSlot(pending.entry.startTime);
+        setEntryDrag({ entry: pending.entry, durationSlots: pending.durationSlots });
+        setDropTargetSlot(startSlot);
+        setPendingEntryDrag(null);
+      }
+    };
+    const onPointerUp = () => {
+      const slot = dropTargetSlotRef.current;
+      const drag = entryDragRef.current;
+      const pending = pendingEntryDragRef.current;
+      if (drag && slot != null) {
+        const clampedSlot = Math.max(0, Math.min(slot, TOTAL_SLOTS - drag.durationSlots));
+        const newStart = slotToTime(clampedSlot);
+        const newEnd = slotToTime(clampedSlot + drag.durationSlots);
+        updateScheduleEntryMutation.mutate({
+          id: drag.entry.id,
+          staffId: drag.entry.staffId,
+          scheduledDate: drag.entry.scheduledDate,
+          startTime: newStart,
+          endTime: newEnd,
+          jobId: drag.entry.jobId ?? undefined,
+          activityId: drag.entry.activityId ?? undefined,
+        });
+      } else if (pending) {
+        setEditingEntry(pending.entry);
+        setRightSheetOpen(true);
+      }
+      setPendingEntryDrag(null);
+      setEntryDrag(null);
+      setDropTargetSlot(null);
+      hasMovedRef.current = false;
+    };
+    document.addEventListener("pointermove", onPointerMove);
+    document.addEventListener("pointerup", onPointerUp);
+    return () => {
+      document.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [pendingEntryDrag, entryDrag]);
 
   const { data: jobs, isLoading: jobsLoading } = useQuery<Job[]>({
     queryKey: ["/api/jobs"],
@@ -505,6 +561,7 @@ export default function Schedule() {
   );
 
   const handlePointerDown = (staffId: string, hour: number, e: React.PointerEvent) => {
+    if (entryDrag) return;
     const cellWidth = e.currentTarget.getBoundingClientRect().width;
     const slot = getSlotFromPointer(hour, e.nativeEvent.offsetX, cellWidth);
     setDragSelection({ staffId, scheduledDate: selectedDateStr, startSlot: slot, endSlot: slot });
@@ -513,6 +570,12 @@ export default function Schedule() {
   };
 
   const handlePointerMove = (staffId: string, hour: number, e: React.PointerEvent) => {
+    if (entryDrag && entryDrag.entry.staffId === staffId) {
+      const cellWidth = e.currentTarget.getBoundingClientRect().width;
+      const slot = getSlotFromPointer(hour, e.nativeEvent.offsetX, cellWidth);
+      setDropTargetSlot(slot);
+      return;
+    }
     if (!dragSelection || dragSelection.staffId !== staffId) return;
     const cellWidth = e.currentTarget.getBoundingClientRect().width;
     const slot = getSlotFromPointer(hour, e.nativeEvent.offsetX, cellWidth);
@@ -522,6 +585,7 @@ export default function Schedule() {
   };
 
   const handlePointerUp = () => {
+    if (entryDrag) return;
     if (!dragSelection) return;
     setDragCurrentTime(null);
     setDragTooltipPos(null);
@@ -529,6 +593,12 @@ export default function Schedule() {
     const end = Math.max(dragSelection.startSlot, dragSelection.endSlot);
     setDragSelection((prev) => (prev ? { ...prev, startSlot: start, endSlot: end } : null));
     setRightSheetOpen(true);
+  };
+
+  const handleEntryBlockPointerDown = (entry: ScheduleEntry, durationSlots: number, e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setPendingEntryDrag({ entry, durationSlots });
   };
 
   const handleOpenEdit = (entry: ScheduleEntry, e: React.MouseEvent | React.PointerEvent) => {
@@ -868,7 +938,7 @@ export default function Schedule() {
                           const startMarkerLeftPct = isStartSlotInCell ? ((dragStart - cellStartSlot) / SLOTS_PER_HOUR) * 100 : 0;
                           const selectionDurationSlots = dragSelection?.staffId === staff.id ? dragEnd - dragStart + 1 : 0;
                           const midSlot = dragSelection?.staffId === staff.id ? (dragStart + dragEnd) / 2 : 0;
-                          const isDurationCenterInCell = hasSelectionInCell && selectionDurationSlots >= 24 && midSlot >= cellStartSlot && midSlot < cellEndSlot;
+                          const isDurationCenterInCell = hasSelectionInCell && selectionDurationSlots >= 1 && midSlot >= cellStartSlot && midSlot < cellEndSlot;
                           const durationCenterLeftPct = isDurationCenterInCell ? ((midSlot - cellStartSlot) / SLOTS_PER_HOUR) * 100 : 0;
                           const durationMinutes = selectionDurationSlots * 10;
                           const durationHours = Math.floor(durationMinutes / 60);
@@ -895,7 +965,7 @@ export default function Schedule() {
                           return (
                             <div
                               key={`${staff.id}-${hour}`}
-                              className={`border-b border-r min-h-[32px] relative overflow-visible ${startMatch ? "p-0" : ""}`}
+                              className={`border-b border-r min-h-[55px] relative overflow-visible ${startMatch ? "p-0" : ""}`}
                               onPointerDown={(e) => handlePointerDown(staff.id, hour, e)}
                               onPointerMove={(e) => handlePointerMove(staff.id, hour, e)}
                               onPointerUp={handlePointerUp}
@@ -908,7 +978,7 @@ export default function Schedule() {
                                   />
                                   {isDurationCenterInCell && (
                                     <div
-                                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-[2] pointer-events-none px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary text-primary-foreground whitespace-nowrap"
+                                      className="absolute bottom-1 -translate-x-1/2 z-[2] pointer-events-none px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary text-primary-foreground whitespace-nowrap"
                                       style={{ left: `${durationCenterLeftPct}%` }}
                                     >
                                       {durationLabel}
@@ -925,13 +995,27 @@ export default function Schedule() {
                                   <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-primary border-2 border-background shadow-sm" />
                                 </div>
                               )}
+                              {entryDrag?.entry.staffId === staff.id && dropTargetSlot != null && Math.floor(dropTargetSlot / SLOTS_PER_HOUR) === hour && (
+                                <div
+                                  className="absolute inset-y-0 z-[5] rounded px-1 py-0.5 text-xs text-white flex flex-col justify-center pointer-events-none border-2 border-dashed border-primary opacity-95"
+                                  style={{
+                                    left: `${((dropTargetSlot % SLOTS_PER_HOUR) / SLOTS_PER_HOUR) * 100}%`,
+                                    width: `${(entryDrag.durationSlots / SLOTS_PER_HOUR) * 100}%`,
+                                    minWidth: 0,
+                                    backgroundColor: entryDrag.entry.activityId && getActivityColor(entryDrag.entry) ? getActivityColor(entryDrag.entry)! : "hsl(var(--primary))",
+                                  }}
+                                >
+                                  <span className="text-[10px] font-medium opacity-90 whitespace-nowrap">{slotToTime(dropTargetSlot)}</span>
+                                  <span className="truncate">{getEntryLabel(entryDrag.entry)}</span>
+                                </div>
+                              )}
                               {startMatch && entry && (
                                 <div
                                   role="button"
                                   tabIndex={0}
-                                  className={`group absolute inset-y-0 z-10 rounded px-1 py-0.5 text-xs text-white truncate flex items-center cursor-pointer hover:opacity-95 ${
+                                  className={`group absolute inset-y-0 z-10 rounded px-1 py-0.5 text-xs text-white truncate flex items-center cursor-grab active:cursor-grabbing hover:opacity-95 ${
                                     entry.activityId ? "" : getStatusColor(entry.status || "scheduled")
-                                  }`}
+                                  } ${entryDrag?.entry.id === entry.id ? "opacity-20" : ""}`}
                                   style={{
                                     left: `${leftPct}%`,
                                     width: `${widthPct}%`,
@@ -941,8 +1025,7 @@ export default function Schedule() {
                                       : {}),
                                   }}
                                   title={getEntryLabel(entry)}
-                                  onClick={(e) => handleOpenEdit(entry, e)}
-                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onPointerDown={(e) => handleEntryBlockPointerDown(entry, durationSlots, e)}
                                 >
                                   <span className="truncate flex-1 min-w-0">{getEntryLabel(entry)}</span>
                                   <Button
@@ -950,6 +1033,7 @@ export default function Schedule() {
                                     variant="ghost"
                                     size="icon"
                                     className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 hover:bg-white/20 text-white rounded p-0"
+                                    onPointerDown={(e) => e.stopPropagation()}
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       e.preventDefault();
