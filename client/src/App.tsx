@@ -20,6 +20,7 @@ import Dashboard from "@/pages/dashboard";
 import Jobs from "@/pages/jobs";
 import JobForm from "@/pages/job-form";
 import Schedule from "@/pages/schedule";
+import Activities from "@/pages/activities";
 import Team from "@/pages/team";
 import Quotes from "@/pages/quotes";
 import QuoteForm from "@/pages/quote-form";
@@ -56,6 +57,7 @@ function AuthenticatedRouter() {
       <Route path="/invoices/new" component={InvoiceDetail} />
       <Route path="/invoices/:id" component={InvoiceDetail} />
       <Route path="/schedule" component={Schedule} />
+      <Route path="/activities" component={Activities} />
       <Route path="/productivity" component={Productivity} />
       <Route path="/capacity" component={Capacity} />
       <Route path="/kpi" component={KpiDashboard} />

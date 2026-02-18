@@ -12,6 +12,7 @@ export const activities = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 255 }).notNull(),
+    color: varchar("color", { length: 20 }).default("#6366f1"),
     sortOrder: integer("sort_order").default(0),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),

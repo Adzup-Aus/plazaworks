@@ -39,6 +39,7 @@ import {
   UserCircle,
   UserPlus,
   Settings,
+  ListTodo,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -62,6 +63,11 @@ const mainNavItems = [
     title: "Schedule",
     url: "/schedule",
     icon: Calendar,
+  },
+  {
+    title: "Activities",
+    url: "/activities",
+    icon: ListTodo,
   },
   {
     title: "Team",
