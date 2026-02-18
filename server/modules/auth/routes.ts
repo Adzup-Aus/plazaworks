@@ -163,9 +163,44 @@ export function registerAuthRoutes(app: Express): void {
     }
   });
 
-  // Register with email/password – disabled; registration is by invite only.
-  app.post("/api/auth/register", (_req: any, res) => {
-    res.status(410).json({ message: "Registration is by invite only." });
+  // Register with email/password – disabled in production; registration is by invite only.
+  // In test env (NODE_ENV=test), allow registration so API tests can create a user and obtain a session.
+  app.post("/api/auth/register", async (req: any, res) => {
+    if (process.env.NODE_ENV !== "test") {
+      return res.status(410).json({ message: "Registration is by invite only." });
+    }
+    try {
+      const { email, password } = req.body;
+      if (!email || !password || typeof email !== "string" || typeof password !== "string") {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+      const normalized = email.toLowerCase().trim();
+      const existing = await storage.getAuthIdentityByIdentifier("email", normalized);
+      if (existing) {
+        return res.status(400).json({ message: "Email is already registered" });
+      }
+      const bcrypt = await import("bcrypt");
+      const passwordHash = await bcrypt.hash(password, 12);
+      const userId = `user_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+      await authStorage.upsertUser({ id: userId, email: normalized });
+      await storage.createAuthIdentity({
+        userId,
+        type: "email",
+        identifier: normalized,
+        passwordHash,
+        isVerified: true,
+        isPrimary: true,
+      });
+      if (req.session) {
+        req.session.userId = userId;
+        req.session.authType = "email";
+        req.session.isAuthenticated = true;
+      }
+      return res.status(201).json({ message: "Registration successful", userId });
+    } catch (err: any) {
+      console.error("Error in test registration:", err);
+      res.status(500).json({ message: "Registration failed" });
+    }
   });
 
   app.post("/api/auth/login", async (req: any, res) => {

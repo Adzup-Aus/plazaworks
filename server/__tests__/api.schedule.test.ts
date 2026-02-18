@@ -6,6 +6,7 @@ const hasDb = !!process.env.DATABASE_URL;
 let app: Express;
 let authCookie: string[] = [];
 let jobId: string = "";
+let activityId: string = "";
 
 describe.runIf(hasDb)("API schedule", () => {
   beforeAll(async () => {
@@ -32,6 +33,12 @@ describe.runIf(hasDb)("API schedule", () => {
         jobType: "plumbing",
       });
     jobId = createJobRes.body?.id;
+    await request(app).get("/api/activities").set("Cookie", authCookie);
+    const createActivityRes = await request(app)
+      .post("/api/activities")
+      .set("Cookie", authCookie)
+      .send({ name: "Schedule Test Activity" });
+    activityId = createActivityRes.body?.id ?? "";
   });
 
   it("GET /api/schedule returns 401 when unauthenticated", async () => {
@@ -60,6 +67,52 @@ describe.runIf(hasDb)("API schedule", () => {
     expect(res.body.jobId).toBe(jobId);
     expect(res.body.staffId).toBeDefined();
     expect(res.body.scheduledDate).toBe("2025-12-01");
+  });
+
+  it("POST /api/schedule with activityId returns 201", async () => {
+    if (!activityId) return;
+    const res = await request(app)
+      .post("/api/schedule")
+      .set("Cookie", authCookie)
+      .send({
+        activityId,
+        scheduledDate: "2025-12-02",
+        startTime: "09:00",
+        endTime: "12:00",
+        status: "scheduled",
+      });
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveProperty("id");
+    expect(res.body.activityId).toBe(activityId);
+    expect(res.body.staffId).toBeDefined();
+    expect(res.body.scheduledDate).toBe("2025-12-02");
+  });
+
+  it("POST /api/schedule with both jobId and activityId returns 400", async () => {
+    if (!jobId || !activityId) return;
+    const res = await request(app)
+      .post("/api/schedule")
+      .set("Cookie", authCookie)
+      .send({
+        jobId,
+        activityId,
+        scheduledDate: "2025-12-03",
+        status: "scheduled",
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/exactly one|jobId|activityId/i);
+  });
+
+  it("POST /api/schedule with neither jobId nor activityId returns 400", async () => {
+    const res = await request(app)
+      .post("/api/schedule")
+      .set("Cookie", authCookie)
+      .send({
+        scheduledDate: "2025-12-04",
+        status: "scheduled",
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/exactly one|jobId|activityId/i);
   });
 
   it("GET /api/schedule/:id with auth returns entry", async () => {

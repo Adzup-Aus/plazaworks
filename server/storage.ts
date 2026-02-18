@@ -99,6 +99,8 @@ import {
   type ClientPortalAccount,
   type InsertClientPortalAccount,
   type ClientPortalVerificationCode,
+  type Activity,
+  type InsertActivity,
   type JobMilestone,
   type InsertJobMilestone,
   type MilestonePayment,
@@ -125,6 +127,7 @@ import {
   staffProfiles,
   userWorkingHours,
   jobs,
+  activities,
   scheduleEntries,
   pcItems,
   notifications,
@@ -211,6 +214,14 @@ export interface IStorage {
   createScheduleEntry(entry: InsertScheduleEntry): Promise<ScheduleEntry>;
   updateScheduleEntry(id: string, entry: Partial<InsertScheduleEntry>): Promise<ScheduleEntry | undefined>;
   deleteScheduleEntry(id: string): Promise<boolean>;
+
+  // Activity operations
+  getActivities(organizationId: string): Promise<Activity[]>;
+  getActivity(id: string): Promise<Activity | undefined>;
+  createActivity(activity: InsertActivity): Promise<Activity>;
+  updateActivity(id: string, activity: Partial<InsertActivity>): Promise<Activity | undefined>;
+  deleteActivity(id: string): Promise<boolean>;
+  getScheduleEntriesByActivity(activityId: string): Promise<ScheduleEntry[]>;
 
   // PC Item operations
   getPCItems(jobId: string): Promise<PCItem[]>;
@@ -667,6 +678,49 @@ export class DatabaseStorage implements IStorage {
   async deleteScheduleEntry(id: string): Promise<boolean> {
     await db.delete(scheduleEntries).where(eq(scheduleEntries.id, id));
     return true;
+  }
+
+  // Activity operations
+  async getActivities(organizationId: string): Promise<Activity[]> {
+    return db
+      .select()
+      .from(activities)
+      .where(eq(activities.organizationId, organizationId))
+      .orderBy(activities.sortOrder, activities.name);
+  }
+
+  async getActivity(id: string): Promise<Activity | undefined> {
+    const [a] = await db.select().from(activities).where(eq(activities.id, id));
+    return a;
+  }
+
+  async createActivity(activity: InsertActivity): Promise<Activity> {
+    const [created] = await db
+      .insert(activities)
+      .values({ ...activity, updatedAt: new Date() })
+      .returning();
+    return created;
+  }
+
+  async updateActivity(id: string, data: Partial<InsertActivity>): Promise<Activity | undefined> {
+    const [updated] = await db
+      .update(activities)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(activities.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteActivity(id: string): Promise<boolean> {
+    await db.delete(activities).where(eq(activities.id, id));
+    return true;
+  }
+
+  async getScheduleEntriesByActivity(activityId: string): Promise<ScheduleEntry[]> {
+    return db
+      .select()
+      .from(scheduleEntries)
+      .where(eq(scheduleEntries.activityId, activityId));
   }
 
   // PC Item operations

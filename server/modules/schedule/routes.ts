@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { storage, isAuthenticated, requireUserId } from "../../routes/shared";
-import { insertScheduleEntrySchema } from "./model";
+import { insertScheduleEntrySchema, patchScheduleEntrySchema } from "./model";
 
 export function registerScheduleRoutes(app: Express): void {
   app.get("/api/schedule", isAuthenticated, async (req, res) => {
@@ -46,7 +46,8 @@ export function registerScheduleRoutes(app: Express): void {
       }
 
       const scheduleData = {
-        jobId: req.body.jobId,
+        jobId: req.body.jobId ?? null,
+        activityId: req.body.activityId ?? null,
         staffId: req.body.staffId || staffProfile.id,
         scheduledDate: req.body.scheduledDate,
         startTime: req.body.startTime,
@@ -85,7 +86,8 @@ export function registerScheduleRoutes(app: Express): void {
       const created = [];
       for (const entry of entries) {
         const scheduleData = {
-          jobId: entry.jobId,
+          jobId: entry.jobId ?? null,
+          activityId: entry.activityId ?? null,
           staffId: entry.staffId || staffProfile.id,
           scheduledDate: entry.scheduledDate,
           startTime: entry.startTime,
@@ -161,12 +163,21 @@ export function registerScheduleRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/schedule/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/schedule/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const partialSchema = insertScheduleEntrySchema.partial();
-      const validation = partialSchema.safeParse(req.body);
+      const validation = patchScheduleEntrySchema.safeParse(req.body);
       if (!validation.success) {
         return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+      const existing = await storage.getScheduleEntry(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ message: "Schedule entry not found" });
+      }
+      const merged = { ...existing, ...validation.data };
+      const oneOf = (merged as any).jobId != null && (merged as any).activityId == null
+        || (merged as any).jobId == null && (merged as any).activityId != null;
+      if (!oneOf) {
+        return res.status(400).json({ message: "Exactly one of jobId or activityId must be set" });
       }
 
       const updated = await storage.updateScheduleEntry(req.params.id, validation.data);

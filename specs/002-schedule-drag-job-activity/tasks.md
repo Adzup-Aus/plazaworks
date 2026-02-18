@@ -24,7 +24,7 @@
 
 **Purpose**: Verify feature context and branch
 
-- [ ] T001 Verify feature branch 002-schedule-drag-job-activity and repo structure per specs/002-schedule-drag-job-activity/plan.md
+- [x] T001 Verify feature branch 002-schedule-drag-job-activity and repo structure per specs/002-schedule-drag-job-activity/plan.md
 
 ---
 
@@ -34,19 +34,19 @@
 
 **Independent Test**: GET /api/activities returns list; POST /api/schedule with activityId creates entry; seed provides Travel, Admin, Sales.
 
-- [ ] T002 [P] Create Activity model (table, relations, insert schema, types) in shared/models/activities.ts
-- [ ] T003 Re-export activities in shared/schema.ts
-- [ ] T004 [P] Extend schedule model: add activityId (FK to activities), make jobId nullable, add Zod one-of validation in shared/models/schedule.ts
-- [ ] T005 Run migration or drizzle push for activities table and schedule_entries (activity_id, job_id nullable)
-- [ ] T006 Add seed for default activities (Travel, Admin, Sales) in scripts or migration
-- [ ] T007 [P] Create server/modules/activities/model.ts re-exporting from @shared/schema
-- [ ] T008 Implement Activity CRUD routes (GET list, GET :id, POST, PATCH :id, DELETE :id) in server/modules/activities/routes.ts
-- [ ] T009 Register activities routes in server/routes/index.ts
-- [ ] T010 Extend server/storage.ts with Activity CRUD and schedule create/update accepting activityId with one-of validation
-- [ ] T011 Extend server/modules/schedule/routes.ts to accept activityId on POST/PATCH and validate exactly one of jobId or activityId
-- [ ] T012 [P] Add server/__tests__/api.activities.test.ts (GET list, GET :id, POST, PATCH, DELETE, 401 unauthenticated)
-- [ ] T013 Update server/__tests__/api.schedule.test.ts for POST with activityId and one-of validation (400 when both or neither)
-- [ ] T014 Run npm run test:env and fix any failures
+- [x] T002 [P] Create Activity model (table, relations, insert schema, types) in shared/models/activities.ts
+- [x] T003 Re-export activities in shared/schema.ts
+- [x] T004 [P] Extend schedule model: add activityId (FK to activities), make jobId nullable, add Zod one-of validation in shared/models/schedule.ts
+- [x] T005 Run migration or drizzle push for activities table and schedule_entries (activity_id, job_id nullable)
+- [x] T006 Add seed for default activities (Travel, Admin, Sales) in scripts or migration
+- [x] T007 [P] Create server/modules/activities/model.ts re-exporting from @shared/schema
+- [x] T008 Implement Activity CRUD routes (GET list, GET :id, POST, PATCH :id, DELETE :id) in server/modules/activities/routes.ts
+- [x] T009 Register activities routes in server/routes/index.ts
+- [x] T010 Extend server/storage.ts with Activity CRUD and schedule create/update accepting activityId with one-of validation
+- [x] T011 Extend server/modules/schedule/routes.ts to accept activityId on POST/PATCH and validate exactly one of jobId or activityId
+- [x] T012 [P] Add server/__tests__/api.activities.test.ts (GET list, GET :id, POST, PATCH, DELETE, 401 unauthenticated)
+- [x] T013 Update server/__tests__/api.schedule.test.ts for POST with activityId and one-of validation (400 when both or neither)
+- [x] T014 Run npm run test:env and fix any failures
 
 **Checkpoint**: Foundation ready — Activity API and schedule API support activities; tests pass.
 
@@ -58,9 +58,9 @@
 
 **Independent Test**: Select a day via picker or prev/next; schedule shows that day with hours (12 am–11 pm) on horizontal axis and staff rows; existing entries appear in correct hour range and row.
 
-- [ ] T015 [US1] Add or refine day picker (date control, prev/next day, Today) in client/src/pages/schedule.tsx
-- [ ] T016 [US1] Implement hourly timeline view for selected day: horizontal axis 12 am–11 pm, staff as rows in client/src/pages/schedule.tsx
-- [ ] T017 [US1] Fetch schedule entries by date range (GET /api/schedule?startDate&endDate) and render job entries in correct hour columns and staff rows in client/src/pages/schedule.tsx
+- [x] T015 [US1] Add or refine day picker (date control, prev/next day, Today) in client/src/pages/schedule.tsx
+- [x] T016 [US1] Implement hourly timeline view for selected day: horizontal axis 12 am–11 pm, staff as rows in client/src/pages/schedule.tsx
+- [x] T017 [US1] Fetch schedule entries by date range (GET /api/schedule?startDate&endDate) and render job entries in correct hour columns and staff rows in client/src/pages/schedule.tsx
 
 **Checkpoint**: User Story 1 testable — day selection and hourly grid with existing jobs visible.
 
@@ -72,10 +72,10 @@
 
 **Independent Test**: Drag on grid → range highlighted → on release right sidebar opens → select job and confirm → schedule entry created with startTime/endTime.
 
-- [ ] T018 [US2] Add pointer handlers (onPointerDown, onPointerMove, onPointerUp, onPointerCancel) for time-range selection on schedule grid in client/src/pages/schedule.tsx
-- [ ] T019 [US2] Normalize range to min/max and show visual feedback (e.g. highlight/outline) for selected range in client/src/pages/schedule.tsx
-- [ ] T020 [US2] On pointer up, open right sidebar (Sheet) with selected staffId, scheduledDate, startTime, endTime in client/src/pages/schedule.tsx
-- [ ] T021 [US2] In right sidebar, list jobs (GET /api/jobs) and on confirm POST /api/schedule with jobId, staffId, scheduledDate, startTime, endTime in client/src/pages/schedule.tsx
+- [x] T018 [US2] Add pointer handlers (onPointerDown, onPointerMove, onPointerUp, onPointerCancel) for time-range selection on schedule grid in client/src/pages/schedule.tsx
+- [x] T019 [US2] Normalize range to min/max and show visual feedback (e.g. highlight/outline) for selected range in client/src/pages/schedule.tsx
+- [x] T020 [US2] On pointer up, open right sidebar (Sheet) with selected staffId, scheduledDate, startTime, endTime in client/src/pages/schedule.tsx
+- [x] T021 [US2] In right sidebar, list jobs (GET /api/jobs) and on confirm POST /api/schedule with jobId, staffId, scheduledDate, startTime, endTime in client/src/pages/schedule.tsx
 
 **Checkpoint**: User Story 2 testable — drag-select and job assignment from right sidebar.
 
@@ -87,9 +87,9 @@
 
 **Independent Test**: Open schedule → left sidebar shows Activity list (incl. Travel, Admin, Sales) → create/edit/delete activity and list updates.
 
-- [ ] T022 [P] [US3] Add left sidebar section for Activities: list from GET /api/activities in client/src/pages/schedule.tsx
-- [ ] T023 [US3] Implement create Activity (form + POST /api/activities) in left sidebar in client/src/pages/schedule.tsx
-- [ ] T024 [US3] Implement edit (PATCH /api/activities/:id) and delete (DELETE /api/activities/:id) Activity in left sidebar in client/src/pages/schedule.tsx
+- [x] T022 [P] [US3] Add left sidebar section for Activities: list from GET /api/activities in client/src/pages/schedule.tsx
+- [x] T023 [US3] Implement create Activity (form + POST /api/activities) in left sidebar in client/src/pages/schedule.tsx
+- [x] T024 [US3] Implement edit (PATCH /api/activities/:id) and delete (DELETE /api/activities/:id) Activity in left sidebar in client/src/pages/schedule.tsx
 
 **Checkpoint**: User Story 3 testable — Activity CRUD from left sidebar.
 
@@ -101,9 +101,9 @@
 
 **Independent Test**: Drag range → right sidebar → select Activity → confirm → entry appears on grid; activity blocks look different from job blocks.
 
-- [ ] T025 [US4] In right sidebar, add Activities list (GET /api/activities) alongside Jobs in client/src/pages/schedule.tsx
-- [ ] T026 [US4] On Activity select and confirm, POST /api/schedule with activityId, staffId, scheduledDate, startTime, endTime in client/src/pages/schedule.tsx
-- [ ] T027 [US4] Render schedule entries that have activityId on grid visually distinct from job entries (e.g. label, style, or icon) in client/src/pages/schedule.tsx
+- [x] T025 [US4] In right sidebar, add Activities list (GET /api/activities) alongside Jobs in client/src/pages/schedule.tsx
+- [x] T026 [US4] On Activity select and confirm, POST /api/schedule with activityId, staffId, scheduledDate, startTime, endTime in client/src/pages/schedule.tsx
+- [x] T027 [US4] Render schedule entries that have activityId on grid visually distinct from job entries (e.g. label, style, or icon) in client/src/pages/schedule.tsx
 
 **Checkpoint**: User Story 4 testable — assign activity from right sidebar; activities distinguishable on grid.
 
@@ -113,9 +113,9 @@
 
 **Purpose**: Edge cases and verification
 
-- [ ] T028 [US2] Handle cancel right sidebar: clear selection and close without creating entry in client/src/pages/schedule.tsx
-- [ ] T029 [US2] Normalize backward drag to single span (start = min, end = max); support same-hour drag as single-hour slot in client/src/pages/schedule.tsx
-- [ ] T030 [P] Run quickstart verification: npm run test:env and manual smoke (day select, hourly grid, drag, right sidebar job/activity, left sidebar Activity CRUD) per specs/002-schedule-drag-job-activity/quickstart.md
+- [x] T028 [US2] Handle cancel right sidebar: clear selection and close without creating entry in client/src/pages/schedule.tsx
+- [x] T029 [US2] Normalize backward drag to single span (start = min, end = max); support same-hour drag as single-hour slot in client/src/pages/schedule.tsx
+- [x] T030 [P] Run quickstart verification: npm run test:env and manual smoke (day select, hourly grid, drag, right sidebar job/activity, left sidebar Activity CRUD) per specs/002-schedule-drag-job-activity/quickstart.md
 
 ---
 

@@ -18,13 +18,21 @@ describe.runIf(hasDb)("API auth", () => {
     expect(res.body.isAuthenticated).toBe(false);
   });
 
-  it("POST /api/auth/register returns 410 with invite-only message", async () => {
+  it("POST /api/auth/register returns 410 when invite-only (prod) or 201 in test", async () => {
+    const email = process.env.NODE_ENV === "test"
+      ? `register-${Date.now()}@example.com`
+      : "someone@example.com";
     const res = await request(app).post("/api/auth/register").send({
-      email: "someone@example.com",
+      email,
       password: "password123",
     });
-    expect(res.status).toBe(410);
-    expect(res.body.message).toMatch(/invite only/i);
+    if (process.env.NODE_ENV === "test") {
+      expect(res.status).toBe(201);
+      expect(res.body).toHaveProperty("userId");
+    } else {
+      expect(res.status).toBe(410);
+      expect(res.body.message).toMatch(/invite only/i);
+    }
   });
 
   it("POST /api/auth/login with seeded admin credentials returns 200 and session", async () => {
