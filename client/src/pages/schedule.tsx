@@ -59,7 +59,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { ListTodo, Pencil, Loader2, ChevronDown } from "lucide-react";
+import { Loader2, ChevronDown, X } from "lucide-react";
 import type { Activity, Job, ScheduleEntry, StaffProfile } from "@shared/schema";
 
 type ScheduleDayEntry = {
@@ -132,11 +132,20 @@ export default function Schedule() {
   const [selectedSlotJobId, setSelectedSlotJobId] = useState<string | null>(null);
   const [selectedSlotActivityId, setSelectedSlotActivityId] = useState<string | null>(null);
   const [selectedSlotStaffId, setSelectedSlotStaffId] = useState<string | null>(null);
-  const [activityEditId, setActivityEditId] = useState<string | null>(null);
-  const [newActivityName, setNewActivityName] = useState("");
   const [jobComboboxOpen, setJobComboboxOpen] = useState(false);
   const [staffComboboxOpen, setStaffComboboxOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<ScheduleEntry | null>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (rightSheetOpen && editingEntry) {
+      setSlotStartTime(editingEntry.startTime ?? "");
+      setSlotEndTime(editingEntry.endTime ?? "");
+      setSelectedSlotStaffId(editingEntry.staffId);
+      setSelectedSlotJobId(editingEntry.jobId ?? null);
+      setSelectedSlotActivityId(editingEntry.activityId ?? null);
+    }
+  }, [rightSheetOpen, editingEntry]);
 
   useEffect(() => {
     if (rightSheetOpen && dragSelection) {
@@ -230,50 +239,6 @@ export default function Schedule() {
     },
   });
 
-  const createActivityMutation = useMutation({
-    mutationFn: async (name: string) => {
-      const res = await apiRequest("POST", "/api/activities", { name });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/activities"] });
-      setNewActivityName("");
-      toast({ title: "Activity created" });
-    },
-    onError: (e: Error) => {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
-    },
-  });
-
-  const updateActivityMutation = useMutation({
-    mutationFn: async ({ id, name }: { id: string; name: string }) => {
-      const res = await apiRequest("PATCH", `/api/activities/${id}`, { name });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/activities"] });
-      setActivityEditId(null);
-      toast({ title: "Activity updated" });
-    },
-    onError: (e: Error) => {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
-    },
-  });
-
-  const deleteActivityMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/activities/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/activities"] });
-      setActivityEditId(null);
-      toast({ title: "Activity deleted" });
-    },
-    onError: (e: Error) => {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
-    },
-  });
-
   const deleteScheduleMutation = useMutation({
     mutationFn: async (id: string) => {
       await apiRequest("DELETE", `/api/schedule/${id}`);
@@ -291,6 +256,46 @@ export default function Schedule() {
         description: error.message,
         variant: "destructive",
       });
+    },
+  });
+
+  const updateScheduleEntryMutation = useMutation({
+    mutationFn: async ({
+      id,
+      staffId,
+      scheduledDate,
+      startTime,
+      endTime,
+      jobId,
+      activityId,
+    }: {
+      id: string;
+      staffId: string;
+      scheduledDate: string;
+      startTime: string;
+      endTime: string;
+      jobId?: string | null;
+      activityId?: string | null;
+    }) => {
+      const body: Record<string, unknown> = {
+        staffId,
+        scheduledDate,
+        startTime,
+        endTime,
+        jobId: jobId ?? null,
+        activityId: activityId ?? null,
+      };
+      const res = await apiRequest("PATCH", `/api/schedule/${id}`, body);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule"] });
+      setRightSheetOpen(false);
+      setEditingEntry(null);
+      toast({ title: "Schedule updated", description: "Entry has been updated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 
@@ -498,6 +503,32 @@ export default function Schedule() {
     setRightSheetOpen(true);
   };
 
+  const handleOpenEdit = (entry: ScheduleEntry, e: React.MouseEvent | React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setDragSelection(null);
+    setEditingEntry(entry);
+    setRightSheetOpen(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingEntry) return;
+    const jobId = selectedSlotJobId ?? undefined;
+    const activityId = selectedSlotActivityId ?? undefined;
+    if (!slotStartTime.trim() || !slotEndTime.trim() || !selectedSlotStaffId) return;
+    if (!jobId && !activityId) return;
+    if (jobId && activityId) return;
+    updateScheduleEntryMutation.mutate({
+      id: editingEntry.id,
+      staffId: selectedSlotStaffId,
+      scheduledDate: editingEntry.scheduledDate,
+      startTime: slotStartTime.trim(),
+      endTime: slotEndTime.trim(),
+      jobId: jobId || null,
+      activityId: activityId || null,
+    });
+  };
+
   const handleConfirmAssignment = (jobId?: string, activityId?: string) => {
     const id = jobId ?? selectedSlotJobId ?? activityId ?? selectedSlotActivityId;
     if (!dragSelection || !id) return;
@@ -529,96 +560,14 @@ export default function Schedule() {
     return "";
   };
 
-  return (
-    <div className="flex flex-1 gap-0 overflow-hidden">
-      {/* Left main bar: Activities */}
-      <aside className="flex w-56 flex-shrink-0 flex-col border-r bg-muted/30 p-4 overflow-y-auto">
-        <h2 className="mb-3 flex items-center gap-2 font-semibold">
-          <ListTodo className="h-4 w-4" />
-          Activities
-        </h2>
-        {activitiesLoading ? (
-          <Skeleton className="h-8 w-full" />
-        ) : (
-          <>
-            <ul className="space-y-1">
-              {(activities ?? []).map((a) => (
-                <li key={a.id} className="flex items-center justify-between gap-1 rounded-md group">
-                  {activityEditId === a.id ? (
-                    <div className="flex-1 flex items-center gap-1">
-                      <Input
-                        className="h-8 text-sm"
-                        defaultValue={a.name}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            const v = (e.target as HTMLInputElement).value.trim();
-                            if (v) updateActivityMutation.mutate({ id: a.id, name: v });
-                          }
-                          if (e.key === "Escape") setActivityEditId(null);
-                        }}
-                        onBlur={(e) => {
-                          const v = e.target.value.trim();
-                          if (v) updateActivityMutation.mutate({ id: a.id, name: v });
-                          setActivityEditId(null);
-                        }}
-                        autoFocus
-                      />
-                    </div>
-                  ) : (
-                    <>
-                      <span className="text-sm truncate flex-1">{a.name}</span>
-                      <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => setActivityEditId(a.id)}
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 text-destructive"
-                          onClick={() => {
-                            if (confirm("Delete this activity?")) deleteActivityMutation.mutate(a.id);
-                          }}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </>
-                  )}
-                </li>
-              ))}
-            </ul>
-            <div className="mt-3 flex gap-2">
-              <Input
-                placeholder="New activity"
-                value={newActivityName}
-                onChange={(e) => setNewActivityName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && newActivityName.trim()) {
-                    createActivityMutation.mutate(newActivityName.trim());
-                  }
-                }}
-                className="h-8 text-sm"
-              />
-              <Button
-                size="sm"
-                className="h-8"
-                disabled={!newActivityName.trim() || createActivityMutation.isPending}
-                onClick={() => {
-                  if (newActivityName.trim()) createActivityMutation.mutate(newActivityName.trim());
-                }}
-              >
-                {createActivityMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-              </Button>
-            </div>
-          </>
-        )}
-      </aside>
+  const getActivityColor = (entry: ScheduleEntry) => {
+    if (!entry.activityId) return null;
+    const act = activities?.find((a) => a.id === entry.activityId);
+    return act?.color ?? "#6366f1";
+  };
 
+  return (
+    <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex-1 flex flex-col min-w-0 overflow-auto space-y-6 p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -902,13 +851,37 @@ export default function Schedule() {
                             >
                               {startMatch && entry && (
                                 <div
-                                  className={`absolute inset-y-0 left-0 z-10 rounded px-1 py-0.5 text-xs text-white truncate flex items-center ${
-                                    entry.activityId ? "bg-violet-500" : getStatusColor(entry.status || "scheduled")
+                                  role="button"
+                                  tabIndex={0}
+                                  className={`group absolute inset-y-0 left-0 z-10 rounded px-1 py-0.5 text-xs text-white truncate flex items-center cursor-pointer hover:opacity-95 ${
+                                    entry.activityId ? "" : getStatusColor(entry.status || "scheduled")
                                   }`}
-                                  style={{ width: `${durationHours * 100}%`, minWidth: 0 }}
+                                  style={{
+                                    width: `${durationHours * 100}%`,
+                                    minWidth: 0,
+                                    ...(entry.activityId && getActivityColor(entry)
+                                      ? { backgroundColor: getActivityColor(entry)! }
+                                      : {}),
+                                  }}
                                   title={getEntryLabel(entry)}
+                                  onClick={(e) => handleOpenEdit(entry, e)}
+                                  onPointerDown={(e) => e.stopPropagation()}
                                 >
-                                  {getEntryLabel(entry)}
+                                  <span className="truncate flex-1 min-w-0">{getEntryLabel(entry)}</span>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 hover:bg-white/20 text-white rounded p-0"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                      deleteScheduleMutation.mutate(entry.id);
+                                    }}
+                                    aria-label="Delete schedule entry"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </Button>
                                 </div>
                               )}
                             </div>
@@ -1138,16 +1111,21 @@ export default function Schedule() {
 
       <Sheet open={rightSheetOpen} onOpenChange={(open) => {
         setRightSheetOpen(open);
-        if (!open) setDragSelection(null);
+        if (!open) {
+          setDragSelection(null);
+          setEditingEntry(null);
+        }
       }}>
         <SheetContent side="right" className="w-full sm:max-w-md">
           <SheetHeader>
-            <SheetTitle>Assign to slot</SheetTitle>
+            <SheetTitle>{editingEntry ? "Edit schedule entry" : "Assign to slot"}</SheetTitle>
           </SheetHeader>
-          {dragSelection && (
+          {(dragSelection || editingEntry) && (
             <div className="mt-4 space-y-4">
               <p className="text-sm text-muted-foreground">
-                {selectedDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                {(editingEntry?.scheduledDate ?? dragSelection?.scheduledDate ?? selectedDateStr)
+                  ? new Date(editingEntry?.scheduledDate ?? dragSelection?.scheduledDate ?? selectedDateStr).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+                  : selectedDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
               </p>
               <div>
                 <Label className="text-sm font-medium mb-2 block">Staff</Label>
@@ -1273,7 +1251,7 @@ export default function Schedule() {
                               setSelectedSlotActivityId(a.id);
                               setSelectedSlotJobId(null);
                             }}
-                            disabled={createScheduleEntryMutation.isPending}
+                            disabled={createScheduleEntryMutation.isPending || updateScheduleEntryMutation.isPending}
                           >
                             {a.name}
                           </Button>
@@ -1284,19 +1262,39 @@ export default function Schedule() {
                 </ScrollArea>
               </div>
               <div className="flex gap-2">
-                <Button
-                  className="flex-1"
-                  disabled={(!selectedSlotJobId && !selectedSlotActivityId) || createScheduleEntryMutation.isPending}
-                  onClick={() => handleConfirmAssignment()}
-                >
-                  {createScheduleEntryMutation.isPending ? "Assigning..." : "Assign"}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => { setRightSheetOpen(false); setDragSelection(null); }}
-                >
-                  Cancel
-                </Button>
+                {editingEntry ? (
+                  <>
+                    <Button
+                      className="flex-1"
+                      disabled={(!selectedSlotJobId && !selectedSlotActivityId) || !slotStartTime.trim() || !slotEndTime.trim() || !selectedSlotStaffId || updateScheduleEntryMutation.isPending}
+                      onClick={handleSaveEdit}
+                    >
+                      {updateScheduleEntryMutation.isPending ? "Saving..." : "Save"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => { setRightSheetOpen(false); setEditingEntry(null); }}
+                    >
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      className="flex-1"
+                      disabled={(!selectedSlotJobId && !selectedSlotActivityId) || createScheduleEntryMutation.isPending}
+                      onClick={() => handleConfirmAssignment()}
+                    >
+                      {createScheduleEntryMutation.isPending ? "Assigning..." : "Assign"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => { setRightSheetOpen(false); setDragSelection(null); }}
+                    >
+                      Cancel
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           )}
