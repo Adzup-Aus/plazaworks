@@ -131,9 +131,11 @@ export default function Schedule() {
   const [slotEndTime, setSlotEndTime] = useState("");
   const [selectedSlotJobId, setSelectedSlotJobId] = useState<string | null>(null);
   const [selectedSlotActivityId, setSelectedSlotActivityId] = useState<string | null>(null);
+  const [selectedSlotStaffId, setSelectedSlotStaffId] = useState<string | null>(null);
   const [activityEditId, setActivityEditId] = useState<string | null>(null);
   const [newActivityName, setNewActivityName] = useState("");
   const [jobComboboxOpen, setJobComboboxOpen] = useState(false);
+  const [staffComboboxOpen, setStaffComboboxOpen] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -143,6 +145,7 @@ export default function Schedule() {
       const endHour = end === 23 ? 24 : end + 1;
       setSlotStartTime(`${String(start).padStart(2, "0")}:00`);
       setSlotEndTime(`${String(endHour).padStart(2, "0")}:00`);
+      setSelectedSlotStaffId(dragSelection.staffId);
       setSelectedSlotJobId(null);
       setSelectedSlotActivityId(null);
     }
@@ -498,10 +501,14 @@ export default function Schedule() {
   const handleConfirmAssignment = (jobId?: string, activityId?: string) => {
     const id = jobId ?? selectedSlotJobId ?? activityId ?? selectedSlotActivityId;
     if (!dragSelection || !id) return;
-    const startTime = slotStartTime || "09:00";
-    const endTime = slotEndTime || "10:00";
+    const staffId = selectedSlotStaffId ?? dragSelection.staffId;
+    const startHour = Math.min(dragSelection.startHour, dragSelection.endHour);
+    const endHour = Math.max(dragSelection.startHour, dragSelection.endHour);
+    const rangeEndHour = endHour === 23 ? 24 : endHour + 1;
+    const startTime = `${String(startHour).padStart(2, "0")}:00`;
+    const endTime = `${String(rangeEndHour).padStart(2, "0")}:00`;
     createScheduleEntryMutation.mutate({
-      staffId: dragSelection.staffId,
+      staffId,
       scheduledDate: dragSelection.scheduledDate,
       startTime,
       endTime,
@@ -858,8 +865,8 @@ export default function Schedule() {
                   ))}
                 </div>
               ) : (
-                <div className="min-w-[800px]">
-                  <div className="grid gap-0 border rounded-md" style={{ gridTemplateColumns: "100px repeat(24, minmax(0, 1fr))" }}>
+                <div className="min-w-[800px] overflow-visible">
+                  <div className="grid gap-0 border rounded-md overflow-visible" style={{ gridTemplateColumns: "100px repeat(24, minmax(0, 1fr))" }}>
                     <div className="border-b border-r bg-muted/50 p-2 text-xs font-medium sticky left-0 z-10" />
                     {HOURS.map((h) => (
                       <div key={h} className="border-b border-r p-1 text-center text-xs text-muted-foreground" style={{ minWidth: 28 }}>
@@ -881,20 +888,24 @@ export default function Schedule() {
                             const eh = e.endTime != null ? parseInt(e.endTime.slice(0, 2), 10) : sh + 1;
                             return hour >= sh && hour < eh;
                           });
-                          const startMatch = entry != null && (entry.startTime != null ? parseInt(entry.startTime.slice(0, 2), 10) === hour : hour === 0);
+                          const entryStartHour = entry?.startTime != null ? parseInt(entry.startTime.slice(0, 2), 10) : 0;
+                          const entryEndHour = entry?.endTime != null ? parseInt(entry.endTime.slice(0, 2), 10) : entryStartHour + 1;
+                          const startMatch = entry != null && entryStartHour === hour;
+                          const durationHours = startMatch ? Math.max(1, entryEndHour - entryStartHour) : 0;
                           return (
                             <div
                               key={`${staff.id}-${hour}`}
-                              className={`border-b border-r min-h-[32px] ${isSelected ? "bg-primary/20 ring-1 ring-primary" : ""} ${startMatch ? "p-0" : ""}`}
+                              className={`border-b border-r min-h-[32px] relative overflow-visible ${isSelected ? "bg-primary/20 ring-1 ring-primary" : ""} ${startMatch ? "p-0" : ""}`}
                               onPointerDown={() => handlePointerDown(staff.id, hour)}
                               onPointerMove={() => handlePointerMove(staff.id, hour)}
                               onPointerUp={handlePointerUp}
                             >
                               {startMatch && entry && (
                                 <div
-                                  className={`rounded px-1 py-0.5 text-xs text-white truncate ${
+                                  className={`absolute inset-y-0 left-0 z-10 rounded px-1 py-0.5 text-xs text-white truncate flex items-center ${
                                     entry.activityId ? "bg-violet-500" : getStatusColor(entry.status || "scheduled")
                                   }`}
+                                  style={{ width: `${durationHours * 100}%`, minWidth: 0 }}
                                   title={getEntryLabel(entry)}
                                 >
                                   {getEntryLabel(entry)}
@@ -1136,8 +1147,51 @@ export default function Schedule() {
           {dragSelection && (
             <div className="mt-4 space-y-4">
               <p className="text-sm text-muted-foreground">
-                {selectedDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}, staff row
+                {selectedDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
               </p>
+              <div>
+                <Label className="text-sm font-medium mb-2 block">Staff</Label>
+                <Popover open={staffComboboxOpen} onOpenChange={setStaffComboboxOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={staffComboboxOpen}
+                      className="w-full justify-between font-normal"
+                    >
+                      {selectedSlotStaffId
+                        ? (() => {
+                            const s = staffList.find((x) => x.id === selectedSlotStaffId);
+                            return s ? (s.userId?.split("@")[0] || s.id.slice(0, 8)) : "Select staff...";
+                          })()
+                        : "Select staff..."}
+                      <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search staff..." />
+                      <CommandList>
+                        <CommandEmpty>No staff found.</CommandEmpty>
+                        <CommandGroup>
+                          {staffList.map((staff) => (
+                            <CommandItem
+                              key={staff.id}
+                              value={staff.userId ?? staff.id}
+                              onSelect={() => {
+                                setSelectedSlotStaffId(staff.id);
+                                setStaffComboboxOpen(false);
+                              }}
+                            >
+                              {staff.userId?.split("@")[0] || staff.id.slice(0, 8)}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label className="text-sm">Start time</Label>
