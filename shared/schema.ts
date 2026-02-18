@@ -9,10 +9,11 @@ export * from "./models/auth";
 // Re-export organization models (multi-tenant, identity, invites)
 export * from "./models/organizations";
 
-// Re-export staff, clients, jobs, schedule models
+// Re-export staff, clients, jobs, activities, schedule models
 export * from "./models/staff";
 export * from "./models/clients";
 export * from "./models/jobs";
+export * from "./models/activities";
 export * from "./models/schedule";
 
 // Import org and table refs so remaining schema can reference them

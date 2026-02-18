@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,7 +40,14 @@ import {
 } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Job, ScheduleEntry, StaffProfile } from "@shared/schema";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { ListTodo, Pencil, Loader2 } from "lucide-react";
+import type { Activity, Job, ScheduleEntry, StaffProfile } from "@shared/schema";
 
 type ScheduleDayEntry = {
   date: string;
@@ -51,7 +58,8 @@ type ScheduleDayEntry = {
 
 type CalendarDaySchedule = {
   entry: ScheduleEntry;
-  job: Job;
+  job?: Job;
+  activity?: Activity;
 };
 
 type CalendarDay = {
@@ -59,6 +67,13 @@ type CalendarDay = {
   isCurrentMonth: boolean;
   isToday: boolean;
   schedules: CalendarDaySchedule[];
+};
+
+type DragSelection = {
+  staffId: string;
+  scheduledDate: string;
+  startHour: number;
+  endHour: number;
 };
 
 function getStatusColor(status: string): string {
@@ -80,19 +95,52 @@ function formatStatus(status: string): string {
     .join(" ");
 }
 
+const HOURS = Array.from({ length: 24 }, (_, i) => i);
+
+function formatHour(h: number): string {
+  if (h === 0) return "12 am";
+  if (h < 12) return `${h} am`;
+  if (h === 12) return "12 pm";
+  return `${h - 12} pm`;
+}
+
 export default function Schedule() {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [viewMode, setViewMode] = useState<"month" | "day">("day");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<string>("");
   const [scheduleDays, setScheduleDays] = useState<ScheduleDayEntry[]>([]);
   const [globalNotes, setGlobalNotes] = useState<string>("");
+  const [dragSelection, setDragSelection] = useState<DragSelection | null>(null);
+  const [rightSheetOpen, setRightSheetOpen] = useState(false);
+  const [activityEditId, setActivityEditId] = useState<string | null>(null);
+  const [newActivityName, setNewActivityName] = useState("");
   const { toast } = useToast();
 
   const { data: jobs, isLoading: jobsLoading } = useQuery<Job[]>({
     queryKey: ["/api/jobs"],
   });
 
+  const { data: activities, isLoading: activitiesLoading } = useQuery<Activity[]>({
+    queryKey: ["/api/activities"],
+  });
+
+  const selectedDateStr = selectedDate.toISOString().split("T")[0];
   const { data: scheduleEntries, isLoading: scheduleLoading } = useQuery<ScheduleEntry[]>({
+    queryKey: ["/api/schedule", selectedDateStr],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/schedule?startDate=${selectedDateStr}&endDate=${selectedDateStr}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) throw new Error("Failed to fetch schedule");
+      return res.json();
+    },
+    enabled: viewMode === "day",
+  });
+
+  const allScheduleEntries = useQuery<ScheduleEntry[]>({
     queryKey: ["/api/schedule"],
   });
 
@@ -123,6 +171,73 @@ export default function Schedule() {
         description: error.message,
         variant: "destructive",
       });
+    },
+  });
+
+  const createScheduleEntryMutation = useMutation({
+    mutationFn: async (body: {
+      jobId?: string;
+      activityId?: string;
+      staffId: string;
+      scheduledDate: string;
+      startTime: string;
+      endTime: string;
+    }) => {
+      const res = await apiRequest("POST", "/api/schedule", body);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/schedule"] });
+      setRightSheetOpen(false);
+      setDragSelection(null);
+      toast({ title: "Scheduled", description: "Entry added to schedule." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const createActivityMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await apiRequest("POST", "/api/activities", { name });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/activities"] });
+      setNewActivityName("");
+      toast({ title: "Activity created" });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const updateActivityMutation = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const res = await apiRequest("PATCH", `/api/activities/${id}`, { name });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/activities"] });
+      setActivityEditId(null);
+      toast({ title: "Activity updated" });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const deleteActivityMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/activities/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/activities"] });
+      setActivityEditId(null);
+      toast({ title: "Activity deleted" });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
     },
   });
 
@@ -210,13 +325,14 @@ export default function Schedule() {
     return staff?.userId || "Unassigned";
   };
 
-  const isLoading = jobsLoading || scheduleLoading;
+  const entriesForMonth = viewMode === "month" ? (allScheduleEntries.data ?? []) : [];
+  const isLoading = jobsLoading || scheduleLoading || (viewMode === "day" && scheduleLoading);
 
   const unscheduledJobs = useMemo(() => {
     if (!jobs) return [];
-    const scheduledJobIds = new Set((scheduleEntries || []).map((e) => e.jobId));
+    const scheduledJobIds = new Set((allScheduleEntries.data || []).map((e) => e.jobId).filter(Boolean));
     return jobs.filter((job) => !scheduledJobIds.has(job.id) && job.status !== "completed" && job.status !== "cancelled");
-  }, [jobs, scheduleEntries]);
+  }, [jobs, allScheduleEntries.data]);
 
   const monthName = currentDate.toLocaleString("default", { month: "long" });
   const year = currentDate.getFullYear();
@@ -233,11 +349,18 @@ export default function Schedule() {
     const days: CalendarDay[] = [];
 
     const getSchedulesForDate = (dateStr: string): CalendarDaySchedule[] => {
-      return (scheduleEntries || [])
+      return (entriesForMonth || [])
         .filter((entry) => entry.scheduledDate === dateStr && entry.status !== "cancelled")
         .map((entry) => {
-          const job = jobs?.find((j) => j.id === entry.jobId);
-          return job ? { entry, job } : null;
+          if (entry.jobId) {
+            const job = jobs?.find((j) => j.id === entry.jobId);
+            return job ? { entry, job } : null;
+          }
+          if (entry.activityId) {
+            const activity = activities?.find((a) => a.id === entry.activityId);
+            return activity ? { entry, activity } : { entry };
+          }
+          return null;
         })
         .filter((s): s is CalendarDaySchedule => s !== null);
     };
@@ -279,7 +402,7 @@ export default function Schedule() {
     }
 
     return days;
-  }, [currentDate, jobs, scheduleEntries]);
+  }, [currentDate, jobs, activities, entriesForMonth]);
 
   const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -287,8 +410,16 @@ export default function Schedule() {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + direction, 1));
   };
 
+  const navigateDay = (direction: number) => {
+    const d = new Date(selectedDate);
+    d.setDate(d.getDate() + direction);
+    setSelectedDate(d);
+  };
+
   const goToToday = () => {
-    setCurrentDate(new Date());
+    const now = new Date();
+    setCurrentDate(now);
+    setSelectedDate(now);
   };
 
   const upcomingJobs = useMemo(() => {
@@ -296,19 +427,164 @@ export default function Schedule() {
     today.setHours(0, 0, 0, 0);
     const todayStr = today.toISOString().split("T")[0];
 
-    return (scheduleEntries || [])
+    return (allScheduleEntries.data || [])
       .filter((entry) => entry.scheduledDate >= todayStr)
       .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate))
       .slice(0, 5)
       .map((entry) => ({
         ...entry,
-        job: jobs?.find((j) => j.id === entry.jobId),
+        job: entry.jobId ? jobs?.find((j) => j.id === entry.jobId) : undefined,
+        activity: entry.activityId ? activities?.find((a) => a.id === entry.activityId) : undefined,
       }))
-      .filter((e) => e.job);
-  }, [scheduleEntries, jobs]);
+      .filter((e) => e.job || e.activity);
+  }, [allScheduleEntries.data, jobs, activities]);
+
+  const staffList = useMemo(
+    () => (staffProfiles || []).filter((s) => s.isActive !== false),
+    [staffProfiles]
+  );
+
+  const handlePointerDown = (staffId: string, hour: number) => {
+    setDragSelection({ staffId, scheduledDate: selectedDateStr, startHour: hour, endHour: hour });
+  };
+
+  const handlePointerMove = (staffId: string, hour: number) => {
+    if (!dragSelection || dragSelection.staffId !== staffId) return;
+    setDragSelection((prev) =>
+      prev ? { ...prev, endHour: hour } : null
+    );
+  };
+
+  const handlePointerUp = () => {
+    if (!dragSelection) return;
+    const start = Math.min(dragSelection.startHour, dragSelection.endHour);
+    const end = Math.max(dragSelection.startHour, dragSelection.endHour);
+    setDragSelection((prev) =>
+      prev ? { ...prev, startHour: start, endHour: end } : null
+    );
+    setRightSheetOpen(true);
+  };
+
+  const handleConfirmAssignment = (jobId?: string, activityId?: string) => {
+    if (!dragSelection || (!jobId && !activityId)) return;
+    const start = Math.min(dragSelection.startHour, dragSelection.endHour);
+    const end = Math.max(dragSelection.startHour, dragSelection.endHour);
+    const startTime = `${String(start).padStart(2, "0")}:00`;
+    const endHour = end === 23 ? 24 : end + 1;
+    const endTime = `${String(endHour).padStart(2, "0")}:00`;
+    createScheduleEntryMutation.mutate({
+      staffId: dragSelection.staffId,
+      scheduledDate: dragSelection.scheduledDate,
+      startTime,
+      endTime,
+      ...(jobId ? { jobId } : {}),
+      ...(activityId ? { activityId } : {}),
+    });
+  };
+
+  const getEntryLabel = (entry: ScheduleEntry) => {
+    if (entry.jobId) {
+      const job = jobs?.find((j) => j.id === entry.jobId);
+      return job?.clientName ?? "Job";
+    }
+    if (entry.activityId) {
+      const act = activities?.find((a) => a.id === entry.activityId);
+      return act?.name ?? "Activity";
+    }
+    return "";
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-1 gap-0 overflow-hidden">
+      {/* Left main bar: Activities */}
+      <aside className="flex w-56 flex-shrink-0 flex-col border-r bg-muted/30 p-4 overflow-y-auto">
+        <h2 className="mb-3 flex items-center gap-2 font-semibold">
+          <ListTodo className="h-4 w-4" />
+          Activities
+        </h2>
+        {activitiesLoading ? (
+          <Skeleton className="h-8 w-full" />
+        ) : (
+          <>
+            <ul className="space-y-1">
+              {(activities ?? []).map((a) => (
+                <li key={a.id} className="flex items-center justify-between gap-1 rounded-md group">
+                  {activityEditId === a.id ? (
+                    <div className="flex-1 flex items-center gap-1">
+                      <Input
+                        className="h-8 text-sm"
+                        defaultValue={a.name}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            const v = (e.target as HTMLInputElement).value.trim();
+                            if (v) updateActivityMutation.mutate({ id: a.id, name: v });
+                          }
+                          if (e.key === "Escape") setActivityEditId(null);
+                        }}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim();
+                          if (v) updateActivityMutation.mutate({ id: a.id, name: v });
+                          setActivityEditId(null);
+                        }}
+                        autoFocus
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <span className="text-sm truncate flex-1">{a.name}</span>
+                      <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => setActivityEditId(a.id)}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-destructive"
+                          onClick={() => {
+                            if (confirm("Delete this activity?")) deleteActivityMutation.mutate(a.id);
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 flex gap-2">
+              <Input
+                placeholder="New activity"
+                value={newActivityName}
+                onChange={(e) => setNewActivityName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newActivityName.trim()) {
+                    createActivityMutation.mutate(newActivityName.trim());
+                  }
+                }}
+                className="h-8 text-sm"
+              />
+              <Button
+                size="sm"
+                className="h-8"
+                disabled={!newActivityName.trim() || createActivityMutation.isPending}
+                onClick={() => {
+                  if (newActivityName.trim()) createActivityMutation.mutate(newActivityName.trim());
+                }}
+              >
+                {createActivityMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+              </Button>
+            </div>
+          </>
+        )}
+      </aside>
+
+      <div className="flex-1 flex flex-col min-w-0 overflow-auto space-y-6 p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold">Schedule</h1>
@@ -317,6 +593,21 @@ export default function Schedule() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant={viewMode === "day" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setViewMode("day")}
+          >
+            Day
+          </Button>
+          <Button
+            variant={viewMode === "month" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setViewMode("month")}
+          >
+            Month
+          </Button>
+          &nbsp;
           <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
             setIsAddDialogOpen(open);
             if (!open) {
@@ -511,6 +802,87 @@ export default function Schedule() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-4">
+        {viewMode === "day" ? (
+          <Card className="lg:col-span-3 overflow-visible">
+            <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
+              <div className="flex items-center gap-4">
+                <Button variant="outline" size="icon" onClick={() => navigateDay(-1)}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <div className="flex items-center gap-2">
+                  <CalendarIcon className="h-5 w-5 text-muted-foreground" />
+                  <h2 className="text-xl font-semibold">
+                    {selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+                  </h2>
+                </div>
+                <Button variant="outline" size="icon" onClick={() => navigateDay(1)}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+              <Button variant="outline" onClick={goToToday}>Today</Button>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              {isLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-8 w-full" />
+                  {[...Array(5)].map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : (
+                <div className="min-w-[800px]">
+                  <div className="grid gap-0 border rounded-md" style={{ gridTemplateColumns: "100px repeat(24, minmax(0, 1fr))" }}>
+                    <div className="border-b border-r bg-muted/50 p-2 text-xs font-medium sticky left-0 z-10" />
+                    {HOURS.map((h) => (
+                      <div key={h} className="border-b border-r p-1 text-center text-xs text-muted-foreground" style={{ minWidth: 28 }}>
+                        {formatHour(h)}
+                      </div>
+                    ))}
+                    {staffList.map((staff) => (
+                      <React.Fragment key={staff.id}>
+                        <div className="border-b border-r bg-muted/50 p-2 text-sm font-medium sticky left-0 z-10 truncate" title={staff.userId}>
+                          {staff.userId?.split("@")[0] || staff.id.slice(0, 8)}
+                        </div>
+                        {HOURS.map((hour) => {
+                          const isSelected = dragSelection?.staffId === staff.id &&
+                            hour >= Math.min(dragSelection.startHour, dragSelection.endHour) &&
+                            hour <= Math.max(dragSelection.startHour, dragSelection.endHour);
+                          const entry = (scheduleEntries || []).find((e) => {
+                            if (e.staffId !== staff.id || e.scheduledDate !== selectedDateStr || e.status === "cancelled") return false;
+                            const sh = e.startTime != null ? parseInt(e.startTime.slice(0, 2), 10) : 0;
+                            const eh = e.endTime != null ? parseInt(e.endTime.slice(0, 2), 10) : sh + 1;
+                            return hour >= sh && hour < eh;
+                          });
+                          const startMatch = entry != null && (entry.startTime != null ? parseInt(entry.startTime.slice(0, 2), 10) === hour : hour === 0);
+                          return (
+                            <div
+                              key={`${staff.id}-${hour}`}
+                              className={`border-b border-r min-h-[32px] ${isSelected ? "bg-primary/20 ring-1 ring-primary" : ""} ${startMatch ? "p-0" : ""}`}
+                              onPointerDown={() => handlePointerDown(staff.id, hour)}
+                              onPointerMove={() => handlePointerMove(staff.id, hour)}
+                              onPointerUp={handlePointerUp}
+                            >
+                              {startMatch && entry && (
+                                <div
+                                  className={`rounded px-1 py-0.5 text-xs text-white truncate ${
+                                    entry.activityId ? "bg-violet-500" : getStatusColor(entry.status || "scheduled")
+                                  }`}
+                                  title={getEntryLabel(entry)}
+                                >
+                                  {getEntryLabel(entry)}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
         <Card className="lg:col-span-3 overflow-visible">
           <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
             <div className="flex items-center gap-4">
@@ -590,25 +962,34 @@ export default function Schedule() {
                         {day.date.getDate()}
                       </div>
                       <div className="space-y-1">
-                        {day.schedules.slice(0, 3).map(({ entry, job }) => (
-                          <Link
-                            key={entry.id}
-                            href={`/jobs/${job.id}`}
-                            className="block"
-                          >
-                            <div
-                              className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-white truncate ${
-                                entry.status === "completed"
-                                  ? "bg-emerald-500"
-                                  : getStatusColor(job.status)
-                              }`}
+                        {day.schedules.slice(0, 3).map(({ entry, job, activity }) => (
+                          job ? (
+                            <Link
+                              key={entry.id}
+                              href={`/jobs/${job.id}`}
+                              className="block"
                             >
-                              {entry.status === "completed" && (
-                                <CheckCircle className="h-3 w-3 flex-shrink-0" />
-                              )}
-                              <span className="truncate">{job.clientName}</span>
+                              <div
+                                className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-white truncate ${
+                                  entry.status === "completed"
+                                    ? "bg-emerald-500"
+                                    : getStatusColor(job.status)
+                                }`}
+                              >
+                                {entry.status === "completed" && (
+                                  <CheckCircle className="h-3 w-3 flex-shrink-0" />
+                                )}
+                                <span className="truncate">{job.clientName}</span>
+                              </div>
+                            </Link>
+                          ) : (
+                            <div
+                              key={entry.id}
+                              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-white truncate bg-violet-500"
+                            >
+                              <span className="truncate">{activity?.name ?? "Activity"}</span>
                             </div>
-                          </Link>
+                          )
                         ))}
                         {day.schedules.length > 3 && (
                           <div className="text-xs text-muted-foreground px-1.5">
@@ -623,6 +1004,7 @@ export default function Schedule() {
             )}
           </CardContent>
         </Card>
+        )}
 
         <div className="space-y-6">
           <Card className="overflow-visible">
@@ -651,44 +1033,37 @@ export default function Schedule() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {upcomingJobs.map((entry) => (
-                    <Link
-                      key={entry.id}
-                      href={`/jobs/${entry.jobId}`}
-                      className="flex items-start gap-3 rounded-md p-2 hover-elevate active-elevate-2"
-                    >
-                      <div className="flex h-10 w-10 flex-shrink-0 flex-col items-center justify-center rounded-md bg-primary/10">
-                        <span className="text-xs font-bold text-primary">
-                          {new Date(entry.scheduledDate).getDate()}
-                        </span>
-                        <span className="text-[10px] uppercase text-primary">
-                          {new Date(entry.scheduledDate).toLocaleString("default", {
-                            month: "short",
-                          })}
-                        </span>
-                      </div>
-                      <div className="flex-1 overflow-hidden">
-                        <p className="truncate text-sm font-medium">
-                          {entry.job?.clientName}
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant="secondary"
-                            className={`text-xs ${
-                              entry.job
-                                ? getStatusColor(entry.job.status).replace(
-                                    "bg-",
-                                    "bg-opacity-20 text-"
-                                  )
-                                : ""
-                            }`}
-                          >
-                            {entry.job ? formatStatus(entry.job.status) : "Unknown"}
-                          </Badge>
+                  {upcomingJobs.map((entry) => {
+                    const label = entry.job?.clientName ?? entry.activity?.name ?? "—";
+                    const href = entry.jobId ? `/jobs/${entry.jobId}` : undefined;
+                    const Wrapper = href ? Link : "div";
+                    return (
+                      <Wrapper
+                        key={entry.id}
+                        {...(href ? { href, className: "flex items-start gap-3 rounded-md p-2 hover-elevate active-elevate-2" } : { className: "flex items-start gap-3 rounded-md p-2" })}
+                      >
+                        <div className="flex h-10 w-10 flex-shrink-0 flex-col items-center justify-center rounded-md bg-primary/10">
+                          <span className="text-xs font-bold text-primary">
+                            {new Date(entry.scheduledDate).getDate()}
+                          </span>
+                          <span className="text-[10px] uppercase text-primary">
+                            {new Date(entry.scheduledDate).toLocaleString("default", { month: "short" })}
+                          </span>
                         </div>
-                      </div>
-                    </Link>
-                  ))}
+                        <div className="flex-1 overflow-hidden">
+                          <p className="truncate text-sm font-medium">{label}</p>
+                          {entry.job && (
+                            <Badge variant="secondary" className={`text-xs ${getStatusColor(entry.job.status).replace("bg-", "bg-opacity-20 text-")}`}>
+                              {formatStatus(entry.job.status)}
+                            </Badge>
+                          )}
+                          {entry.activity && (
+                            <Badge variant="secondary" className="text-xs bg-violet-500/20 text-violet-700 dark:text-violet-300">Activity</Badge>
+                          )}
+                        </div>
+                      </Wrapper>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
@@ -720,6 +1095,80 @@ export default function Schedule() {
           </Card>
         </div>
       </div>
+      </div>
+
+      <Sheet open={rightSheetOpen} onOpenChange={(open) => {
+        setRightSheetOpen(open);
+        if (!open) setDragSelection(null);
+      }}>
+        <SheetContent side="right" className="w-full sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Assign to slot</SheetTitle>
+          </SheetHeader>
+          {dragSelection && (
+            <div className="mt-4 space-y-4">
+              <p className="text-sm text-muted-foreground">
+                {selectedDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}, staff row · {formatHour(Math.min(dragSelection.startHour, dragSelection.endHour))} – {formatHour(Math.max(dragSelection.startHour, dragSelection.endHour) + (dragSelection.startHour === dragSelection.endHour ? 1 : 0))}
+              </p>
+              <div>
+                <h3 className="text-sm font-medium mb-2">Jobs</h3>
+                <ScrollArea className="h-40 rounded border p-2">
+                  {jobs?.filter((j) => j.status !== "completed" && j.status !== "cancelled").length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No jobs available</p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {jobs?.filter((j) => j.status !== "completed" && j.status !== "cancelled").map((job) => (
+                        <li key={job.id}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full justify-start"
+                            onClick={() => handleConfirmAssignment(job.id)}
+                            disabled={createScheduleEntryMutation.isPending}
+                          >
+                            {job.clientName} – {job.jobType}
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </ScrollArea>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium mb-2">Activities</h3>
+                <ScrollArea className="h-40 rounded border p-2">
+                  {(activities ?? []).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No activities</p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {(activities ?? []).map((a) => (
+                        <li key={a.id}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full justify-start bg-violet-500/10 border-violet-500/30"
+                            onClick={() => handleConfirmAssignment(undefined, a.id)}
+                            disabled={createScheduleEntryMutation.isPending}
+                          >
+                            {a.name}
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </ScrollArea>
+              </div>
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={() => { setRightSheetOpen(false); setDragSelection(null); }}
+              >
+                Cancel
+              </Button>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

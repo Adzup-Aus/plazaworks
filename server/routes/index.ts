@@ -9,6 +9,7 @@ import { registerOrganizationsRoutes } from "../modules/organizations/routes";
 import { registerStaffRoutes } from "../modules/staff/routes";
 import { registerJobsRoutes } from "../modules/jobs/routes";
 import { registerScheduleRoutes } from "../modules/schedule/routes";
+import { registerActivitiesRoutes } from "../modules/activities/routes";
 import { registerPCItemsRoutes } from "../modules/pcItems/routes";
 import { registerJobMilestonesRoutes } from "../modules/jobMilestones/routes";
 import { registerNotificationsRoutes } from "../modules/notifications/routes";
@@ -46,6 +47,7 @@ export async function registerRoutes(
   registerStaffRoutes(app);
   registerJobsRoutes(app);
   registerScheduleRoutes(app);
+  registerActivitiesRoutes(app);
   registerPCItemsRoutes(app);
   registerJobMilestonesRoutes(app);
   registerNotificationsRoutes(app);

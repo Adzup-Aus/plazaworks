@@ -3,6 +3,7 @@ export {
   scheduleEntries,
   scheduleEntriesRelations,
   insertScheduleEntrySchema,
+  patchScheduleEntrySchema,
   scheduleEntryStatuses,
   type ScheduleEntry,
   type InsertScheduleEntry,
