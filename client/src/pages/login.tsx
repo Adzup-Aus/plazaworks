@@ -261,12 +261,6 @@ export default function Login() {
               </TabsContent>
             </Tabs>
             
-            <div className="mt-6 text-center">
-              <p className="text-sm text-muted-foreground">
-                Don&apos;t have an account? Registration is by invite only.
-              </p>
-            </div>
-            
           </CardContent>
         </Card>
       </main>
