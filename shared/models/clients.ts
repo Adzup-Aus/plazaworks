@@ -2,7 +2,6 @@ import { sql, relations } from "drizzle-orm";
 import { pgTable, text, varchar, timestamp, boolean, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { organizations } from "./organizations";
 
 // Client types
 export const clientTypes = ["residential", "commercial", "property_manager", "builder", "other"] as const;
@@ -10,7 +9,6 @@ export type ClientType = typeof clientTypes[number];
 
 export const clients = pgTable("clients", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   firstName: varchar("first_name", { length: 100 }).notNull(),
   lastName: varchar("last_name", { length: 100 }).notNull(),
   email: varchar("email", { length: 255 }),
@@ -30,7 +28,6 @@ export const clients = pgTable("clients", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
-  index("idx_clients_org").on(table.organizationId),
   index("idx_clients_email").on(table.email),
   index("idx_clients_phone").on(table.phone),
   index("idx_clients_name").on(table.lastName, table.firstName),

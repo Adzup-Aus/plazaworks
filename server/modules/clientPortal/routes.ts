@@ -397,9 +397,8 @@ export function registerClientPortalRoutes(app: Express): void {
           notes: req.body.notes || null,
         });
 
-        if (quote.organizationId) {
-          const settings = await storage.getOrganizationSettings(quote.organizationId);
-          if (settings?.autoConvertApprovedQuotes) {
+        const settings = await storage.getSettings();
+        if (settings?.autoConvertApprovedQuotes) {
             try {
               const invoice = await storage.createInvoiceFromQuote(req.params.id, "system");
 
@@ -438,7 +437,6 @@ export function registerClientPortalRoutes(app: Express): void {
               });
             }
           }
-        }
 
         res.json(updated);
       } catch (err: any) {
@@ -471,7 +469,7 @@ export function registerClientPortalRoutes(app: Express): void {
 
         await storage.createQuoteWorkflowEvent({
           quoteId: req.params.id,
-          action: "rejected",
+          eventType: "rejected",
           actorType: "client",
           actorId: clientId,
           notes: req.body.reason || null,

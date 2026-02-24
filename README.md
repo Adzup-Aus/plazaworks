@@ -112,7 +112,7 @@ npm run dev
 │   └── ...
 ├── shared/                 # Shared types and schema
 │   ├── schema.ts           # Single entry (re-exports models)
-│   └── models/             # Domain models (auth, organizations, jobs, …)
+│   └── models/             # Domain models (auth, jobs, clients, settings, …)
 ├── script/
 │   └── build.ts            # Build script (Vite + esbuild)
 ├── SPECKIT_CONSTITUTION.md # Backend/frontend structure and rules

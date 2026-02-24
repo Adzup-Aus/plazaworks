@@ -5,7 +5,7 @@ import {
   registerAuthRoutes as registerReplitAuthRoutes,
 } from "../replit_integrations/auth";
 import { registerAuthRoutes } from "../modules/auth/routes";
-import { registerOrganizationsRoutes } from "../modules/organizations/routes";
+import { registerSettingsRoutes } from "../modules/settings/routes";
 import { registerStaffRoutes } from "../modules/staff/routes";
 import { registerJobsRoutes } from "../modules/jobs/routes";
 import { registerScheduleRoutes } from "../modules/schedule/routes";
@@ -43,7 +43,7 @@ export async function registerRoutes(
   registerObjectStorageRoutes(app);
 
   registerAuthRoutes(app);
-  registerOrganizationsRoutes(app);
+  registerSettingsRoutes(app);
   registerStaffRoutes(app);
   registerJobsRoutes(app);
   registerScheduleRoutes(app);

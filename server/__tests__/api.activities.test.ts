@@ -55,7 +55,6 @@ describe.runIf(hasDb)("API activities", () => {
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty("id");
     expect(res.body.name).toBe("New Activity");
-    expect(res.body.organizationId).toBeDefined();
   });
 
   it("POST /api/activities with empty name returns 400", async () => {

@@ -14,7 +14,7 @@ export default function AcceptInvite() {
   const { toast } = useToast();
   
   const [isAccepting, setIsAccepting] = useState(false);
-  const [acceptResult, setAcceptResult] = useState<{ success: boolean; message: string; orgName?: string } | null>(null);
+  const [acceptResult, setAcceptResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const { data: session, isLoading: sessionLoading } = useQuery<{
     isAuthenticated: boolean;
@@ -38,11 +38,10 @@ export default function AcceptInvite() {
       
       setAcceptResult({
         success: true,
-        message: "You've joined the organization!",
-        orgName: data.organization?.name,
+        message: "You've joined the team!",
       });
       
-      toast({ title: "Invite accepted!", description: `You're now a member of ${data.organization?.name}` });
+      toast({ title: "Invite accepted!", description: "You're now part of Plaza Works." });
       
       setTimeout(() => {
         navigate("/dashboard");
@@ -88,7 +87,7 @@ export default function AcceptInvite() {
             </div>
             <CardTitle className="text-2xl">Team Invitation</CardTitle>
             <CardDescription>
-              You've been invited to join an organization on Plaza Works
+              You've been invited to join Plaza Works
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -99,11 +98,6 @@ export default function AcceptInvite() {
                     <CheckCircle2 className="mx-auto h-12 w-12 text-green-500" />
                     <div>
                       <p className="font-medium">{acceptResult.message}</p>
-                      {acceptResult.orgName && (
-                        <p className="text-muted-foreground">
-                          Welcome to {acceptResult.orgName}
-                        </p>
-                      )}
                     </div>
                     <p className="text-sm text-muted-foreground">
                       Redirecting to dashboard...

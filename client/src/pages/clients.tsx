@@ -119,7 +119,6 @@ function normalizeCountryCode(country: string | null): string {
 
 interface Client {
   id: string;
-  organizationId: string;
   type: string;
   firstName: string | null;
   lastName: string | null;

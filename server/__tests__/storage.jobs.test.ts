@@ -10,7 +10,6 @@ describe.runIf(hasDb)("storage (jobs)", () => {
     storage = m.storage;
   });
 
-  const createdOrgIds: string[] = [];
   const createdJobIds: string[] = [];
 
   afterEach(async () => {
@@ -18,23 +17,10 @@ describe.runIf(hasDb)("storage (jobs)", () => {
       await storage.deleteJob(id);
     }
     createdJobIds.length = 0;
-    for (const id of createdOrgIds) {
-      await storage.deleteOrganization(id);
-    }
-    createdOrgIds.length = 0;
   });
 
-  async function createTestOrg() {
-    const slug = `org-jobs-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const org = await storage.createOrganization({ name: "Jobs Test Org", slug });
-    createdOrgIds.push(org.id);
-    return org;
-  }
-
   it("createJob returns job with required fields", async () => {
-    const org = await createTestOrg();
     const job = await storage.createJob({
-      organizationId: org.id,
       clientName: "Test Client",
       address: "123 Test St",
       jobType: "plumbing",
@@ -48,9 +34,7 @@ describe.runIf(hasDb)("storage (jobs)", () => {
   });
 
   it("getJob returns job by id", async () => {
-    const org = await createTestOrg();
     const job = await storage.createJob({
-      organizationId: org.id,
       clientName: "Get Client",
       address: "456 Get St",
       jobType: "electrical",
@@ -67,9 +51,7 @@ describe.runIf(hasDb)("storage (jobs)", () => {
   });
 
   it("getJobs returns all jobs including created one", async () => {
-    const org = await createTestOrg();
     const job = await storage.createJob({
-      organizationId: org.id,
       clientName: "List Client",
       address: "789 List Ave",
       jobType: "carpentry",
@@ -81,9 +63,7 @@ describe.runIf(hasDb)("storage (jobs)", () => {
   });
 
   it("getJobsByStatus filters by status", async () => {
-    const org = await createTestOrg();
     const job = await storage.createJob({
-      organizationId: org.id,
       clientName: "Status Client",
       address: "111 Status St",
       jobType: "plumbing",
@@ -97,9 +77,7 @@ describe.runIf(hasDb)("storage (jobs)", () => {
   });
 
   it("updateJob updates fields and returns updated job", async () => {
-    const org = await createTestOrg();
     const job = await storage.createJob({
-      organizationId: org.id,
       clientName: "Update Client",
       address: "222 Update St",
       jobType: "tiling",
@@ -118,9 +96,7 @@ describe.runIf(hasDb)("storage (jobs)", () => {
   });
 
   it("deleteJob removes job and returns true", async () => {
-    const org = await createTestOrg();
     const job = await storage.createJob({
-      organizationId: org.id,
       clientName: "Delete Client",
       address: "333 Delete St",
       jobType: "general",

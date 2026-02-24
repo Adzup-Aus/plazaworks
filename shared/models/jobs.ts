@@ -2,7 +2,6 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, timestamp, integer, decimal, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { organizations } from "./organizations";
 
 // Job statuses
 export const jobStatuses = [
@@ -29,7 +28,6 @@ export type JobType = typeof jobTypes[number];
 
 export const jobs = pgTable("jobs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   jobNumber: varchar("job_number", { length: 50 }),
   jobName: varchar("job_name", { length: 255 }),
   referenceNumber: integer("reference_number"),
@@ -51,7 +49,6 @@ export const jobs = pgTable("jobs", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
-  index("idx_jobs_org").on(table.organizationId),
   index("idx_jobs_status").on(table.status),
   index("idx_jobs_type").on(table.jobType),
   index("idx_jobs_created").on(table.createdAt),

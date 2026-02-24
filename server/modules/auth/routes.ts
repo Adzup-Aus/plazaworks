@@ -107,15 +107,10 @@ export function registerAuthRoutes(app: Express): void {
         req.session.isAuthenticated = true;
       }
 
-      const memberships = await storage.getUserMemberships(identity.userId);
-
       res.json({
         message: "Login successful",
         userId: identity.userId,
-        memberships: memberships.map((m) => ({
-          organizationId: m.organizationId,
-          role: m.role,
-        })),
+        memberships: [],
       });
     } catch (err: any) {
       console.error("Error verifying OTP:", err);
@@ -127,14 +122,13 @@ export function registerAuthRoutes(app: Express): void {
     try {
       const userId = getUserId(req);
       if (req.session?.isAuthenticated && userId) {
-        const memberships = await storage.getUserMemberships(userId);
         const identities = await storage.getAuthIdentities(userId);
 
         return res.json({
           isAuthenticated: true,
           authType: req.session.authType,
           userId,
-          memberships,
+          memberships: [],
           identities: identities.map((i: any) => ({
             type: i.type,
             identifier: i.identifier,
@@ -246,16 +240,11 @@ export function registerAuthRoutes(app: Express): void {
         email: identity.identifier,
       });
 
-      const memberships = await storage.getUserMemberships(identity.userId);
-
       res.json({
         message: "Login successful",
         userId: identity.userId,
         isVerified: identity.isVerified,
-        memberships: memberships.map((m) => ({
-          organizationId: m.organizationId,
-          role: m.role,
-        })),
+        memberships: [],
       });
     } catch (err: any) {
       console.error("Error logging in:", err);
@@ -482,20 +471,11 @@ export function registerAuthRoutes(app: Express): void {
       if (!userId) {
         return res.json({ isSuperAdmin: false });
       }
-
-      const memberships = await storage.getUserMemberships(userId);
-      const orgsWithOwner = await Promise.all(
-        memberships.map(async (m) => {
-          const org = await storage.getOrganization(m.organizationId);
-          return { membership: m, org };
-        })
+      const profile = await storage.getStaffProfileByUserId(userId);
+      const isSuperAdmin = !!(
+        profile &&
+        (profile.roles?.includes("admin") || profile.permissions?.includes("admin_settings"))
       );
-
-      const isSuperAdmin = orgsWithOwner.some(
-        ({ membership, org }) =>
-          org?.isOwner && (membership.role === "owner" || membership.role === "admin")
-      );
-
       res.json({ isSuperAdmin });
     } catch (err) {
       console.error("Error checking super-admin:", err);
@@ -506,12 +486,11 @@ export function registerAuthRoutes(app: Express): void {
   async function isSuperAdmin(req: any): Promise<boolean> {
     const userId = getUserId(req);
     if (!userId) return false;
-    const memberships = await storage.getUserMemberships(userId);
-    for (const m of memberships) {
-      const org = await storage.getOrganization(m.organizationId);
-      if (org?.isOwner && (m.role === "owner" || m.role === "admin")) return true;
-    }
-    return false;
+    const profile = await storage.getStaffProfileByUserId(userId);
+    return !!(
+      profile &&
+      (profile.roles?.includes("admin") || profile.permissions?.includes("admin_settings"))
+    );
   }
 
   const INVITE_EXPIRY_DAYS = 7;
