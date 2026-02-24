@@ -1,9 +1,10 @@
 import type { Express } from "express";
-import { storage, isAuthenticated, requirePermission } from "../../routes/shared";
+import { storage, isAuthenticated, requirePermission, requireAnyPermission } from "../../routes/shared";
 import { insertActivitySchema, patchActivitySchema } from "./model";
 
 export function registerActivitiesRoutes(app: Express): void {
-  app.get("/api/activities", isAuthenticated, requirePermission("view_activities"), async (req: any, res) => {
+  // view_schedule allows listing activities so Schedule page can show activity names on entries
+  app.get("/api/activities", isAuthenticated, requireAnyPermission("view_activities", "view_schedule"), async (req: any, res) => {
     try {
       const list = await storage.getActivities();
       res.json(list);
@@ -13,7 +14,7 @@ export function registerActivitiesRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/activities/:id", isAuthenticated, requirePermission("view_activities"), async (req: any, res) => {
+  app.get("/api/activities/:id", isAuthenticated, requireAnyPermission("view_activities", "view_schedule"), async (req: any, res) => {
     try {
       const activity = await storage.getActivity(req.params.id);
       if (!activity) {

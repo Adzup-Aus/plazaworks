@@ -1,12 +1,23 @@
 import type { Express } from "express";
-import { storage, isAuthenticated, ensureStaffProfile, requirePermission } from "../../routes/shared";
+import { storage, isAuthenticated, ensureStaffProfile, requirePermission, requireAnyPermission, getUserId, getUserPermissions } from "../../routes/shared";
 import { updateStaffSchema } from "../../routes/schemas";
 
 export function registerStaffRoutes(app: Express): void {
-  app.get("/api/staff", isAuthenticated, ensureStaffProfile, requirePermission("view_users"), async (req, res) => {
+  // Check permission first so we don't create an empty profile (ensureStaffProfile) then 403.
+  // view_users: full list; view_schedule/manage_schedule: only own profile (so Schedule page can show their row)
+  app.get("/api/staff", isAuthenticated, requireAnyPermission("view_users", "view_schedule", "manage_schedule"), ensureStaffProfile, async (req: any, res) => {
     try {
-      const profiles = await storage.getStaffProfiles();
-      res.json(profiles);
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      const permissions = await getUserPermissions(userId);
+      if (permissions.includes("view_users")) {
+        const profiles = await storage.getStaffProfiles();
+        return res.json(profiles);
+      }
+      const profile = await storage.getStaffProfileByUserId(userId);
+      res.json(profile ? [profile] : []);
     } catch (err: any) {
       console.error("Error fetching staff:", err);
       res.status(500).json({ message: "Failed to fetch staff profiles" });
