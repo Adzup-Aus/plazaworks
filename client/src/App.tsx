@@ -38,6 +38,7 @@ import Invite from "@/pages/invite";
 import AcceptUserInvite from "@/pages/accept-user-invite";
 import Clients from "@/pages/clients";
 import Settings from "@/pages/settings";
+import Roles from "@/pages/roles";
 import ClientPortalLogin from "@/pages/client-portal-login";
 import ClientPortalDashboard from "@/pages/client-portal-dashboard";
 import InvoicePayment from "@/pages/invoice-payment";
@@ -86,6 +87,7 @@ function AuthenticatedRouter() {
       <Route path="/kpi" component={KpiDashboard} />
       <Route path="/team" component={Team} />
       <Route path="/clients" component={Clients} />
+      <Route path="/roles" component={Roles} />
       <Route path="/settings" component={Settings} />
       <Route path="/admin" component={Admin} />
       <Route path="/admin/invites" component={Invite} />

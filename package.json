@@ -12,6 +12,7 @@
     "db:migrate:remove-multi-org": "tsx scripts/run-migration.ts migrations/003_remove_multi_org.sql",
     "seed:admin": "tsx scripts/seed-admin.ts",
     "seed:activities": "tsx scripts/seed-default-activities.ts",
+    "seed:roles": "tsx scripts/seed-roles.ts",
     "test": "vitest",
     "test:run": "vitest run",
     "test:run:env": "NODE_ENV=test node -r dotenv/config node_modules/.bin/vitest run",

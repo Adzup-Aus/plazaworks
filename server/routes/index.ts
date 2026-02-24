@@ -26,6 +26,7 @@ import { registerKpiRoutes } from "../modules/kpi/routes";
 import { registerClientsRoutes } from "../modules/clients/routes";
 import { registerMilestonesRoutes } from "../modules/milestones/routes";
 import { registerPayRoutes } from "../modules/pay/routes";
+import { registerRolesRoutes } from "../modules/roles/routes";
 
 /**
  * Register all API routes. Order matters for middleware and feature gating.
@@ -64,6 +65,7 @@ export async function registerRoutes(
   registerClientsRoutes(app);
   registerMilestonesRoutes(app);
   registerPayRoutes(app);
+  registerRolesRoutes(app);
 
   return httpServer;
 }
