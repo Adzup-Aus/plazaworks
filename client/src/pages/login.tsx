@@ -61,11 +61,7 @@ export default function Login() {
       
       toast({ title: "Login successful" });
       
-      if (data.memberships && data.memberships.length > 0) {
-        navigate("/dashboard");
-      } else {
-        navigate("/onboarding");
-      }
+      navigate("/");
     } catch (err: any) {
       toast({ title: "Invalid code", description: err.message, variant: "destructive" });
     } finally {
@@ -92,11 +88,7 @@ export default function Login() {
       
       toast({ title: "Login successful" });
       
-      if (data.memberships && data.memberships.length > 0) {
-        navigate("/dashboard");
-      } else {
-        navigate("/onboarding");
-      }
+      navigate("/");
     } catch (err: any) {
       toast({ title: "Login failed", description: err.message, variant: "destructive" });
     } finally {
