@@ -1,9 +1,10 @@
 import type { Express } from "express";
-import { storage, isAuthenticated, ensureStaffProfile, requireUserId, requirePermission } from "../../routes/shared";
+import { storage, isAuthenticated, ensureStaffProfile, requireUserId, requirePermission, requireAnyPermission } from "../../routes/shared";
 import { insertJobSchema } from "./model";
 
 export function registerJobsRoutes(app: Express): void {
-  app.get("/api/jobs", isAuthenticated, ensureStaffProfile, requirePermission("view_jobs"), async (req, res) => {
+  // view_schedule allows listing jobs so Schedule page can show job names on entries
+  app.get("/api/jobs", isAuthenticated, ensureStaffProfile, requireAnyPermission("view_jobs", "view_schedule"), async (req, res) => {
     try {
       const { status } = req.query;
       let jobsList;
@@ -19,7 +20,7 @@ export function registerJobsRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/jobs/:id", isAuthenticated, requirePermission("view_jobs"), async (req, res) => {
+  app.get("/api/jobs/:id", isAuthenticated, requireAnyPermission("view_jobs", "view_schedule"), async (req, res) => {
     try {
       const job = await storage.getJob(req.params.id);
       if (!job) {
