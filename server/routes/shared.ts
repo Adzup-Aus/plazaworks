@@ -7,8 +7,17 @@ export {
   ensureStaffProfile,
 } from "../middleware";
 export {
+  checkPermission,
+  getUserPermissions,
+  isAdmin,
+  requirePermission,
+  requireAnyPermission,
+  requireAllPermissions,
+} from "../middleware/permissions";
+export {
   clientPortalAuth,
   createClientPortalToken,
   type ClientPortalRequest,
 } from "../middleware/clientPortalAuth";
 export { generateOTPCode } from "../lib/otp";
+export { normalizePermissions } from "@shared/schema";

@@ -1,9 +1,9 @@
 import type { Express } from "express";
-import { storage, isAuthenticated, requireUserId } from "../../routes/shared";
+import { storage, isAuthenticated, requireUserId, requirePermission } from "../../routes/shared";
 import { insertScheduleEntrySchema, patchScheduleEntrySchema } from "./model";
 
 export function registerScheduleRoutes(app: Express): void {
-  app.get("/api/schedule", isAuthenticated, async (req, res) => {
+  app.get("/api/schedule", isAuthenticated, requirePermission("view_schedule"), async (req, res) => {
     try {
       const { startDate, endDate, jobId, staffId } = req.query;
 
@@ -24,7 +24,7 @@ export function registerScheduleRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/schedule/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/schedule/:id", isAuthenticated, requirePermission("view_schedule"), async (req, res) => {
     try {
       const entry = await storage.getScheduleEntry(req.params.id);
       if (!entry) {
@@ -37,7 +37,7 @@ export function registerScheduleRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/schedule", isAuthenticated, async (req: any, res) => {
+  app.post("/api/schedule", isAuthenticated, requirePermission("manage_schedule"), async (req: any, res) => {
     try {
       const userId = requireUserId(req);
       const staffProfile = await storage.getStaffProfileByUserId(userId);
@@ -70,7 +70,7 @@ export function registerScheduleRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/schedule/bulk", isAuthenticated, async (req: any, res) => {
+  app.post("/api/schedule/bulk", isAuthenticated, requirePermission("manage_schedule"), async (req: any, res) => {
     try {
       const userId = requireUserId(req);
       const staffProfile = await storage.getStaffProfileByUserId(userId);
@@ -113,7 +113,7 @@ export function registerScheduleRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/schedule/:id/complete", isAuthenticated, async (req, res) => {
+  app.post("/api/schedule/:id/complete", isAuthenticated, requirePermission("manage_schedule"), async (req, res) => {
     try {
       const updated = await storage.updateScheduleEntry(req.params.id, { status: "completed" });
       if (!updated) {
@@ -126,7 +126,7 @@ export function registerScheduleRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/schedule/:id/cancel", isAuthenticated, async (req, res) => {
+  app.post("/api/schedule/:id/cancel", isAuthenticated, requirePermission("manage_schedule"), async (req, res) => {
     try {
       const updated = await storage.updateScheduleEntry(req.params.id, { status: "cancelled" });
       if (!updated) {
@@ -139,7 +139,7 @@ export function registerScheduleRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/schedule/:id/reset", isAuthenticated, async (req, res) => {
+  app.post("/api/schedule/:id/reset", isAuthenticated, requirePermission("manage_schedule"), async (req, res) => {
     try {
       const updated = await storage.updateScheduleEntry(req.params.id, { status: "scheduled" });
       if (!updated) {
@@ -152,7 +152,7 @@ export function registerScheduleRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/schedule/availability/:staffId/:date", isAuthenticated, async (req, res) => {
+  app.get("/api/schedule/availability/:staffId/:date", isAuthenticated, requirePermission("view_schedule"), async (req, res) => {
     try {
       const { staffId, date } = req.params;
       const availability = await storage.getStaffAvailability(staffId, date);
@@ -191,7 +191,7 @@ export function registerScheduleRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/schedule/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/schedule/:id", isAuthenticated, requirePermission("manage_schedule"), async (req, res) => {
     try {
       const deleted = await storage.deleteScheduleEntry(req.params.id);
       if (!deleted) {

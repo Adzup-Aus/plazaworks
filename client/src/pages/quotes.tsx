@@ -27,6 +27,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Quote } from "@shared/schema";
+import { PermissionGate } from "@/components/permission-gate";
 
 const statusColors: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -128,12 +129,14 @@ export default function Quotes() {
             Create and manage quotes for clients
           </p>
         </div>
-        <Link href="/quotes/new">
-          <Button data-testid="button-new-quote">
-            <Plus className="mr-2 h-4 w-4" />
-            New Quote
-          </Button>
-        </Link>
+        <PermissionGate permission="create_quotes">
+          <Link href="/quotes/new">
+            <Button data-testid="button-new-quote">
+              <Plus className="mr-2 h-4 w-4" />
+              New Quote
+            </Button>
+          </Link>
+        </PermissionGate>
       </div>
 
       {quotes?.length === 0 ? (
@@ -144,12 +147,14 @@ export default function Quotes() {
             <p className="mt-1 text-sm text-muted-foreground">
               Create your first quote to get started
             </p>
-            <Link href="/quotes/new">
-              <Button className="mt-4" data-testid="button-create-first-quote">
-                <Plus className="mr-2 h-4 w-4" />
-                Create Quote
-              </Button>
-            </Link>
+            <PermissionGate permission="create_quotes">
+              <Link href="/quotes/new">
+                <Button className="mt-4" data-testid="button-create-first-quote">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Quote
+                </Button>
+              </Link>
+            </PermissionGate>
           </CardContent>
         </Card>
       ) : (
@@ -232,15 +237,19 @@ export default function Quotes() {
                           Convert to Job
                         </DropdownMenuItem>
                       )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="text-destructive"
-                        onClick={() => setDeleteId(quote.id)}
-                        data-testid={`action-delete-quote-${quote.id}`}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </DropdownMenuItem>
+                      <PermissionGate permission="delete_quotes">
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => setDeleteId(quote.id)}
+                            data-testid={`action-delete-quote-${quote.id}`}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </>
+                      </PermissionGate>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>

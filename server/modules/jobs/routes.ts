@@ -1,9 +1,9 @@
 import type { Express } from "express";
-import { storage, isAuthenticated, ensureStaffProfile, requireUserId } from "../../routes/shared";
+import { storage, isAuthenticated, ensureStaffProfile, requireUserId, requirePermission } from "../../routes/shared";
 import { insertJobSchema } from "./model";
 
 export function registerJobsRoutes(app: Express): void {
-  app.get("/api/jobs", isAuthenticated, ensureStaffProfile, async (req, res) => {
+  app.get("/api/jobs", isAuthenticated, ensureStaffProfile, requirePermission("view_jobs"), async (req, res) => {
     try {
       const { status } = req.query;
       let jobsList;
@@ -19,7 +19,7 @@ export function registerJobsRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/jobs/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/jobs/:id", isAuthenticated, requirePermission("view_jobs"), async (req, res) => {
     try {
       const job = await storage.getJob(req.params.id);
       if (!job) {
@@ -32,7 +32,7 @@ export function registerJobsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/jobs", isAuthenticated, async (req: any, res) => {
+  app.post("/api/jobs", isAuthenticated, requirePermission("create_jobs"), async (req: any, res) => {
     try {
       const validation = insertJobSchema.safeParse(req.body);
       if (!validation.success) {
@@ -51,7 +51,7 @@ export function registerJobsRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/jobs/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/jobs/:id", isAuthenticated, requirePermission("edit_jobs"), async (req, res) => {
     try {
       const partialSchema = insertJobSchema.partial();
       const validation = partialSchema.safeParse(req.body);
@@ -70,7 +70,7 @@ export function registerJobsRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/jobs/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/jobs/:id", isAuthenticated, requirePermission("delete_jobs"), async (req, res) => {
     try {
       const deleted = await storage.deleteJob(req.params.id);
       if (!deleted) {

@@ -19,8 +19,8 @@
 
 **Purpose**: Project initialization and preparation - minimal setup as this integrates into existing codebase
 
-- [ ] T001 [P] Verify branch is `004-staff-permissions` and working directory is clean
-- [ ] T002 [P] Run `npm run test:env` to establish baseline test status before changes
+- [x] T001 [P] Verify branch is `004-staff-permissions` and working directory is clean
+- [x] T002 [P] Run `npm run test:env` to establish baseline test status before changes
 
 ---
 
@@ -32,22 +32,22 @@
 
 ### Backend Permission Infrastructure
 
-- [ ] T003 [P] Extend `userPermissions` enum in `shared/models/staff.ts` with 14 new permissions (view_dashboard, view_quotes, create_quotes, edit_quotes, delete_quotes, view_invoices, create_invoices, edit_invoices, delete_invoices, view_activities, view_clients, create_clients, edit_clients, delete_clients)
-- [ ] T004 Create permission middleware `server/middleware/permissions.ts` with `requirePermission()`, `requireAnyPermission()`, `requireAllPermissions()` functions
-- [ ] T005 Add permission helper functions to `server/routes/shared.ts`: `checkPermission()`, `getUserPermissions()`, `isAdmin()`, `normalizePermissions()`
-- [ ] T006 Update `server/modules/auth/routes.ts` `/api/auth/user` endpoint to include resolved permissions array in response (including implied permissions)
+- [x] T003 [P] Extend `userPermissions` enum in `shared/models/staff.ts` with 14 new permissions (view_dashboard, view_quotes, create_quotes, edit_quotes, delete_quotes, view_invoices, create_invoices, edit_invoices, delete_invoices, view_activities, view_clients, create_clients, edit_clients, delete_clients)
+- [x] T004 Create permission middleware `server/middleware/permissions.ts` with `requirePermission()`, `requireAnyPermission()`, `requireAllPermissions()` functions
+- [x] T005 Add permission helper functions to `server/routes/shared.ts`: `checkPermission()`, `getUserPermissions()`, `isAdmin()`, `normalizePermissions()`
+- [x] T006 Update `server/modules/auth/routes.ts` `/api/auth/user` endpoint to include resolved permissions array in response (including implied permissions)
 
 ### Frontend Permission Infrastructure
 
-- [ ] T007 [P] Create `client/src/lib/permissions.ts` with permission constants, normalization function, and `filterNavByPermissions()` utility
-- [ ] T008 Create `client/src/hooks/use-permissions.ts` with `hasPermission()`, `hasAnyPermission()`, `hasAllPermissions()`, `canView()`, `canCreate()`, `canEdit()`, `canDelete()` functions
-- [ ] T009 Create `client/src/components/permission-gate.tsx` component for declarative permission-based rendering
-- [ ] T010 Create `client/src/components/permission-redirect.tsx` component for route-level permission guards
+- [x] T007 [P] Create `client/src/lib/permissions.ts` with permission constants, normalization function, and `filterNavByPermissions()` utility
+- [x] T008 Create `client/src/hooks/use-permissions.ts` with `hasPermission()`, `hasAnyPermission()`, `hasAllPermissions()`, `canView()`, `canCreate()`, `canEdit()`, `canDelete()` functions
+- [x] T009 Create `client/src/components/permission-gate.tsx` component for declarative permission-based rendering
+- [x] T010 Create `client/src/components/permission-redirect.tsx` component for route-level permission guards
 
 ### Shared Permission Utilities
 
-- [ ] T011 [P] Define `PERMISSION_IMPLICATIONS` mapping in `shared/models/staff.ts` (create/edit/delete → view)
-- [ ] T012 [P] Define `NAV_PERMISSION_MAP` in `client/src/lib/permissions.ts` mapping navigation items to required permissions
+- [x] T011 [P] Define `PERMISSION_IMPLICATIONS` mapping in `shared/models/staff.ts` (create/edit/delete → view)
+- [x] T012 [P] Define `NAV_PERMISSION_MAP` in `client/src/lib/permissions.ts` mapping navigation items to required permissions
 
 **Checkpoint**: Foundation ready - permission infrastructure exists and can be imported anywhere. Run `npm run test:env` to verify no regressions.
 
@@ -153,12 +153,12 @@
 
 ### Backend Tests for User Story 4
 
-- [ ] T034 [P] [US4] Create API test - Test that all job endpoints enforce permissions
-- [ ] T035 [P] [US4] Create API test - Test that all quote endpoints enforce permissions
-- [ ] T036 [P] [US4] Create API test - Test that all invoice endpoints enforce permissions
-- [ ] T037 [P] [US4] Create API test - Test that all client endpoints enforce permissions
-- [ ] T038 [P] [US4] Create API test - Test that all staff endpoints enforce permissions
-- [ ] T039 [P] [US4] Create API test - Test that admin bypasses all permission checks
+- [x] T034 [P] [US4] Create API test - Test that all job endpoints enforce permissions
+- [x] T035 [P] [US4] Create API test - Test that all quote endpoints enforce permissions
+- [x] T036 [P] [US4] Create API test - Test that all invoice endpoints enforce permissions
+- [x] T037 [P] [US4] Create API test - Test that all client endpoints enforce permissions
+- [x] T038 [P] [US4] Create API test - Test that all staff endpoints enforce permissions
+- [x] T039 [P] [US4] Create API test - Test that admin bypasses all permission checks
 
 ### Implementation for User Story 4
 
@@ -183,23 +183,23 @@
 
 ### Testing & Validation
 
-- [ ] T050 [P] Run full test suite: `npm run test:env` - All tests must pass
-- [ ] T051 [P] Verify permission implication logic: create/edit/delete permissions automatically grant view permission
-- [ ] T052 [P] Verify admin role grants all permissions
-- [ ] T053 [P] Test edge case: User with no permissions sees NoAccess page
-- [ ] T054 [P] Test edge case: Permission revocation takes effect on next page load
-- [ ] T055 [P] Verify Team page displays all new permissions with readable labels
+- [x] T050 [P] Run full test suite: `npm run test:env` - All tests must pass
+- [x] T051 [P] Verify permission implication logic: create/edit/delete permissions automatically grant view permission
+- [x] T052 [P] Verify admin role grants all permissions
+- [x] T053 [P] Test edge case: User with no permissions sees NoAccess page
+- [x] T054 [P] Test edge case: Permission revocation takes effect on next page load
+- [x] T055 [P] Verify Team page displays all new permissions with readable labels
 
 ### Documentation
 
-- [ ] T056 Update `SPECKIT_CONSTITUTION.md` if permission patterns should be followed for new features
-- [ ] T057 Verify all new files have appropriate headers/comments
+- [x] T056 Update `SPECKIT_CONSTITUTION.md` if permission patterns should be followed for new features
+- [x] T057 Verify all new files have appropriate headers/comments
 
 ### Code Quality
 
-- [ ] T058 [P] Review all permission checks for consistency
-- [ ] T059 [P] Ensure no hardcoded permission strings - use constants from `shared/models/staff.ts`
-- [ ] T060 Verify error messages are user-friendly ("You don't have permission to create jobs" not "403 Forbidden")
+- [x] T058 [P] Review all permission checks for consistency
+- [x] T059 [P] Ensure no hardcoded permission strings - use constants from `shared/models/staff.ts`
+- [x] T060 Verify error messages are user-friendly ("You don't have permission to create jobs" not "403 Forbidden")
 
 **Final Checkpoint**: Feature complete. All user stories work independently. All tests pass.
 

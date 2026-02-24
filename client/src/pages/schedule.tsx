@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/use-permissions";
 import {
   Sheet,
   SheetContent,
@@ -172,6 +173,8 @@ export default function Schedule() {
   entryDragRef.current = entryDrag;
   pendingEntryDragRef.current = pendingEntryDrag;
   const { toast } = useToast();
+  const { hasPermission } = usePermissions();
+  const canManageSchedule = hasPermission("manage_schedule");
 
   useEffect(() => {
     if (rightSheetOpen && editingEntry) {
@@ -579,7 +582,7 @@ export default function Schedule() {
   }, [staffList, selectedStaffFilter]);
 
   const handlePointerDown = (staffId: string, hour: number, e: React.PointerEvent) => {
-    if (entryDrag) return;
+    if (!canManageSchedule || entryDrag) return;
     const cellWidth = e.currentTarget.getBoundingClientRect().width;
     const slot = getSlotFromPointer(hour, e.nativeEvent.offsetX, cellWidth);
     setDragSelection({ staffId, scheduledDate: selectedDateStr, startSlot: slot, endSlot: slot });
@@ -604,7 +607,7 @@ export default function Schedule() {
 
   const handlePointerUp = () => {
     if (entryDrag) return;
-    if (!dragSelection) return;
+    if (!dragSelection || !canManageSchedule) return;
     setDragCurrentTime(null);
     setDragTooltipPos(null);
     const start = Math.min(dragSelection.startSlot, dragSelection.endSlot);
@@ -616,12 +619,14 @@ export default function Schedule() {
   const handleEntryBlockPointerDown = (entry: ScheduleEntry, durationSlots: number, e: React.PointerEvent) => {
     e.stopPropagation();
     e.preventDefault();
+    if (!canManageSchedule) return;
     setPendingEntryDrag({ entry, durationSlots });
   };
 
   const handleOpenEdit = (entry: ScheduleEntry, e: React.MouseEvent | React.PointerEvent) => {
     e.stopPropagation();
     e.preventDefault();
+    if (!canManageSchedule) return;
     setDragSelection(null);
     setEditingEntry(entry);
     setRightSheetOpen(true);
@@ -688,7 +693,7 @@ export default function Schedule() {
         <div>
           <h1 className="text-3xl font-bold">Schedule</h1>
           <p className="text-muted-foreground">
-            View and manage job schedules
+            {canManageSchedule ? "View and manage job schedules" : "View your schedule"}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -916,11 +921,13 @@ export default function Schedule() {
                               )}
                               {startMatch && entry && (
                                 <div
-                                  role="button"
-                                  tabIndex={0}
-                                  className={`group absolute inset-y-0 z-10 rounded px-1 py-0.5 text-xs text-white truncate flex items-center cursor-grab active:cursor-grabbing hover:opacity-95 ${
-                                    entry.activityId ? "" : getStatusColor(entry.status || "scheduled")
-                                  } ${entryDrag?.entry?.id === entry.id ? "opacity-20" : ""}`}
+                                  role={canManageSchedule ? "button" : undefined}
+                                  tabIndex={canManageSchedule ? 0 : undefined}
+                                  className={`group absolute inset-y-0 z-10 rounded px-1 py-0.5 text-xs text-white truncate flex items-center hover:opacity-95 ${
+                                    canManageSchedule ? "cursor-grab active:cursor-grabbing" : "cursor-default"
+                                  } ${entry.activityId ? "" : getStatusColor(entry.status || "scheduled")} ${
+                                    entryDrag?.entry?.id === entry.id ? "opacity-20" : ""
+                                  }`}
                                   style={{
                                     left: `${leftPct}%`,
                                     width: `${widthPct}%`,
@@ -933,21 +940,23 @@ export default function Schedule() {
                                   onPointerDown={(e) => handleEntryBlockPointerDown(entry, durationSlots, e)}
                                 >
                                   <span className="truncate flex-1 min-w-0">{getEntryLabel(entry)}</span>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 hover:bg-white/20 text-white rounded p-0"
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      e.preventDefault();
-                                      deleteScheduleMutation.mutate(entry.id);
-                                    }}
-                                    aria-label="Delete schedule entry"
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </Button>
+                                  {canManageSchedule && (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 hover:bg-white/20 text-white rounded p-0"
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        deleteScheduleMutation.mutate(entry.id);
+                                      }}
+                                      aria-label="Delete schedule entry"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </Button>
+                                  )}
                                 </div>
                               )}
                             </div>

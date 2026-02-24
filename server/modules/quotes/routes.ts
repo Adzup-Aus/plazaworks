@@ -1,9 +1,9 @@
 import type { Express } from "express";
-import { storage, isAuthenticated, requireUserId, getUserId } from "../../routes/shared";
+import { storage, isAuthenticated, requireUserId, getUserId, requirePermission } from "../../routes/shared";
 import { insertQuoteSchema, insertTermsTemplateSchema } from "@shared/schema";
 
 export function registerQuotesRoutes(app: Express): void {
-  app.get("/api/quotes", isAuthenticated, async (req, res) => {
+  app.get("/api/quotes", isAuthenticated, requirePermission("view_quotes"), async (req, res) => {
     try {
       const { status } = req.query;
       let quotesList;
@@ -19,7 +19,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/quotes/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/quotes/:id", isAuthenticated, requirePermission("view_quotes"), async (req, res) => {
     try {
       const quote = await storage.getQuoteWithLineItems(req.params.id);
       if (!quote) {
@@ -32,7 +32,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/quotes", isAuthenticated, async (req: any, res) => {
+  app.post("/api/quotes", isAuthenticated, requirePermission("create_quotes"), async (req: any, res) => {
     try {
       const validation = insertQuoteSchema.safeParse(req.body);
       if (!validation.success) {
@@ -51,7 +51,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/quotes/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/quotes/:id", isAuthenticated, requirePermission("edit_quotes"), async (req, res) => {
     try {
       const partialSchema = insertQuoteSchema.partial();
       const validation = partialSchema.safeParse(req.body);
@@ -70,7 +70,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/quotes/:id/send", isAuthenticated, async (req, res) => {
+  app.post("/api/quotes/:id/send", isAuthenticated, requirePermission("edit_quotes"), async (req, res) => {
     try {
       const quote = await storage.sendQuote(req.params.id);
       if (!quote) {
@@ -83,7 +83,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/quotes/:id/accept", isAuthenticated, async (req, res) => {
+  app.post("/api/quotes/:id/accept", isAuthenticated, requirePermission("edit_quotes"), async (req, res) => {
     try {
       const quote = await storage.acceptQuote(req.params.id);
       if (!quote) {
@@ -96,7 +96,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/quotes/:id/reject", isAuthenticated, async (req, res) => {
+  app.post("/api/quotes/:id/reject", isAuthenticated, requirePermission("edit_quotes"), async (req, res) => {
     try {
       const quote = await storage.rejectQuote(req.params.id);
       if (!quote) {
@@ -109,7 +109,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/quotes/:id/convert-to-job", isAuthenticated, async (req, res) => {
+  app.post("/api/quotes/:id/convert-to-job", isAuthenticated, requirePermission("edit_quotes"), async (req, res) => {
     try {
       const result = await storage.convertQuoteToJob(req.params.id);
       if (!result) {
@@ -122,7 +122,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/quotes/:id/revise", isAuthenticated, async (req, res) => {
+  app.post("/api/quotes/:id/revise", isAuthenticated, requirePermission("edit_quotes"), async (req, res) => {
     try {
       const { revisionReason } = req.body;
       if (!revisionReason || typeof revisionReason !== "string") {
@@ -143,7 +143,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/quotes/:id/revisions", isAuthenticated, async (req, res) => {
+  app.get("/api/quotes/:id/revisions", isAuthenticated, requirePermission("view_quotes"), async (req, res) => {
     try {
       const revisions = await storage.getQuoteRevisionHistory(req.params.id);
       res.json(revisions);
@@ -153,7 +153,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/quotes/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/quotes/:id", isAuthenticated, requirePermission("delete_quotes"), async (req, res) => {
     try {
       const deleted = await storage.deleteQuote(req.params.id);
       if (!deleted) {
@@ -167,7 +167,7 @@ export function registerQuotesRoutes(app: Express): void {
   });
 
   // Quote milestones
-  app.get("/api/quotes/:quoteId/milestones", isAuthenticated, async (req, res) => {
+  app.get("/api/quotes/:quoteId/milestones", isAuthenticated, requirePermission("view_quotes"), async (req, res) => {
     try {
       const milestones = await storage.getQuoteMilestones(req.params.quoteId);
       res.json(milestones);
@@ -177,7 +177,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/quotes/:quoteId/milestones", isAuthenticated, async (req, res) => {
+  app.post("/api/quotes/:quoteId/milestones", isAuthenticated, requirePermission("edit_quotes"), async (req, res) => {
     try {
       const milestone = await storage.createQuoteMilestone({
         ...req.body,
@@ -213,7 +213,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/quotes/:quoteId/milestones", isAuthenticated, async (req, res) => {
+  app.delete("/api/quotes/:quoteId/milestones", isAuthenticated, requirePermission("edit_quotes"), async (req, res) => {
     try {
       await storage.deleteQuoteMilestonesByQuote(req.params.quoteId);
       res.json({ deleted: true });
@@ -224,7 +224,7 @@ export function registerQuotesRoutes(app: Express): void {
   });
 
   // Quote custom sections
-  app.get("/api/quotes/:quoteId/custom-sections", isAuthenticated, async (req, res) => {
+  app.get("/api/quotes/:quoteId/custom-sections", isAuthenticated, requirePermission("view_quotes"), async (req, res) => {
     try {
       const sections = await storage.getQuoteCustomSections(req.params.quoteId);
       res.json(sections);
@@ -234,7 +234,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/quotes/:quoteId/custom-sections", isAuthenticated, async (req, res) => {
+  app.post("/api/quotes/:quoteId/custom-sections", isAuthenticated, requirePermission("edit_quotes"), async (req, res) => {
     try {
       const section = await storage.createQuoteCustomSection({
         ...req.body,
@@ -270,7 +270,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/quotes/:quoteId/custom-sections", isAuthenticated, async (req, res) => {
+  app.delete("/api/quotes/:quoteId/custom-sections", isAuthenticated, requirePermission("edit_quotes"), async (req, res) => {
     try {
       await storage.deleteQuoteCustomSectionsByQuote(req.params.quoteId);
       res.json({ deleted: true });
@@ -281,7 +281,7 @@ export function registerQuotesRoutes(app: Express): void {
   });
 
   // Terms templates
-  app.get("/api/terms-templates", isAuthenticated, async (req, res) => {
+  app.get("/api/terms-templates", isAuthenticated, requirePermission("view_quotes"), async (req, res) => {
     try {
       const templates = await storage.getTermsTemplates();
       res.json(templates);
@@ -291,7 +291,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/terms-templates/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/terms-templates/:id", isAuthenticated, requirePermission("view_quotes"), async (req, res) => {
     try {
       const template = await storage.getTermsTemplate(req.params.id);
       if (!template) {
@@ -304,7 +304,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/terms-templates", isAuthenticated, async (req: any, res) => {
+  app.post("/api/terms-templates", isAuthenticated, requirePermission("edit_quotes"), async (req: any, res) => {
     try {
       const parsed = insertTermsTemplateSchema.safeParse({
         ...req.body,
@@ -321,7 +321,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/terms-templates/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/terms-templates/:id", isAuthenticated, requirePermission("edit_quotes"), async (req, res) => {
     try {
       const updateSchema = insertTermsTemplateSchema.partial();
       const parsed = updateSchema.safeParse(req.body);
@@ -339,7 +339,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/terms-templates/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/terms-templates/:id", isAuthenticated, requirePermission("delete_quotes"), async (req, res) => {
     try {
       const deleted = await storage.deleteTermsTemplate(req.params.id);
       if (!deleted) {
@@ -353,7 +353,7 @@ export function registerQuotesRoutes(app: Express): void {
   });
 
   // Quote payment schedules
-  app.get("/api/quotes/:quoteId/payment-schedules", isAuthenticated, async (req, res) => {
+  app.get("/api/quotes/:quoteId/payment-schedules", isAuthenticated, requirePermission("view_quotes"), async (req, res) => {
     try {
       const schedules = await storage.getQuotePaymentSchedules(req.params.quoteId);
       res.json(schedules);
@@ -363,7 +363,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/quotes/:quoteId/payment-schedules", isAuthenticated, async (req, res) => {
+  app.post("/api/quotes/:quoteId/payment-schedules", isAuthenticated, requirePermission("edit_quotes"), async (req, res) => {
     try {
       const schedule = await storage.createQuotePaymentSchedule({
         ...req.body,
@@ -376,7 +376,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/payment-schedules/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/payment-schedules/:id", isAuthenticated, requirePermission("edit_quotes"), async (req, res) => {
     try {
       const updated = await storage.updateQuotePaymentSchedule(req.params.id, req.body);
       if (!updated) {
@@ -389,7 +389,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/payment-schedules/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/payment-schedules/:id", isAuthenticated, requirePermission("edit_quotes"), async (req, res) => {
     try {
       await storage.deleteQuotePaymentSchedule(req.params.id);
       res.json({ deleted: true });
@@ -399,7 +399,7 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/payment-schedules/:id/mark-paid", isAuthenticated, async (req, res) => {
+  app.post("/api/payment-schedules/:id/mark-paid", isAuthenticated, requirePermission("edit_quotes"), async (req, res) => {
     try {
       const { paidAmount } = req.body;
       const updated = await storage.markPaymentSchedulePaid(req.params.id, paidAmount);
@@ -414,7 +414,7 @@ export function registerQuotesRoutes(app: Express): void {
   });
 
   // Quote workflow events
-  app.get("/api/quotes/:quoteId/workflow-events", isAuthenticated, async (req, res) => {
+  app.get("/api/quotes/:quoteId/workflow-events", isAuthenticated, requirePermission("view_quotes"), async (req, res) => {
     try {
       const events = await storage.getQuoteWorkflowEvents(req.params.quoteId);
       res.json(events);

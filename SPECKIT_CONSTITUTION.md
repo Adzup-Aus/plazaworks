@@ -124,9 +124,13 @@ For **every new feature or meaningful modification**:
    - Use `describe.runIf(hasDb)` (or your project’s equivalent) so tests that need a DB are skipped when `DATABASE_URL` is not set.  
    - When `DATABASE_URL` is set (e.g. via `.env`), tests should run against that environment.
 
-### 2.3 Verification (mandatory)
+### 2.3 Staff permissions (for permission-gated routes)
 
-After **any** change (new feature or modification):
+For **staff-facing API routes** that must be gated by the staff permission system: use `requirePermission(permission)` from `../../routes/shared` after `isAuthenticated` (and `ensureStaffProfile` if the route expects a staff profile). Permission values must come from `userPermissions` in `shared/models/staff.ts`. Admin users bypass permission checks.
+
+### 2.4 Verification (mandatory)
+
+After **any** backend or API-touching change:
 
 1. **Run the full test suite with env**  
    ```bash

@@ -1,9 +1,9 @@
 import type { Express } from "express";
-import { storage, isAuthenticated, ensureStaffProfile } from "../../routes/shared";
+import { storage, isAuthenticated, ensureStaffProfile, requirePermission } from "../../routes/shared";
 import { updateStaffSchema } from "../../routes/schemas";
 
 export function registerStaffRoutes(app: Express): void {
-  app.get("/api/staff", isAuthenticated, ensureStaffProfile, async (req, res) => {
+  app.get("/api/staff", isAuthenticated, ensureStaffProfile, requirePermission("view_users"), async (req, res) => {
     try {
       const profiles = await storage.getStaffProfiles();
       res.json(profiles);
@@ -13,7 +13,7 @@ export function registerStaffRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/staff/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/staff/:id", isAuthenticated, requirePermission("view_users"), async (req, res) => {
     try {
       const profile = await storage.getStaffProfile(req.params.id);
       if (!profile) {
@@ -26,7 +26,7 @@ export function registerStaffRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/staff/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/staff/:id", isAuthenticated, requirePermission("edit_users"), async (req: any, res) => {
     try {
       const validation = updateStaffSchema.safeParse(req.body);
       if (!validation.success) {
@@ -44,7 +44,7 @@ export function registerStaffRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/staff/:id/working-hours", isAuthenticated, async (req, res) => {
+  app.get("/api/staff/:id/working-hours", isAuthenticated, requirePermission("view_users"), async (req, res) => {
     try {
       const hours = await storage.getStaffWorkingHours(req.params.id);
       res.json(hours);
@@ -54,7 +54,7 @@ export function registerStaffRoutes(app: Express): void {
     }
   });
 
-  app.put("/api/staff/:id/working-hours", isAuthenticated, async (req, res) => {
+  app.put("/api/staff/:id/working-hours", isAuthenticated, requirePermission("edit_users"), async (req, res) => {
     try {
       const { hours } = req.body;
       if (!Array.isArray(hours)) {

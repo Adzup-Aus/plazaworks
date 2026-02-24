@@ -22,20 +22,77 @@ export type EmploymentType = typeof employmentTypes[number];
 
 // User permissions
 export const userPermissions = [
+  "view_dashboard",
   "view_jobs",
   "create_jobs",
   "edit_jobs",
   "delete_jobs",
+  "view_quotes",
+  "create_quotes",
+  "edit_quotes",
+  "delete_quotes",
+  "view_invoices",
+  "create_invoices",
+  "edit_invoices",
+  "delete_invoices",
+  "view_schedule",
+  "manage_schedule",
+  "view_activities",
   "view_users",
   "create_users",
   "edit_users",
   "delete_users",
-  "view_schedule",
-  "manage_schedule",
+  "view_clients",
+  "create_clients",
+  "edit_clients",
+  "delete_clients",
   "view_reports",
-  "admin_settings"
+  "admin_settings",
 ] as const;
 export type UserPermission = typeof userPermissions[number];
+
+/** Permissions that are automatically granted when a higher permission is assigned (e.g. create implies view). */
+export const PERMISSION_IMPLICATIONS: Record<UserPermission, UserPermission[]> = {
+  view_dashboard: [],
+  view_jobs: [],
+  create_jobs: ["view_jobs"],
+  edit_jobs: ["view_jobs"],
+  delete_jobs: ["view_jobs"],
+  view_quotes: [],
+  create_quotes: ["view_quotes"],
+  edit_quotes: ["view_quotes"],
+  delete_quotes: ["view_quotes"],
+  view_invoices: [],
+  create_invoices: ["view_invoices"],
+  edit_invoices: ["view_invoices"],
+  delete_invoices: ["view_invoices"],
+  view_schedule: [],
+  manage_schedule: ["view_schedule"],
+  view_activities: [],
+  view_users: [],
+  create_users: ["view_users"],
+  edit_users: ["view_users"],
+  delete_users: ["view_users"],
+  view_clients: [],
+  create_clients: ["view_clients"],
+  edit_clients: ["view_clients"],
+  delete_clients: ["view_clients"],
+  view_reports: [],
+  admin_settings: [],
+};
+
+/** Expand permissions with implied ones (e.g. create_jobs adds view_jobs). */
+export function normalizePermissions(permissions: string[]): UserPermission[] {
+  const normalized = new Set<UserPermission>();
+  for (const p of permissions) {
+    if (userPermissions.includes(p as UserPermission)) {
+      normalized.add(p as UserPermission);
+      const implied = PERMISSION_IMPLICATIONS[p as UserPermission] ?? [];
+      implied.forEach((ip) => normalized.add(ip));
+    }
+  }
+  return Array.from(normalized);
+}
 
 // Salary types
 export const salaryTypes = ["annual", "hourly"] as const;
