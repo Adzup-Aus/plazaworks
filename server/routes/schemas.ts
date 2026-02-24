@@ -1,8 +1,8 @@
-import { userRoles, employmentTypes, userPermissions } from "@shared/schema";
+import { employmentTypes, userPermissions } from "@shared/schema";
 import { z } from "zod";
 
 export const updateStaffSchema = z.object({
-  roles: z.array(z.enum(userRoles)).optional(),
+  roles: z.array(z.string()).optional(),
   employmentType: z.enum(employmentTypes).optional(),
   permissions: z.array(z.enum(userPermissions)).optional(),
   isActive: z.boolean().optional(),

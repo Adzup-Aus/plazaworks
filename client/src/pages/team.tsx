@@ -49,7 +49,8 @@ import {
   Clock,
   Mail,
 } from "lucide-react";
-import { userRoles, employmentTypes, userPermissions, type StaffProfile, type User, type UserWorkingHours } from "@shared/schema";
+import { employmentTypes, userPermissions, type StaffProfile, type User, type UserWorkingHours } from "@shared/schema";
+import { useRoles } from "@/hooks/use-roles";
 
 const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -71,11 +72,14 @@ function getRoleColor(role: string): string {
   return colors[role] || "bg-muted text-muted-foreground";
 }
 
-function formatRole(role: string): string {
-  return role
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
+function formatRoleDisplay(role: string): string {
+  if (role.includes("_")) {
+    return role
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+  }
+  return role;
 }
 
 function formatPermission(permission: string): string {
@@ -96,6 +100,8 @@ export default function Team() {
   const { data: staffList, isLoading } = useQuery<StaffWithUser[]>({
     queryKey: ["/api/staff"],
   });
+
+  const { data: rolesList } = useRoles();
 
   const updateStaffMutation = useMutation({
     mutationFn: async (data: { 
@@ -283,9 +289,9 @@ export default function Team() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Roles</SelectItem>
-                  {userRoles.map((role) => (
-                    <SelectItem key={role} value={role}>
-                      {formatRole(role)}
+                  {(rolesList || []).map((role) => (
+                    <SelectItem key={role.id} value={role.name}>
+                      {role.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -376,7 +382,7 @@ export default function Team() {
                               variant="secondary"
                               className={getRoleColor(role)}
                             >
-                              {formatRole(role)}
+                              {formatRoleDisplay(role)}
                             </Badge>
                           ))}
                           {(staff.roles || []).length > 2 && (
@@ -467,19 +473,24 @@ export default function Team() {
                   Select one or more roles for this team member
                 </p>
                 <div className="grid grid-cols-2 gap-3">
-                  {userRoles.map((role) => (
-                    <div key={role} className="flex items-center space-x-2">
+                  {(rolesList || []).map((role) => (
+                    <div key={role.id} className="flex items-center space-x-2">
                       <Checkbox
-                        id={`role-${role}`}
-                        checked={editRoles.includes(role)}
-                        onCheckedChange={() => toggleRole(role)}
-                        data-testid={`checkbox-role-${role}`}
+                        id={`role-${role.id}`}
+                        checked={editRoles.includes(role.name)}
+                        onCheckedChange={() => toggleRole(role.name)}
+                        data-testid={`checkbox-role-${role.name}`}
                       />
-                      <Label htmlFor={`role-${role}`} className="text-sm font-normal cursor-pointer">
-                        {formatRole(role)}
+                      <Label htmlFor={`role-${role.id}`} className="text-sm font-normal cursor-pointer">
+                        {role.name}
                       </Label>
                     </div>
                   ))}
+                  {(!rolesList || rolesList.length === 0) && (
+                    <p className="col-span-2 text-sm text-muted-foreground">
+                      No roles defined yet. Create roles in Settings → Roles.
+                    </p>
+                  )}
                 </div>
               </div>
 

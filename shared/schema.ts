@@ -14,6 +14,7 @@ export * from "./models/settings";
 
 // Re-export staff, clients, jobs, activities, schedule models
 export * from "./models/staff";
+export * from "./models/roles";
 export * from "./models/clients";
 export * from "./models/jobs";
 export * from "./models/activities";

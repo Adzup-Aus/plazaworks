@@ -115,9 +115,15 @@ import {
   type InsertAppSettings,
   type TermsTemplate,
   type InsertTermsTemplate,
+  type Role,
+  type InsertRole,
+  type UserPermission,
   appSettings,
   termsTemplates,
   staffProfiles,
+  roles,
+  rolePermissions,
+  userPermissions,
   userWorkingHours,
   jobs,
   activities,
@@ -169,6 +175,7 @@ import {
   quoteMilestones,
   quoteCustomSections,
   invoicePayments,
+  normalizePermissions,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, lt, sql, inArray, isNull, or } from "drizzle-orm";
@@ -183,6 +190,17 @@ export interface IStorage {
   createStaffProfile(profile: InsertStaffProfile): Promise<StaffProfile>;
   updateStaffProfile(id: string, profile: Partial<InsertStaffProfile>): Promise<StaffProfile | undefined>;
   deleteStaffProfile(id: string): Promise<boolean>;
+
+  // Role operations
+  getRoles(): Promise<Role[]>;
+  getRole(id: string): Promise<Role | undefined>;
+  getRoleByName(name: string): Promise<Role | undefined>;
+  createRole(role: InsertRole): Promise<Role>;
+  updateRole(id: string, updates: Partial<InsertRole>): Promise<Role | undefined>;
+  deleteRole(id: string): Promise<boolean>;
+  getRolePermissions(roleId: string): Promise<UserPermission[]>;
+  setRolePermissions(roleId: string, permissions: UserPermission[]): Promise<void>;
+  getUserPermissionsFromRoles(profile: StaffProfile): Promise<UserPermission[]>;
 
   // Job operations
   getJobs(): Promise<Job[]>;
@@ -550,8 +568,77 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteStaffProfile(id: string): Promise<boolean> {
-    const result = await db.delete(staffProfiles).where(eq(staffProfiles.id, id));
+    await db.delete(staffProfiles).where(eq(staffProfiles.id, id));
     return true;
+  }
+
+  // Role operations
+  async getRoles(): Promise<Role[]> {
+    return db.select().from(roles).orderBy(roles.name);
+  }
+
+  async getRole(id: string): Promise<Role | undefined> {
+    const [role] = await db.select().from(roles).where(eq(roles.id, id));
+    return role;
+  }
+
+  async getRoleByName(name: string): Promise<Role | undefined> {
+    const [role] = await db.select().from(roles).where(eq(roles.name, name));
+    return role;
+  }
+
+  async createRole(role: InsertRole): Promise<Role> {
+    const [created] = await db.insert(roles).values(role).returning();
+    return created;
+  }
+
+  async updateRole(id: string, updates: Partial<InsertRole>): Promise<Role | undefined> {
+    const [updated] = await db
+      .update(roles)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(roles.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteRole(id: string): Promise<boolean> {
+    await db.delete(rolePermissions).where(eq(rolePermissions.roleId, id));
+    await db.delete(roles).where(eq(roles.id, id));
+    return true;
+  }
+
+  async getRolePermissions(roleId: string): Promise<UserPermission[]> {
+    const rows = await db
+      .select({ permission: rolePermissions.permission })
+      .from(rolePermissions)
+      .where(eq(rolePermissions.roleId, roleId));
+    return rows.map((r) => r.permission as UserPermission).filter((p) => userPermissions.includes(p as UserPermission));
+  }
+
+  async setRolePermissions(roleId: string, permissions: UserPermission[]): Promise<void> {
+    await db.delete(rolePermissions).where(eq(rolePermissions.roleId, roleId));
+    const valid = permissions.filter((p) => userPermissions.includes(p));
+    if (valid.length > 0) {
+      await db.insert(rolePermissions).values(
+        valid.map((permission) => ({ roleId, permission }))
+      );
+    }
+  }
+
+  async getUserPermissionsFromRoles(profile: StaffProfile): Promise<UserPermission[]> {
+    const roleNames = profile.roles ?? [];
+    if (roleNames.length === 0) return [];
+    const allPerms = new Set<string>();
+    for (const name of roleNames) {
+      const role = await this.getRoleByName(name);
+      if (role) {
+        const perms = await this.getRolePermissions(role.id);
+        perms.forEach((p) => allPerms.add(p));
+      }
+    }
+    const direct = (profile.permissions ?? []) as string[];
+    direct.forEach((p) => allPerms.add(p));
+    return normalizePermissions(Array.from(allPerms));
   }
 
   // Job operations

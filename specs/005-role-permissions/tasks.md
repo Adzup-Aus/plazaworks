@@ -19,8 +19,8 @@
 
 **Purpose**: Project initialization and basic structure - minimal since we're extending existing codebase
 
-- [ ] T001 [P] Verify database connection and existing schema in `shared/schema.ts`
-- [ ] T002 [P] Review existing permission middleware in `server/middleware/permissions.ts`
+- [x] T001 [P] Verify database connection and existing schema in `shared/schema.ts`
+- [x] T002 [P] Review existing permission middleware in `server/middleware/permissions.ts`
 
 ---
 
@@ -32,23 +32,23 @@
 
 ### Database Schema (Required for all stories)
 
-- [ ] T003 Create `shared/models/roles.ts` with `roles` and `role_permissions` tables
-- [ ] T004 [P] Re-export roles models from `shared/schema.ts`
-- [ ] T005 Generate and run database migration (`npm run db:generate && npm run db:migrate`)
+- [x] T003 Create `shared/models/roles.ts` with `roles` and `role_permissions` tables
+- [x] T004 [P] Re-export roles models from `shared/schema.ts`
+- [x] T005 Generate and run database migration (`npm run db:push`)
 
 ### Backend Storage Layer (Required for all stories)
 
-- [ ] T006 [P] Add role CRUD methods to `server/storage.ts`:
+- [x] T006 [P] Add role CRUD methods to `server/storage.ts`:
   - `getRoles()`, `getRole(id)`, `getRoleByName(name)`
   - `createRole(role)`, `updateRole(id, updates)`, `deleteRole(id)`
-- [ ] T007 [P] Add role permission methods to `server/storage.ts`:
+- [x] T007 [P] Add role permission methods to `server/storage.ts`:
   - `getRolePermissions(roleId)`, `setRolePermissions(roleId, permissions)`
-- [ ] T008 Add role-aware permission resolution to `server/storage.ts`:
+- [x] T008 Add role-aware permission resolution to `server/storage.ts`:
   - `getUserPermissionsFromRoles(staffProfile)` method
 
 ### Backend Permission Middleware Update (Required for all stories)
 
-- [ ] T009 Update `server/middleware/permissions.ts`:
+- [x] T009 Update `server/middleware/permissions.ts`:
   - Modify `getUserPermissions()` to aggregate role permissions
   - Combine direct permissions with role-based permissions
 
@@ -64,12 +64,12 @@
 
 ### Implementation for User Story 1
 
-- [ ] T010 [P] [US1] Add "Roles" nav item to `client/src/components/app-sidebar.tsx`
+- [x] T010 [P] [US1] Add "Roles" nav item to `client/src/components/app-sidebar.tsx`
   - Place alongside Jobs, Invoices, Quotes
   - Use Shield icon (existing import from lucide-react)
   - Require `admin_settings` permission
-- [ ] T011 [P] [US1] Add `/roles` route in `client/App.tsx` (AuthenticatedRouter)
-- [ ] T012 [US1] Create empty `client/src/pages/roles.tsx` page component
+- [x] T011 [P] [US1] Add `/roles` route in `client/App.tsx` (AuthenticatedRouter)
+- [x] T012 [US1] Create empty `client/src/pages/roles.tsx` page component
   - Default export, basic container structure
   - Include page title "Role Management"
 
@@ -127,33 +127,33 @@
 
 ### API Tests for User Story 3
 
-- [ ] T020 [P] [US3] Add tests to `server/__tests__/api.roles.test.ts`:
+- [x] T020 [P] [US3] Add tests to `server/__tests__/api.roles.test.ts`:
   - `GET /api/roles/:id/permissions` returns role permissions
   - `PUT /api/roles/:id/permissions` sets role permissions
   - `GET /api/permissions` returns all available permissions with metadata
 
 ### Backend Implementation for User Story 3
 
-- [ ] T021 [P] [US3] Update `server/modules/roles/routes.ts` with endpoints:
+- [x] T021 [P] [US3] Update `server/modules/roles/routes.ts` with endpoints:
   - `GET /api/roles/:id/permissions` - get role permissions
   - `PUT /api/roles/:id/permissions` - set role permissions
   - `GET /api/permissions` - list all permissions with metadata
-- [ ] T022 [P] [US3] Create permission metadata structure in `server/modules/roles/routes.ts`:
+- [x] T022 [P] [US3] Create permission metadata structure in `server/modules/roles/routes.ts`:
   - Map each `userPermission` to display name, description, category
   - Categories: Dashboard, Jobs, Quotes, Invoices, Schedule, Activities, Users, Clients, Reports, Settings
 
 ### Frontend Implementation for User Story 3
 
-- [ ] T023 [P] [US3] Update `client/src/hooks/use-roles.ts`:
+- [x] T023 [P] [US3] Update `client/src/hooks/use-roles.ts`:
   - `useRolePermissions(roleId)` query hook
   - `useSetRolePermissions(roleId)` mutation hook
   - `useAvailablePermissions()` query hook
-- [ ] T024 [US3] Create `client/src/components/permission-editor.tsx`:
+- [x] T024 [US3] Create `client/src/components/permission-editor.tsx`:
   - Display permissions grouped by category
   - Toggle switches for each permission
   - Show permission descriptions
   - Save button calls `useSetRolePermissions()`
-- [ ] T025 [US3] Update `client/src/pages/roles.tsx`:
+- [x] T025 [US3] Update `client/src/pages/roles.tsx`:
   - Add "Edit Permissions" button to each role row
   - Open permission editor in modal/drawer
 
@@ -169,26 +169,26 @@
 
 ### API Tests for User Story 4
 
-- [ ] T026 [P] [US4] Add tests to `server/__tests__/api.roles.test.ts`:
+- [x] T026 [P] [US4] Add tests to `server/__tests__/api.roles.test.ts`:
   - `GET /api/roles/:id` returns single role
   - `PATCH /api/roles/:id` updates role name/description
   - `PATCH /api/roles/:id` validates unique name constraint
 
 ### Backend Implementation for User Story 4
 
-- [ ] T027 [P] [US4] Update `server/modules/roles/routes.ts` with endpoints:
+- [x] T027 [P] [US4] Update `server/modules/roles/routes.ts` with endpoints:
   - `GET /api/roles/:id` - get single role
   - `PATCH /api/roles/:id` - update role
 
 ### Frontend Implementation for User Story 4
 
-- [ ] T028 [P] [US4] Update `client/src/hooks/use-roles.ts`:
+- [x] T028 [P] [US4] Update `client/src/hooks/use-roles.ts`:
   - `useRole(roleId)` query hook for single role
   - `useUpdateRole(roleId)` mutation hook
-- [ ] T029 [P] [US4] Update `client/src/components/role-form.tsx`:
+- [x] T029 [P] [US4] Update `client/src/components/role-form.tsx`:
   - Support edit mode (pre-populate with existing values)
   - Submit updates via `useUpdateRole()`
-- [ ] T030 [US4] Update `client/src/pages/roles.tsx`:
+- [x] T030 [US4] Update `client/src/pages/roles.tsx`:
   - Add "Edit" button to each role row
   - Open role form in edit mode
 
@@ -204,23 +204,23 @@
 
 ### API Tests for User Story 5
 
-- [ ] T031 [P] [US5] Add tests to `server/__tests__/api.roles.test.ts`:
+- [x] T031 [P] [US5] Add tests to `server/__tests__/api.roles.test.ts`:
   - `DELETE /api/roles/:id` deletes role successfully
   - `DELETE /api/roles/:id` returns 409 if role has assigned staff
   - `DELETE /api/roles/:id` returns 403 for system roles
 
 ### Backend Implementation for User Story 5
 
-- [ ] T032 [US5] Update `server/modules/roles/routes.ts` with endpoint:
+- [x] T032 [US5] Update `server/modules/roles/routes.ts` with endpoint:
   - `DELETE /api/roles/:id` - delete role
   - Check if any staff profiles have this role before deleting
   - Prevent deletion of `isSystem` roles
 
 ### Frontend Implementation for User Story 5
 
-- [ ] T033 [P] [US5] Update `client/src/hooks/use-roles.ts`:
+- [x] T033 [P] [US5] Update `client/src/hooks/use-roles.ts`:
   - `useDeleteRole()` mutation hook
-- [ ] T034 [US5] Update `client/src/pages/roles.tsx`:
+- [x] T034 [US5] Update `client/src/pages/roles.tsx`:
   - Add "Delete" button to each role row
   - Show confirmation dialog before delete
   - Display error if delete fails (role in use)
@@ -236,21 +236,21 @@
 
 ### Testing & Verification
 
-- [ ] T035 Run `npm run test:env` and fix any failing tests
-- [ ] T036 [P] Verify API endpoints return proper error messages
-- [ ] T037 [P] Verify frontend form validation matches backend
+- [x] T035 Run `npm run test:env` and fix any failing tests
+- [x] T036 [P] Verify API endpoints return proper error messages
+- [x] T037 [P] Verify frontend form validation matches backend
 
 ### UI/UX Polish
 
-- [ ] T038 [P] Add loading states to roles page and forms
-- [ ] T039 [P] Add empty state when no roles exist
-- [ ] T040 [P] Add success/error toasts for mutations
-- [ ] T041 [P] Style system roles differently (badge or indicator)
+- [x] T038 [P] Add loading states to roles page and forms
+- [x] T039 [P] Add empty state when no roles exist
+- [x] T040 [P] Add success/error toasts for mutations
+- [x] T041 [P] Style system roles differently (badge or indicator)
 
 ### Documentation
 
-- [ ] T042 [P] Add JSDoc comments to storage methods
-- [ ] T043 [P] Update API documentation if needed
+- [x] T042 [P] Add JSDoc comments to storage methods
+- [x] T043 [P] Update API documentation if needed
 
 **Checkpoint**: Feature complete and polished
 

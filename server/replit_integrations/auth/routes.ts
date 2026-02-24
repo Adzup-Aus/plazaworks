@@ -20,7 +20,7 @@ export function registerAuthRoutes(app: Express): void {
       }
       const profile = await storage.getStaffProfileByUserId(userId);
       const role = profile?.roles?.[0] ?? null;
-      const permissions = getEffectivePermissions(profile);
+      const permissions = await getEffectivePermissions(profile);
       res.json({ ...user, role, permissions });
     } catch (error) {
       console.error("Error fetching user:", error);

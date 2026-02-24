@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 import type { UserPermission } from "@shared/schema";
-import { userPermissions, normalizePermissions } from "@shared/schema";
+import { userPermissions } from "@shared/schema";
 import { getUserId } from "../auth-utils";
 import { storage } from "../storage";
 
@@ -9,17 +9,17 @@ export function isAdmin(profile: { roles?: string[] | null } | null): boolean {
   return !!profile?.roles?.includes("admin");
 }
 
-/** Get effective permissions for a staff profile (admin gets all, else normalized explicit permissions). */
-export function getEffectivePermissions(profile: { roles?: string[] | null; permissions?: string[] | null } | null): UserPermission[] {
+/** Get effective permissions for a staff profile (admin gets all, else role-based + direct permissions). */
+export async function getEffectivePermissions(profile: { roles?: string[] | null; permissions?: string[] | null } | null): Promise<UserPermission[]> {
   if (!profile) return [];
   if (isAdmin(profile)) return [...userPermissions];
-  return normalizePermissions(profile.permissions ?? []);
+  return storage.getUserPermissionsFromRoles(profile as import("@shared/schema").StaffProfile);
 }
 
 /** Check if user has a specific permission. */
 export async function checkPermission(userId: string, permission: UserPermission): Promise<boolean> {
   const profile = await storage.getStaffProfileByUserId(userId);
-  const permissions = getEffectivePermissions(profile);
+  const permissions = await getEffectivePermissions(profile);
   return permissions.includes(permission);
 }
 
@@ -38,7 +38,7 @@ export function requirePermission(permission: UserPermission): RequestHandler {
         return res.status(401).json({ message: "Authentication required" });
       }
       const profile = await storage.getStaffProfileByUserId(userId);
-      const permissions = getEffectivePermissions(profile);
+      const permissions = await getEffectivePermissions(profile);
       if (permissions.includes(permission)) {
         return next();
       }
@@ -59,7 +59,7 @@ export function requireAnyPermission(...permissions: UserPermission[]): RequestH
         return res.status(401).json({ message: "Authentication required" });
       }
       const profile = await storage.getStaffProfileByUserId(userId);
-      const userPerms = getEffectivePermissions(profile);
+      const userPerms = await getEffectivePermissions(profile);
       const hasAny = permissions.some((p) => userPerms.includes(p));
       if (hasAny) return next();
       return res.status(403).json({ message: "You don't have permission to perform this action" });
@@ -79,7 +79,7 @@ export function requireAllPermissions(...permissions: UserPermission[]): Request
         return res.status(401).json({ message: "Authentication required" });
       }
       const profile = await storage.getStaffProfileByUserId(userId);
-      const userPerms = getEffectivePermissions(profile);
+      const userPerms = await getEffectivePermissions(profile);
       const hasAll = permissions.every((p) => userPerms.includes(p));
       if (hasAll) return next();
       return res.status(403).json({ message: "You don't have permission to perform this action" });
