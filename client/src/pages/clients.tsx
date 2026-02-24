@@ -57,6 +57,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { PermissionGate } from "@/components/permission-gate";
 
 const COUNTRIES = [
   { code: "AU", name: "Australia", dialCode: "+61" },
@@ -354,10 +355,12 @@ export default function Clients() {
           <h1 className="text-2xl font-semibold" data-testid="text-page-title">Clients</h1>
           <p className="text-muted-foreground">Manage your client contacts and portal access</p>
         </div>
-        <Button onClick={() => handleOpenDialog()} data-testid="button-add-client">
-          <Plus className="mr-2 h-4 w-4" />
-          Add Client
-        </Button>
+        <PermissionGate permission="create_clients">
+          <Button onClick={() => handleOpenDialog()} data-testid="button-add-client">
+            <Plus className="mr-2 h-4 w-4" />
+            Add Client
+          </Button>
+        </PermissionGate>
       </div>
 
       <Card>
@@ -465,26 +468,30 @@ export default function Clients() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleOpenDialog(client)}
-                          data-testid={`button-edit-client-${client.id}`}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            if (confirm("Are you sure you want to delete this client?")) {
-                              deleteMutation.mutate(client.id);
-                            }
-                          }}
-                          data-testid={`button-delete-client-${client.id}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <PermissionGate permission="edit_clients">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleOpenDialog(client)}
+                            data-testid={`button-edit-client-${client.id}`}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </PermissionGate>
+                        <PermissionGate permission="delete_clients">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              if (confirm("Are you sure you want to delete this client?")) {
+                                deleteMutation.mutate(client.id);
+                              }
+                            }}
+                            data-testid={`button-delete-client-${client.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </PermissionGate>
                       </div>
                     </TableCell>
                   </TableRow>

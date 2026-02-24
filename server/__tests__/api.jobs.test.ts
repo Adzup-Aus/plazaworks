@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
+import { loginAsAdmin } from "./helpers/auth";
 
 const hasDb = !!process.env.DATABASE_URL;
 let app: Express;
@@ -11,16 +12,8 @@ describe.runIf(hasDb)("API jobs", () => {
     const { createApp } = await import("../index");
     const out = await createApp();
     app = out.app;
-    const email = `api-jobs-${Date.now()}@example.com`;
-    await request(app).post("/api/auth/register").send({
-      email,
-      password: "password123",
-    });
-    const loginRes = await request(app).post("/api/auth/login").send({
-      email,
-      password: "password123",
-    });
-    authCookie = loginRes.headers["set-cookie"] ?? [];
+    const { authCookie: c } = await loginAsAdmin(out.app, "api-jobs");
+    authCookie = c;
   });
 
   it("GET /api/jobs returns 401 when unauthenticated", async () => {

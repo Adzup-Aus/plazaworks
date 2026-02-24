@@ -37,6 +37,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/use-permissions";
+import { PermissionGate } from "@/components/permission-gate";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
@@ -1815,6 +1817,8 @@ function calculateHoursFromTimeRange(startTime: string | null, endTime: string |
 
 function JobScheduleSection({ jobId }: { jobId: string }) {
   const { toast } = useToast();
+  const { hasPermission } = usePermissions();
+  const canManageSchedule = hasPermission("manage_schedule");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
@@ -2076,13 +2080,14 @@ function JobScheduleSection({ jobId }: { jobId: string }) {
               : "Schedule work days for this job"}
           </CardDescription>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" variant="outline" data-testid="button-add-schedule">
-              <Plus className="mr-2 h-4 w-4" />
-              Add Day
-            </Button>
-          </DialogTrigger>
+        <PermissionGate permission="manage_schedule">
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline" data-testid="button-add-schedule">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Day
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Schedule Work Day</DialogTitle>
@@ -2232,7 +2237,8 @@ function JobScheduleSection({ jobId }: { jobId: string }) {
               </Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </PermissionGate>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -2278,80 +2284,96 @@ function JobScheduleSection({ jobId }: { jobId: string }) {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      {entry.status === "scheduled" && (
+                      {canManageSchedule && (
                         <>
+                          {entry.status === "scheduled" && (
+                            <>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => completeScheduleMutation.mutate(entry.id)}
+                                disabled={completeScheduleMutation.isPending}
+                                title="Mark complete"
+                                data-testid={`button-complete-schedule-${entry.id}`}
+                              >
+                                <CheckCircle className="h-4 w-4 text-emerald-500" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => cancelScheduleMutation.mutate(entry.id)}
+                                disabled={cancelScheduleMutation.isPending}
+                                title="Cancel"
+                                data-testid={`button-cancel-schedule-${entry.id}`}
+                              >
+                                <XCircle className="h-4 w-4 text-amber-500" />
+                              </Button>
+                            </>
+                          )}
+                          {entry.status === "completed" && (
+                            <>
+                              <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Done
+                              </Badge>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => resetScheduleMutation.mutate(entry.id)}
+                                disabled={resetScheduleMutation.isPending}
+                                title="Undo - reset to scheduled"
+                                data-testid={`button-reset-schedule-${entry.id}`}
+                              >
+                                <Undo2 className="h-4 w-4 text-muted-foreground" />
+                              </Button>
+                            </>
+                          )}
+                          {entry.status === "cancelled" && (
+                            <>
+                              <Badge variant="secondary" className="bg-muted text-muted-foreground">
+                                <XCircle className="h-3 w-3 mr-1" />
+                                Cancelled
+                              </Badge>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => resetScheduleMutation.mutate(entry.id)}
+                                disabled={resetScheduleMutation.isPending}
+                                title="Undo - reset to scheduled"
+                                data-testid={`button-reset-schedule-${entry.id}`}
+                              >
+                                <Undo2 className="h-4 w-4 text-muted-foreground" />
+                              </Button>
+                            </>
+                          )}
                           <Button
                             size="icon"
                             variant="ghost"
-                            onClick={() => completeScheduleMutation.mutate(entry.id)}
-                            disabled={completeScheduleMutation.isPending}
-                            title="Mark complete"
-                            data-testid={`button-complete-schedule-${entry.id}`}
+                            onClick={() => {
+                              if (confirm("Delete this schedule entry?")) {
+                                deleteScheduleMutation.mutate(entry.id);
+                              }
+                            }}
+                            disabled={deleteScheduleMutation.isPending}
+                            title="Delete"
+                            data-testid={`button-delete-schedule-${entry.id}`}
                           >
-                            <CheckCircle className="h-4 w-4 text-emerald-500" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => cancelScheduleMutation.mutate(entry.id)}
-                            disabled={cancelScheduleMutation.isPending}
-                            title="Cancel"
-                            data-testid={`button-cancel-schedule-${entry.id}`}
-                          >
-                            <XCircle className="h-4 w-4 text-amber-500" />
+                            <Trash2 className="h-4 w-4 text-muted-foreground" />
                           </Button>
                         </>
                       )}
-                      {entry.status === "completed" && (
-                        <>
-                          <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
-                            <CheckCircle className="h-3 w-3 mr-1" />
-                            Done
-                          </Badge>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => resetScheduleMutation.mutate(entry.id)}
-                            disabled={resetScheduleMutation.isPending}
-                            title="Undo - reset to scheduled"
-                            data-testid={`button-reset-schedule-${entry.id}`}
-                          >
-                            <Undo2 className="h-4 w-4 text-muted-foreground" />
-                          </Button>
-                        </>
+                      {!canManageSchedule && entry.status === "completed" && (
+                        <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Done
+                        </Badge>
                       )}
-                      {entry.status === "cancelled" && (
-                        <>
-                          <Badge variant="secondary" className="bg-muted text-muted-foreground">
-                            <XCircle className="h-3 w-3 mr-1" />
-                            Cancelled
-                          </Badge>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => resetScheduleMutation.mutate(entry.id)}
-                            disabled={resetScheduleMutation.isPending}
-                            title="Undo - reset to scheduled"
-                            data-testid={`button-reset-schedule-${entry.id}`}
-                          >
-                            <Undo2 className="h-4 w-4 text-muted-foreground" />
-                          </Button>
-                        </>
+                      {!canManageSchedule && entry.status === "cancelled" && (
+                        <Badge variant="secondary" className="bg-muted text-muted-foreground">
+                          <XCircle className="h-3 w-3 mr-1" />
+                          Cancelled
+                        </Badge>
                       )}
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => {
-                          if (confirm("Delete this schedule entry?")) {
-                            deleteScheduleMutation.mutate(entry.id);
-                          }
-                        }}
-                        disabled={deleteScheduleMutation.isPending}
-                        title="Delete"
-                        data-testid={`button-delete-schedule-${entry.id}`}
-                      >
-                        <Trash2 className="h-4 w-4 text-muted-foreground" />
-                      </Button>
                     </div>
                   </div>
                 ))}

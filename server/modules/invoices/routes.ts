@@ -1,9 +1,9 @@
 import type { Express } from "express";
-import { storage, isAuthenticated, requireUserId } from "../../routes/shared";
+import { storage, isAuthenticated, requireUserId, requirePermission } from "../../routes/shared";
 import { insertInvoiceSchema } from "@shared/schema";
 
 export function registerInvoicesRoutes(app: Express): void {
-  app.get("/api/invoices", isAuthenticated, async (req, res) => {
+  app.get("/api/invoices", isAuthenticated, requirePermission("view_invoices"), async (req, res) => {
     try {
       const { status, jobId } = req.query;
       let invoicesList;
@@ -21,7 +21,7 @@ export function registerInvoicesRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/invoices/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/invoices/:id", isAuthenticated, requirePermission("view_invoices"), async (req, res) => {
     try {
       const invoice = await storage.getInvoiceWithDetails(req.params.id);
       if (!invoice) {
@@ -34,7 +34,7 @@ export function registerInvoicesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/invoices", isAuthenticated, async (req: any, res) => {
+  app.post("/api/invoices", isAuthenticated, requirePermission("create_invoices"), async (req: any, res) => {
     try {
       const validation = insertInvoiceSchema.safeParse(req.body);
       if (!validation.success) {
@@ -53,7 +53,7 @@ export function registerInvoicesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/jobs/:jobId/invoice", isAuthenticated, async (req: any, res) => {
+  app.post("/api/jobs/:jobId/invoice", isAuthenticated, requirePermission("create_invoices"), async (req: any, res) => {
     try {
       const userId = requireUserId(req);
       const invoice = await storage.createInvoiceFromJob(req.params.jobId, userId);
@@ -67,7 +67,7 @@ export function registerInvoicesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/quotes/:quoteId/invoice", isAuthenticated, async (req: any, res) => {
+  app.post("/api/quotes/:quoteId/invoice", isAuthenticated, requirePermission("create_invoices"), async (req: any, res) => {
     try {
       const userId = requireUserId(req);
       const invoice = await storage.createInvoiceFromQuote(req.params.quoteId, userId);
@@ -81,7 +81,7 @@ export function registerInvoicesRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/invoices/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/invoices/:id", isAuthenticated, requirePermission("edit_invoices"), async (req, res) => {
     try {
       const partialSchema = insertInvoiceSchema.partial();
       const validation = partialSchema.safeParse(req.body);
@@ -100,7 +100,7 @@ export function registerInvoicesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/invoices/:id/send", isAuthenticated, async (req, res) => {
+  app.post("/api/invoices/:id/send", isAuthenticated, requirePermission("edit_invoices"), async (req, res) => {
     try {
       const invoice = await storage.sendInvoice(req.params.id);
       if (!invoice) {
@@ -113,7 +113,7 @@ export function registerInvoicesRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/invoices/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/invoices/:id", isAuthenticated, requirePermission("delete_invoices"), async (req, res) => {
     try {
       const deleted = await storage.deleteInvoice(req.params.id);
       if (!deleted) {
@@ -126,7 +126,7 @@ export function registerInvoicesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/invoices/generate/job/:jobId", isAuthenticated, async (req: any, res) => {
+  app.post("/api/invoices/generate/job/:jobId", isAuthenticated, requirePermission("create_invoices"), async (req: any, res) => {
     try {
       const userId = requireUserId(req);
       const invoice = await storage.createInvoiceFromJob(req.params.jobId, userId);
@@ -140,7 +140,7 @@ export function registerInvoicesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/invoices/generate/quote/:quoteId", isAuthenticated, async (req: any, res) => {
+  app.post("/api/invoices/generate/quote/:quoteId", isAuthenticated, requirePermission("create_invoices"), async (req: any, res) => {
     try {
       const userId = requireUserId(req);
       const invoice = await storage.createInvoiceFromQuote(req.params.quoteId, userId);

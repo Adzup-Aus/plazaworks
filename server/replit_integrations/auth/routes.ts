@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { authStorage } from "./storage";
 import { isAuthenticated } from "./replitAuth";
 import { storage } from "../../storage";
+import { getEffectivePermissions } from "../../middleware/permissions";
 
 // Register auth-specific routes
 export function registerAuthRoutes(app: Express): void {
@@ -19,7 +20,7 @@ export function registerAuthRoutes(app: Express): void {
       }
       const profile = await storage.getStaffProfileByUserId(userId);
       const role = profile?.roles?.[0] ?? null;
-      const permissions = profile?.permissions ?? [];
+      const permissions = getEffectivePermissions(profile);
       res.json({ ...user, role, permissions });
     } catch (error) {
       console.error("Error fetching user:", error);

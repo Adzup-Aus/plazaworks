@@ -1,9 +1,9 @@
 import type { Express } from "express";
-import { storage, isAuthenticated } from "../../routes/shared";
+import { storage, isAuthenticated, requirePermission } from "../../routes/shared";
 import { insertActivitySchema, patchActivitySchema } from "./model";
 
 export function registerActivitiesRoutes(app: Express): void {
-  app.get("/api/activities", isAuthenticated, async (req: any, res) => {
+  app.get("/api/activities", isAuthenticated, requirePermission("view_activities"), async (req: any, res) => {
     try {
       const list = await storage.getActivities();
       res.json(list);
@@ -13,7 +13,7 @@ export function registerActivitiesRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/activities/:id", isAuthenticated, async (req: any, res) => {
+  app.get("/api/activities/:id", isAuthenticated, requirePermission("view_activities"), async (req: any, res) => {
     try {
       const activity = await storage.getActivity(req.params.id);
       if (!activity) {
@@ -26,7 +26,7 @@ export function registerActivitiesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/activities", isAuthenticated, async (req: any, res) => {
+  app.post("/api/activities", isAuthenticated, requirePermission("view_activities"), async (req: any, res) => {
     try {
       const parsed = insertActivitySchema.safeParse(req.body);
       if (!parsed.success) {
@@ -42,7 +42,7 @@ export function registerActivitiesRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/activities/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/activities/:id", isAuthenticated, requirePermission("view_activities"), async (req: any, res) => {
     try {
       const existing = await storage.getActivity(req.params.id);
       if (!existing) {
@@ -62,7 +62,7 @@ export function registerActivitiesRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/activities/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/activities/:id", isAuthenticated, requirePermission("view_activities"), async (req: any, res) => {
     try {
       const existing = await storage.getActivity(req.params.id);
       if (!existing) {

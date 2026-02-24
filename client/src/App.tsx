@@ -42,10 +42,32 @@ import ClientPortalLogin from "@/pages/client-portal-login";
 import ClientPortalDashboard from "@/pages/client-portal-dashboard";
 import InvoicePayment from "@/pages/invoice-payment";
 import NotFound from "@/pages/not-found";
+import NoAccess from "@/pages/no-access";
+import { usePermissions } from "@/hooks/use-permissions";
+import { getFirstAuthorizedPath } from "@/lib/permissions";
+import { useEffect } from "react";
+import { useLocation } from "wouter";
 
 function AuthenticatedRouter() {
+  const [location, setLocation] = useLocation();
+  const { permissions, isAdmin, hasPermission, isLoading } = usePermissions();
+
+  useEffect(() => {
+    if (isLoading) return;
+    const hasAny = permissions.length > 0 || isAdmin;
+    if (!hasAny && location !== "/no-access") {
+      setLocation("/no-access");
+      return;
+    }
+    if (location === "/" && !hasPermission("view_dashboard") && !isAdmin && hasAny) {
+      const first = getFirstAuthorizedPath(permissions, isAdmin);
+      setLocation(first);
+    }
+  }, [location, permissions, isAdmin, hasPermission, isLoading, setLocation]);
+
   return (
     <Switch>
+      <Route path="/no-access" component={NoAccess} />
       <Route path="/" component={Dashboard} />
       <Route path="/jobs" component={Jobs} />
       <Route path="/jobs/new" component={JobForm} />

@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import type { Job } from "@shared/schema";
 import { jobStatuses } from "@shared/schema";
+import { PermissionGate } from "@/components/permission-gate";
 
 function getStatusColor(status: string): string {
   const colors: Record<string, string> = {
@@ -85,12 +86,14 @@ export default function Jobs() {
             Manage all your jobs and track their progress
           </p>
         </div>
-        <Button asChild data-testid="button-new-job">
-          <Link href="/jobs/new">
-            <Plus className="mr-2 h-4 w-4" />
-            New Job
-          </Link>
-        </Button>
+        <PermissionGate permission="create_jobs">
+          <Button asChild data-testid="button-new-job">
+            <Link href="/jobs/new">
+              <Plus className="mr-2 h-4 w-4" />
+              New Job
+            </Link>
+          </Button>
+        </PermissionGate>
       </div>
 
       <Card className="overflow-visible">
@@ -178,12 +181,14 @@ export default function Jobs() {
                   : "Create your first job to get started"}
               </p>
               {!searchQuery && statusFilter === "all" && (
-                <Button className="mt-4" asChild>
-                  <Link href="/jobs/new">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create Job
-                  </Link>
-                </Button>
+                <PermissionGate permission="create_jobs">
+                  <Button className="mt-4" asChild>
+                    <Link href="/jobs/new">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create Job
+                    </Link>
+                  </Button>
+                </PermissionGate>
               )}
             </div>
           ) : viewMode === "grid" ? (

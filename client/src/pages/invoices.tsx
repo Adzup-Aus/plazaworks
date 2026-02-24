@@ -27,6 +27,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Invoice } from "@shared/schema";
+import { PermissionGate } from "@/components/permission-gate";
 
 const statusColors: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -110,12 +111,14 @@ export default function Invoices() {
             Manage invoices and track payments
           </p>
         </div>
-        <Link href="/invoices/new">
-          <Button data-testid="button-new-invoice">
-            <Plus className="mr-2 h-4 w-4" />
-            New Invoice
-          </Button>
-        </Link>
+        <PermissionGate permission="create_invoices">
+          <Link href="/invoices/new">
+            <Button data-testid="button-new-invoice">
+              <Plus className="mr-2 h-4 w-4" />
+              New Invoice
+            </Button>
+          </Link>
+        </PermissionGate>
       </div>
 
       {invoices?.length === 0 ? (
@@ -126,12 +129,14 @@ export default function Invoices() {
             <p className="mt-1 text-sm text-muted-foreground">
               Create your first invoice to get started
             </p>
-            <Link href="/invoices/new">
-              <Button className="mt-4" data-testid="button-create-first-invoice">
-                <Plus className="mr-2 h-4 w-4" />
-                Create Invoice
-              </Button>
-            </Link>
+            <PermissionGate permission="create_invoices">
+              <Link href="/invoices/new">
+                <Button className="mt-4" data-testid="button-create-first-invoice">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Invoice
+                </Button>
+              </Link>
+            </PermissionGate>
           </CardContent>
         </Card>
       ) : (
@@ -205,15 +210,19 @@ export default function Invoices() {
                           </Link>
                         </DropdownMenuItem>
                       )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="text-destructive"
-                        onClick={() => setDeleteId(invoice.id)}
-                        data-testid={`action-delete-invoice-${invoice.id}`}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </DropdownMenuItem>
+                      <PermissionGate permission="delete_invoices">
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => setDeleteId(invoice.id)}
+                            data-testid={`action-delete-invoice-${invoice.id}`}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </>
+                      </PermissionGate>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>

@@ -1,9 +1,9 @@
 import type { Express } from "express";
-import { storage, isAuthenticated } from "../../routes/shared";
+import { storage, isAuthenticated, requirePermission } from "../../routes/shared";
 import { insertClientSchema } from "@shared/schema";
 
 export function registerClientsRoutes(app: Express): void {
-  app.get("/api/clients", isAuthenticated, async (req: any, res) => {
+  app.get("/api/clients", isAuthenticated, requirePermission("view_clients"), async (req: any, res) => {
     try {
       const clientList = await storage.getClients();
       res.json(clientList);
@@ -13,7 +13,7 @@ export function registerClientsRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/clients/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/clients/:id", isAuthenticated, requirePermission("view_clients"), async (req, res) => {
     try {
       const client = await storage.getClient(req.params.id);
       if (!client) {
@@ -26,7 +26,7 @@ export function registerClientsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/clients", isAuthenticated, async (req: any, res) => {
+  app.post("/api/clients", isAuthenticated, requirePermission("create_clients"), async (req: any, res) => {
     try {
       const parsed = insertClientSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -43,7 +43,7 @@ export function registerClientsRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/clients/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/clients/:id", isAuthenticated, requirePermission("edit_clients"), async (req, res) => {
     try {
       const updated = await storage.updateClient(req.params.id, req.body);
       if (!updated) {
@@ -56,7 +56,7 @@ export function registerClientsRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/clients/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/clients/:id", isAuthenticated, requirePermission("delete_clients"), async (req, res) => {
     try {
       await storage.deleteClient(req.params.id);
       res.json({ success: true });
@@ -66,7 +66,7 @@ export function registerClientsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/clients/:id/portal-access", isAuthenticated, async (req, res) => {
+  app.post("/api/clients/:id/portal-access", isAuthenticated, requirePermission("edit_clients"), async (req, res) => {
     try {
       const { enabled } = req.body;
       const client = await storage.getClient(req.params.id);

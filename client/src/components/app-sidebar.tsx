@@ -42,71 +42,26 @@ import {
   ListTodo,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermissions } from "@/hooks/use-permissions";
+import { filterNavByPermissions } from "@/lib/permissions";
+import type { UserPermission } from "@shared/schema";
 
 const mainNavItems = [
-  {
-    title: "Jobs",
-    url: "/jobs",
-    icon: Briefcase,
-  },
-  {
-    title: "Quotes",
-    url: "/quotes",
-    icon: FileText,
-  },
-  {
-    title: "Invoices",
-    url: "/invoices",
-    icon: Receipt,
-  },
-  {
-    title: "Schedule",
-    url: "/schedule",
-    icon: Calendar,
-  },
-  {
-    title: "Activities",
-    url: "/activities",
-    icon: ListTodo,
-  },
-  {
-    title: "Team",
-    url: "/team",
-    icon: Users,
-  },
-  {
-    title: "Clients",
-    url: "/clients",
-    icon: UserCircle,
-  },
-  {
-    title: "Settings",
-    url: "/settings",
-    icon: Settings,
-  },
+  { title: "Jobs", url: "/jobs", icon: Briefcase, permission: "view_jobs" as UserPermission },
+  { title: "Quotes", url: "/quotes", icon: FileText, permission: "view_quotes" as UserPermission },
+  { title: "Invoices", url: "/invoices", icon: Receipt, permission: "view_invoices" as UserPermission },
+  { title: "Schedule", url: "/schedule", icon: Calendar, permission: "view_schedule" as UserPermission },
+  { title: "Activities", url: "/activities", icon: ListTodo, permission: "view_activities" as UserPermission },
+  { title: "Team", url: "/team", icon: Users, permission: "view_users" as UserPermission },
+  { title: "Clients", url: "/clients", icon: UserCircle, permission: "view_clients" as UserPermission },
+  { title: "Settings", url: "/settings", icon: Settings, permission: "admin_settings" as UserPermission },
 ];
 
 const dashboardsNavItems = [
-  {
-    title: "Overview",
-    url: "/",
-    icon: LayoutDashboard,
-  },
-  {
-    title: "KPI",
-    url: "/kpi",
-    icon: Target,
-  },
-  {
-    title: "Time Tracking",
-    url: "/productivity",
-    icon: Clock,
-  },
-  {
-    title: "Capacity",
-    url: "/capacity",
-    icon: BarChart3,
-  },
+  { title: "Overview", url: "/", icon: LayoutDashboard, permission: "view_dashboard" as UserPermission },
+  { title: "KPI", url: "/kpi", icon: Target, permission: "view_reports" as UserPermission },
+  { title: "Time Tracking", url: "/productivity", icon: Clock, permission: "view_reports" as UserPermission },
+  { title: "Capacity", url: "/capacity", icon: BarChart3, permission: "view_reports" as UserPermission },
 ];
 
 const adminNavItems = [
@@ -125,6 +80,9 @@ const adminNavItems = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
+  const { permissions, isAdmin } = usePermissions();
+  const visibleMainNav = filterNavByPermissions(mainNavItems, permissions, isAdmin);
+  const visibleDashboardsNav = filterNavByPermissions(dashboardsNavItems, permissions, isAdmin);
 
   const { data: adminStatus } = useQuery<{ isSuperAdmin: boolean }>({
     queryKey: ["/api/auth/is-super-admin"],
@@ -157,7 +115,7 @@ export function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainNavItems.map((item) => (
+              {visibleMainNav.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
@@ -171,38 +129,40 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
-              <Collapsible
-                defaultOpen={dashboardsNavItems.some(item => location === item.url)}
-                className="group/collapsible"
-              >
-                <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
-                    <SidebarMenuButton data-testid="nav-dashboards">
-                      <BarChart3 className="h-4 w-4" />
-                      <span>Dashboards</span>
-                      <ChevronRight className="ml-auto h-4 w-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                    </SidebarMenuButton>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenuSub>
-                      {dashboardsNavItems.map((item) => (
-                        <SidebarMenuSubItem key={item.title}>
-                          <SidebarMenuSubButton
-                            asChild
-                            isActive={location === item.url}
-                            data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
-                          >
-                            <Link href={item.url}>
-                              <item.icon className="h-4 w-4" />
-                              <span>{item.title}</span>
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      ))}
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                </SidebarMenuItem>
-              </Collapsible>
+              {visibleDashboardsNav.length > 0 && (
+                <Collapsible
+                  defaultOpen={visibleDashboardsNav.some((item) => location === item.url)}
+                  className="group/collapsible"
+                >
+                  <SidebarMenuItem>
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton data-testid="nav-dashboards">
+                        <BarChart3 className="h-4 w-4" />
+                        <span>Dashboards</span>
+                        <ChevronRight className="ml-auto h-4 w-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                      </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <SidebarMenuSub>
+                        {visibleDashboardsNav.map((item) => (
+                          <SidebarMenuSubItem key={item.title}>
+                            <SidebarMenuSubButton
+                              asChild
+                              isActive={location === item.url}
+                              data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
+                            >
+                              <Link href={item.url}>
+                                <item.icon className="h-4 w-4" />
+                                <span>{item.title}</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
+                  </SidebarMenuItem>
+                </Collapsible>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
