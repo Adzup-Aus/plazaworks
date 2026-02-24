@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +14,7 @@ import { apiRequest } from "@/lib/queryClient";
 type AuthStep = "email" | "otp" | "password";
 
 export default function Login() {
+  const queryClient = useQueryClient();
   const [, navigate] = useLocation();
   const { toast } = useToast();
   
@@ -60,7 +62,7 @@ export default function Login() {
       const data = await res.json();
       
       toast({ title: "Login successful" });
-      
+      await queryClient.refetchQueries({ queryKey: ["/api/auth/user"] });
       navigate("/");
     } catch (err: any) {
       toast({ title: "Invalid code", description: err.message, variant: "destructive" });
@@ -87,7 +89,7 @@ export default function Login() {
       }
       
       toast({ title: "Login successful" });
-      
+      await queryClient.refetchQueries({ queryKey: ["/api/auth/user"] });
       navigate("/");
     } catch (err: any) {
       toast({ title: "Login failed", description: err.message, variant: "destructive" });
