@@ -7,6 +7,7 @@ Auto-generated from all feature plans. Last updated: 2026-02-16
 - PostgreSQL via Drizzle; schema in `shared/models/`, re-exported in `shared/schema.ts` (002-schedule-drag-job-activity)
 - TypeScript 5.x, Node.js 20+ (003-remove-multi-org)
 - PostgreSQL with Drizzle ORM (003-remove-multi-org)
+- TypeScript 5.x, Node.js 20+ + React 18, Express.js, Drizzle ORM, PostgreSQL, TanStack Query, Wouter (004-staff-permissions)
 
 - TypeScript 5.6 + Express, React 18, Vite, Drizzle ORM, TanStack Query, Zod, bcrypt, Resend (email) (001-admin-invite-users)
 
@@ -26,10 +27,10 @@ npm test && npm run lint
 TypeScript 5.6: Follow standard conventions
 
 ## Recent Changes
+- 004-staff-permissions: Added TypeScript 5.x, Node.js 20+ + React 18, Express.js, Drizzle ORM, PostgreSQL, TanStack Query, Wouter
 - 003-remove-multi-org: Added TypeScript 5.x, Node.js 20+
 - 002-schedule-drag-job-activity: Added TypeScript (ESM), Node 18+ + Express, React 18, Vite, Drizzle ORM, TanStack Query, Radix UI (shadcn), Tailwind CSS, Wouter
 
-- 001-admin-invite-users: Added TypeScript 5.6 + Express, React 18, Vite, Drizzle ORM, TanStack Query, Zod, bcrypt, Resend (email)
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->
