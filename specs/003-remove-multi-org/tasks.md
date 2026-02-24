@@ -24,9 +24,9 @@ This task list removes the multi-tenant organization architecture from Plaza Wor
 
 **Goal**: Ensure safe rollback and project readiness
 
-- [ ] T001 Create database backup before migration
-- [ ] T002 Verify all tests pass on current main branch with `npm run test:env`
-- [ ] T003 [P] Create rollback script for database restoration
+- [x] T001 Create database backup before migration
+- [x] T002 Verify all tests pass on current main branch with `npm run test:env`
+- [x] T003 [P] Create rollback script for database restoration
 
 ---
 
@@ -37,21 +37,21 @@ This task list removes the multi-tenant organization architecture from Plaza Wor
 
 ### Database Schema Updates
 
-- [ ] T004 [US1] Create Drizzle migration to add `app_settings` table in `shared/models/settings.ts`
+- [x] T004 [US1] Create Drizzle migration to add `app_settings` table in `shared/models/settings.ts`
 - [ ] T005 [US1] Create migration to copy organization settings to global `app_settings` record
-- [ ] T006 [US1] Remove `organizationId` column from `clients` table
-- [ ] T007 [US1] Remove `organizationId` column from `quotes` table
-- [ ] T008 [US1] Remove `organizationId` column from `invoices` table
-- [ ] T009 [US1] Remove `organizationId` column from `vehicles` table
-- [ ] T010 [US1] Remove `organizationId` column from `checklistTemplates` table
-- [ ] T011 [US1] Remove `organizationId` column from `termsTemplates` table
+- [x] T006 [US1] Remove `organizationId` column from `clients` table
+- [x] T007 [US1] Remove `organizationId` column from `quotes` table
+- [x] T008 [US1] Remove `organizationId` column from `invoices` table
+- [x] T009 [US1] Remove `organizationId` column from `vehicles` table
+- [x] T010 [US1] Remove `organizationId` column from `checklistTemplates` table
+- [x] T011 [US1] Remove `organizationId` column from `termsTemplates` table
 - [ ] T012 [US1] Create migration to drop `organizationCounters` table
 - [ ] T013 [US1] Create migration to drop `organizationInvites` table
 - [ ] T014 [US1] Create migration to drop `organizationMembers` table
 - [ ] T015 [US1] Create migration to drop `organizationSettings` table
 - [ ] T016 [US1] Create migration to drop `organizationSubscriptions` table
 - [ ] T017 [US1] Create migration to drop `organizations` table
-- [ ] T018 [US1] [P] Run database migrations in development environment
+- [x] T018 [US1] [P] Run database migrations in development environment
 - [ ] T019 [US1] Verify data integrity after migration (no orphaned records)
 
 ### Schema Code Updates
@@ -73,24 +73,24 @@ This task list removes the multi-tenant organization architecture from Plaza Wor
 
 ### Middleware Updates
 
-- [ ] T025 [US2] Remove `withOrganization` middleware from `server/middleware/index.ts`
-- [ ] T026 [US2] Remove `requireFeature` middleware (subscription tier checking)
-- [ ] T027 [US2] Remove `checkUserLimit` middleware from `server/middleware/index.ts`
-- [ ] T028 [US2] Remove `checkJobLimit` middleware from `server/middleware/index.ts`
-- [ ] T029 [US2] Update `requireSuperAdmin` to check user role directly (not org ownership)
-- [ ] T030 [US2] Remove organization exports from `server/routes/shared.ts`
-- [ ] T031 [US2] Update Request type definition to remove organizationId, organizationRole
+- [x] T025 [US2] Remove `withOrganization` middleware from `server/middleware/index.ts`
+- [x] T026 [US2] Remove `requireFeature` middleware (subscription tier checking)
+- [x] T027 [US2] Remove `checkUserLimit` middleware from `server/middleware/index.ts`
+- [x] T028 [US2] Remove `checkJobLimit` middleware from `server/middleware/index.ts`
+- [x] T029 [US2] Update `requireSuperAdmin` to check user role directly (not org ownership)
+- [x] T030 [US2] Remove organization exports from `server/routes/shared.ts`
+- [x] T031 [US2] Update Request type definition to remove organizationId, organizationRole
 
 ### Auth Routes Updates
 
-- [ ] T032 [US2] Update `server/modules/auth/routes.ts` to not require organization context
-- [ ] T033 [US2] Modify `/api/auth/me` response to return user role instead of memberships
-- [ ] T034 [US2] Update auth storage methods to not check organization membership
+- [x] T032 [US2] Update `server/modules/auth/routes.ts` to not require organization context
+- [x] T033 [US2] Modify `/api/auth/me` response to return user role instead of memberships
+- [x] T034 [US2] Update auth storage methods to not check organization membership
 
 ### Session Handling
 
-- [ ] T035 [US2] Update session middleware to not attach organization context
-- [ ] T036 [US2] [P] Test authentication flow - register, login, logout
+- [x] T035 [US2] Update session middleware to not attach organization context
+- [x] T036 [US2] [P] Test authentication flow - register, login, logout
 
 ---
 
@@ -103,50 +103,50 @@ This task list removes the multi-tenant organization architecture from Plaza Wor
 
 ### Storage Layer Updates
 
-- [ ] T037 [US3] Remove organization storage methods from `server/storage.ts` interface
-- [ ] T038 [US3] Remove `getOrganization` method implementation
-- [ ] T039 [US3] Remove `getOrganizations` method implementation
-- [ ] T040 [US3] Remove `createOrganization` method implementation
-- [ ] T041 [US3] Remove `updateOrganization` method implementation
-- [ ] T042 [US3] Remove `getOrganizationBySlug` method implementation
-- [ ] T043 [US3] Remove subscription-related storage methods
-- [ ] T044 [US3] Remove organization member storage methods
-- [ ] T045 [US3] Remove organization invite storage methods
+- [x] T037 [US3] Remove organization storage methods from `server/storage.ts` interface
+- [x] T038 [US3] Remove `getOrganization` method implementation
+- [x] T039 [US3] Remove `getOrganizations` method implementation
+- [x] T040 [US3] Remove `createOrganization` method implementation
+- [x] T041 [US3] Remove `updateOrganization` method implementation
+- [x] T042 [US3] Remove `getOrganizationBySlug` method implementation
+- [x] T043 [US3] Remove subscription-related storage methods
+- [x] T044 [US3] Remove organization member storage methods
+- [x] T045 [US3] Remove organization invite storage methods
 - [ ] T046 [US3] Remove organization settings storage methods
 - [ ] T047 [US3] Remove organization counter storage methods
-- [ ] T048 [US3] Add `getSettings()` method to storage interface
-- [ ] T049 [US3] Add `updateSettings()` method to storage interface
-- [ ] T050 [US3] Update `getClients()` to not filter by organizationId
-- [ ] T051 [US3] Update `getQuotes()` to not filter by organizationId
-- [ ] T052 [US3] Update `getInvoices()` to not filter by organizationId
-- [ ] T053 [US3] Update `getActivities()` to not require organizationId parameter
+- [x] T048 [US3] Add `getSettings()` method to storage interface
+- [x] T049 [US3] Add `updateSettings()` method to storage interface
+- [x] T050 [US3] Update `getClients()` to not filter by organizationId
+- [x] T051 [US3] Update `getQuotes()` to not filter by organizationId
+- [x] T052 [US3] Update `getInvoices()` to not filter by organizationId
+- [x] T053 [US3] Update `getActivities()` to not require organizationId parameter
 
 ### Remove Organization Module
 
-- [ ] T054 [US3] Delete `server/modules/organizations/routes.ts`
-- [ ] T055 [US3] Delete `server/modules/organizations/model.ts`
-- [ ] T056 [US3] Remove `server/modules/organizations/` directory
-- [ ] T057 [US3] Remove organization routes registration from `server/routes/index.ts`
+- [x] T054 [US3] Delete `server/modules/organizations/routes.ts`
+- [x] T055 [US3] Delete `server/modules/organizations/model.ts`
+- [x] T056 [US3] Remove `server/modules/organizations/` directory
+- [x] T057 [US3] Remove organization routes registration from `server/routes/index.ts`
 
 ### Update Route Modules
 
-- [ ] T058 [US3] [P] Update `server/modules/clients/routes.ts` to remove organization filtering
-- [ ] T059 [US3] [P] Update `server/modules/quotes/routes.ts` to remove organization context
-- [ ] T060 [US3] [P] Update `server/modules/invoices/routes.ts` to remove organization context
-- [ ] T061 [US3] [P] Update `server/modules/activities/routes.ts` to remove organizationId parameter
-- [ ] T062 [US3] [P] Update `server/modules/vehicles/routes.ts` to remove organization filtering
-- [ ] T063 [US3] Update `server/modules/clientPortal/routes.ts` to work without organization context
+- [x] T058 [US3] [P] Update `server/modules/clients/routes.ts` to remove organization filtering
+- [x] T059 [US3] [P] Update `server/modules/quotes/routes.ts` to remove organization context
+- [x] T060 [US3] [P] Update `server/modules/invoices/routes.ts` to remove organization context
+- [x] T061 [US3] [P] Update `server/modules/activities/routes.ts` to remove organizationId parameter
+- [x] T062 [US3] [P] Update `server/modules/vehicles/routes.ts` to remove organization filtering
+- [x] T063 [US3] Update `server/modules/clientPortal/routes.ts` to work without organization context
 
 ### New Settings Module
 
-- [ ] T064 [US3] Create `server/modules/settings/routes.ts` with GET/PUT endpoints
-- [ ] T065 [US3] Create `server/modules/settings/model.ts` re-exporting from shared/schema
-- [ ] T066 [US3] Register settings routes in `server/routes/index.ts`
+- [x] T064 [US3] Create `server/modules/settings/routes.ts` with GET/PUT endpoints
+- [x] T065 [US3] Create `server/modules/settings/model.ts` re-exporting from shared/schema
+- [x] T066 [US3] Register settings routes in `server/routes/index.ts`
 
 ### Numbering Service
 
-- [ ] T067 [US3] Update `server/services/numberingService.ts` to use global counters
-- [ ] T068 [US3] Remove organizationId parameter from numbering methods
+- [x] T067 [US3] Update `server/services/numberingService.ts` to use global counters
+- [x] T068 [US3] Remove organizationId parameter from numbering methods
 
 ---
 
@@ -159,32 +159,32 @@ This task list removes the multi-tenant organization architecture from Plaza Wor
 
 ### Auth Hook Updates
 
-- [ ] T069 [US4] Remove organization from auth state in `client/src/hooks/use-auth.tsx`
-- [ ] T070 [US4] Remove organizationId from auth context
-- [ ] T071 [US4] Update login/logout to not handle organization context
-- [ ] T072 [US4] Update user type to include role field
+- [x] T069 [US4] Remove organization from auth state in `client/src/hooks/use-auth.tsx`
+- [x] T070 [US4] Remove organizationId from auth context
+- [x] T071 [US4] Update login/logout to not handle organization context
+- [x] T072 [US4] Update user type to include role field
 
 ### API Client Updates
 
-- [ ] T073 [US4] Remove organizationId from API request headers/context
-- [ ] T074 [US4] Update TanStack Query keys to remove organization parameters
-- [ ] T075 [US4] Create settings API hooks for global settings
+- [x] T073 [US4] Remove organizationId from API request headers/context
+- [x] T074 [US4] Update TanStack Query keys to remove organization parameters
+- [x] T075 [US4] Create settings API hooks for global settings
 
 ### Page Component Updates
 
-- [ ] T076 [US4] [P] Update `client/src/pages/clients.tsx` to not filter by organization
-- [ ] T077 [US4] [P] Update `client/src/pages/quotes.tsx` to not use organization context
-- [ ] T078 [US4] [P] Update `client/src/pages/invoices.tsx` to not use organization context
-- [ ] T079 [US4] [P] Update `client/src/pages/jobs.tsx` to not use organization context
-- [ ] T080 [US4] Update `client/src/pages/admin.tsx` to manage global settings
-- [ ] T081 [US4] Remove organization management UI from admin page
-- [ ] T082 [US4] Add global settings form to admin page
+- [x] T076 [US4] [P] Update `client/src/pages/clients.tsx` to not filter by organization
+- [x] T077 [US4] [P] Update `client/src/pages/quotes.tsx` to not use organization context
+- [x] T078 [US4] [P] Update `client/src/pages/invoices.tsx` to not use organization context
+- [x] T079 [US4] [P] Update `client/src/pages/jobs.tsx` to not use organization context
+- [x] T080 [US4] Update `client/src/pages/admin.tsx` to manage global settings
+- [x] T081 [US4] Remove organization management UI from admin page
+- [x] T082 [US4] Add global settings form to admin page
 
 ### Component Cleanup
 
-- [ ] T083 [US4] Remove organization switcher component if exists
-- [ ] T084 [US4] Remove organization selector from any forms
-- [ ] T085 [US4] Update `client/src/App.tsx` to remove organization provider
+- [x] T083 [US4] Remove organization switcher component if exists
+- [x] T084 [US4] Remove organization selector from any forms
+- [x] T085 [US4] Update `client/src/App.tsx` to remove organization provider
 
 ---
 
@@ -196,18 +196,18 @@ This task list removes the multi-tenant organization architecture from Plaza Wor
 
 ### Test Updates
 
-- [ ] T086 Update `server/__tests__/api.activities.test.ts` to not use organization
-- [ ] T087 Update `server/__tests__/api.invoices.test.ts` to not use organization
-- [ ] T088 Update `server/__tests__/api.quotes.test.ts` to not use organization
-- [ ] T089 Update `server/__tests__/storage.jobs.test.ts` to not use organization
-- [ ] T090 Update `server/__tests__/storage.schedule.test.ts` to not use organization
-- [ ] T091 Update `server/__tests__/storage.invoices.test.ts` to not use organization
-- [ ] T092 Update `server/__tests__/storage.quotes.test.ts` to not use organization
-- [ ] T093 [P] Remove organization fixtures from test setup
+- [x] T086 Update `server/__tests__/api.activities.test.ts` to not use organization
+- [x] T087 Update `server/__tests__/api.invoices.test.ts` to not use organization
+- [x] T088 Update `server/__tests__/api.quotes.test.ts` to not use organization
+- [x] T089 Update `server/__tests__/storage.jobs.test.ts` to not use organization
+- [x] T090 Update `server/__tests__/storage.schedule.test.ts` to not use organization
+- [x] T091 Update `server/__tests__/storage.invoices.test.ts` to not use organization
+- [x] T092 Update `server/__tests__/storage.quotes.test.ts` to not use organization
+- [x] T093 [P] Remove organization fixtures from test setup
 
 ### Verification
 
-- [ ] T094 Run `npm run test:env` and fix any failing tests
+- [x] T094 Run `npm run test:env` and fix any failing tests
 - [ ] T095 Test user registration and login flow
 - [ ] T096 Test CRUD operations on all entities (clients, jobs, quotes, invoices)
 - [ ] T097 Test settings management in admin panel
@@ -222,13 +222,13 @@ This task list removes the multi-tenant organization architecture from Plaza Wor
 
 **Depends on**: All previous phases complete and tests passing
 
-- [ ] T100 Update `scripts/seed-admin.ts` to not create organization
-- [ ] T101 Update `scripts/seed-default-activities.ts` to not use organization
-- [ ] T102 Remove organization-related imports from all files
-- [ ] T103 Update README.md to remove multi-tenant references
-- [ ] T104 [P] Search codebase for remaining "organization" references and remove
-- [ ] T105 Final verification: `npm run test:env` passes
-- [ ] T106 Final verification: Application builds without errors
+- [x] T100 Update `scripts/seed-admin.ts` to not create organization
+- [x] T101 Update `scripts/seed-default-activities.ts` to not use organization
+- [x] T102 Remove organization-related imports from all files
+- [x] T103 Update README.md to remove multi-tenant references
+- [x] T104 [P] Search codebase for remaining "organization" references and remove
+- [x] T105 Final verification: `npm run test:env` passes
+- [x] T106 Final verification: Application builds without errors
 
 ---
 

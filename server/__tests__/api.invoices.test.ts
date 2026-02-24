@@ -6,7 +6,6 @@ const hasDb = !!process.env.DATABASE_URL;
 let app: Express;
 let authCookie: string[] = [];
 let invoiceId: string = "";
-let orgId: string = "";
 
 describe.runIf(hasDb)("API invoices", () => {
   beforeAll(async () => {
@@ -24,27 +23,19 @@ describe.runIf(hasDb)("API invoices", () => {
       password: "password123",
     });
     authCookie = loginRes.headers["set-cookie"] ?? [];
-    const userId = loginRes.body.userId;
-    await request(app).get("/api/clients").set("Cookie", authCookie);
-    const memberships = await storage.getUserMemberships(userId);
-    orgId = memberships[0]?.organizationId ?? "";
-    if (orgId) {
-      const client = await storage.createClient({
-        organizationId: orgId,
-        firstName: "Invoice",
-        lastName: "TestClient",
-        email: "inv@example.com",
-        streetAddress: "100 Invoice Ave",
-      });
-      const invoice = await storage.createInvoice({
-        organizationId: orgId,
-        clientId: client.id,
-        clientName: `${client.firstName} ${client.lastName}`,
-        clientAddress: client.streetAddress ?? "100 Invoice Ave",
-        status: "draft",
-      });
-      invoiceId = invoice.id;
-    }
+    const client = await storage.createClient({
+      firstName: "Invoice",
+      lastName: "TestClient",
+      email: "inv@example.com",
+      streetAddress: "100 Invoice Ave",
+    });
+    const invoice = await storage.createInvoice({
+      clientId: client.id,
+      clientName: `${client.firstName} ${client.lastName}`,
+      clientAddress: client.streetAddress ?? "100 Invoice Ave",
+      status: "draft",
+    });
+    invoiceId = invoice.id;
   });
 
   it("GET /api/invoices returns 401 when unauthenticated", async () => {
@@ -59,12 +50,18 @@ describe.runIf(hasDb)("API invoices", () => {
   });
 
   it("POST /api/invoices with auth and valid body returns 201", async () => {
-    if (!orgId) return;
+    const { storage } = await import("../storage");
+    const client = await storage.createClient({
+      firstName: "API",
+      lastName: "InvoiceClient",
+      email: `api-inv-${Date.now()}@example.com`,
+      streetAddress: "200 API St",
+    });
     const res = await request(app)
       .post("/api/invoices")
       .set("Cookie", authCookie)
       .send({
-        organizationId: orgId,
+        clientId: client.id,
         clientName: "API Invoice Client",
         clientAddress: "200 API St",
         status: "draft",

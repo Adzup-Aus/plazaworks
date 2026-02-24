@@ -10,7 +10,6 @@ describe.runIf(hasDb)("storage (quotes)", () => {
     storage = m.storage;
   });
 
-  const createdOrgIds: string[] = [];
   const createdClientIds: string[] = [];
   const createdQuoteIds: string[] = [];
   const createdLineItemIds: string[] = [];
@@ -28,22 +27,10 @@ describe.runIf(hasDb)("storage (quotes)", () => {
       await storage.deleteClient(id);
     }
     createdClientIds.length = 0;
-    for (const id of createdOrgIds) {
-      await storage.deleteOrganization(id);
-    }
-    createdOrgIds.length = 0;
   });
 
-  async function createTestOrg() {
-    const slug = `org-quote-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const org = await storage.createOrganization({ name: "Quote Test Org", slug });
-    createdOrgIds.push(org.id);
-    return org;
-  }
-
-  async function createTestClient(organizationId: string) {
+  async function createTestClient() {
     const client = await storage.createClient({
-      organizationId,
       firstName: "Quote",
       lastName: "Client",
       email: `quote-${Date.now()}@example.com`,
@@ -53,10 +40,8 @@ describe.runIf(hasDb)("storage (quotes)", () => {
   }
 
   it("createQuote returns quote with quoteNumber", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const quote = await storage.createQuote({
-      organizationId: org.id,
       clientId: client.id,
       clientName: `${client.firstName} ${client.lastName}`,
       clientAddress: "789 Quote St",
@@ -71,10 +56,8 @@ describe.runIf(hasDb)("storage (quotes)", () => {
   });
 
   it("getQuote returns quote by id", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const quote = await storage.createQuote({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "Get Quote Client",
       clientAddress: "111 Get St",
@@ -92,10 +75,8 @@ describe.runIf(hasDb)("storage (quotes)", () => {
   });
 
   it("getQuoteWithLineItems returns quote with lineItems array", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const quote = await storage.createQuote({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "With Items Client",
       clientAddress: "222 Items St",
@@ -109,10 +90,8 @@ describe.runIf(hasDb)("storage (quotes)", () => {
   });
 
   it("getQuotesByStatus filters by status", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const quote = await storage.createQuote({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "Status Client",
       clientAddress: "333 Status St",
@@ -125,10 +104,8 @@ describe.runIf(hasDb)("storage (quotes)", () => {
   });
 
   it("getQuotesByClient returns quotes for client", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const quote = await storage.createQuote({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "Client Quotes",
       clientAddress: "444 Client St",
@@ -140,10 +117,8 @@ describe.runIf(hasDb)("storage (quotes)", () => {
   });
 
   it("updateQuote updates fields", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const quote = await storage.createQuote({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "Update Client",
       clientAddress: "555 Update St",
@@ -155,10 +130,8 @@ describe.runIf(hasDb)("storage (quotes)", () => {
   });
 
   it("sendQuote updates status to sent", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const quote = await storage.createQuote({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "Send Client",
       clientAddress: "666 Send St",
@@ -171,10 +144,8 @@ describe.runIf(hasDb)("storage (quotes)", () => {
   });
 
   it("acceptQuote updates status to accepted", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const quote = await storage.createQuote({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "Accept Client",
       clientAddress: "777 Accept St",
@@ -189,10 +160,8 @@ describe.runIf(hasDb)("storage (quotes)", () => {
   });
 
   it("createLineItem and getLineItemsByQuote", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const quote = await storage.createQuote({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "LineItem Client",
       clientAddress: "888 Line St",
@@ -212,10 +181,8 @@ describe.runIf(hasDb)("storage (quotes)", () => {
   });
 
   it("deleteQuote removes quote", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const quote = await storage.createQuote({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "Delete Client",
       clientAddress: "999 Delete St",

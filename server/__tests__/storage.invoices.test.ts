@@ -10,7 +10,6 @@ describe.runIf(hasDb)("storage (invoices)", () => {
     storage = m.storage;
   });
 
-  const createdOrgIds: string[] = [];
   const createdClientIds: string[] = [];
   const createdInvoiceIds: string[] = [];
 
@@ -23,22 +22,10 @@ describe.runIf(hasDb)("storage (invoices)", () => {
       await storage.deleteClient(id);
     }
     createdClientIds.length = 0;
-    for (const id of createdOrgIds) {
-      await storage.deleteOrganization(id);
-    }
-    createdOrgIds.length = 0;
   });
 
-  async function createTestOrg() {
-    const slug = `org-inv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const org = await storage.createOrganization({ name: "Invoice Test Org", slug });
-    createdOrgIds.push(org.id);
-    return org;
-  }
-
-  async function createTestClient(organizationId: string) {
+  async function createTestClient() {
     const client = await storage.createClient({
-      organizationId,
       firstName: "Invoice",
       lastName: "Client",
       email: `invoice-${Date.now()}@example.com`,
@@ -48,10 +35,8 @@ describe.runIf(hasDb)("storage (invoices)", () => {
   }
 
   it("createInvoice returns invoice with invoiceNumber", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const invoice = await storage.createInvoice({
-      organizationId: org.id,
       clientId: client.id,
       clientName: `${client.firstName} ${client.lastName}`,
       clientAddress: "100 Invoice St",
@@ -65,10 +50,8 @@ describe.runIf(hasDb)("storage (invoices)", () => {
   });
 
   it("getInvoice returns invoice by id", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const invoice = await storage.createInvoice({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "Get Invoice Client",
       clientAddress: "111 Get St",
@@ -86,10 +69,8 @@ describe.runIf(hasDb)("storage (invoices)", () => {
   });
 
   it("getInvoiceWithDetails returns invoice with lineItems and payments", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const invoice = await storage.createInvoice({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "Details Client",
       clientAddress: "222 Details St",
@@ -103,10 +84,8 @@ describe.runIf(hasDb)("storage (invoices)", () => {
   });
 
   it("getInvoices returns all invoices", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const invoice = await storage.createInvoice({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "List Client",
       clientAddress: "333 List St",
@@ -119,10 +98,8 @@ describe.runIf(hasDb)("storage (invoices)", () => {
   });
 
   it("getInvoicesByStatus filters by status", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const invoice = await storage.createInvoice({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "Status Client",
       clientAddress: "444 Status St",
@@ -134,10 +111,8 @@ describe.runIf(hasDb)("storage (invoices)", () => {
   });
 
   it("updateInvoice updates fields", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const invoice = await storage.createInvoice({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "Update Client",
       clientAddress: "555 Update St",
@@ -149,10 +124,8 @@ describe.runIf(hasDb)("storage (invoices)", () => {
   });
 
   it("sendInvoice updates status to sent", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const invoice = await storage.createInvoice({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "Send Client",
       clientAddress: "666 Send St",
@@ -165,10 +138,8 @@ describe.runIf(hasDb)("storage (invoices)", () => {
   });
 
   it("getPaymentsByInvoice returns payments for invoice", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const invoice = await storage.createInvoice({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "Payments Client",
       clientAddress: "777 Payments St",
@@ -181,10 +152,8 @@ describe.runIf(hasDb)("storage (invoices)", () => {
   });
 
   it("createPayment adds payment to invoice", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const invoice = await storage.createInvoice({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "Payment Client",
       clientAddress: "888 Payment St",
@@ -202,10 +171,8 @@ describe.runIf(hasDb)("storage (invoices)", () => {
   });
 
   it("deleteInvoice removes invoice", async () => {
-    const org = await createTestOrg();
-    const client = await createTestClient(org.id);
+    const client = await createTestClient();
     const invoice = await storage.createInvoice({
-      organizationId: org.id,
       clientId: client.id,
       clientName: "Delete Client",
       clientAddress: "999 Delete St",

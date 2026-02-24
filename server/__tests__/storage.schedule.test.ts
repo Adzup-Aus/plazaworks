@@ -10,7 +10,6 @@ describe.runIf(hasDb)("storage (schedule)", () => {
     storage = m.storage;
   });
 
-  const createdOrgIds: string[] = [];
   const createdJobIds: string[] = [];
   const createdStaffIds: string[] = [];
   const createdEntryIds: string[] = [];
@@ -28,23 +27,10 @@ describe.runIf(hasDb)("storage (schedule)", () => {
       await storage.deleteStaffProfile(id);
     }
     createdStaffIds.length = 0;
-    for (const id of createdOrgIds) {
-      await storage.deleteOrganization(id);
-    }
-    createdOrgIds.length = 0;
   });
 
-  async function createTestOrg() {
-    const slug = `org-sched-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const org = await storage.createOrganization({ name: "Schedule Test Org", slug });
-    createdOrgIds.push(org.id);
-    return org;
-  }
-
   it("createScheduleEntry returns entry with required fields", async () => {
-    const org = await createTestOrg();
     const job = await storage.createJob({
-      organizationId: org.id,
       clientName: "Schedule Client",
       address: "456 Schedule Ave",
       jobType: "plumbing",
@@ -52,7 +38,10 @@ describe.runIf(hasDb)("storage (schedule)", () => {
     createdJobIds.push(job.id);
     const staff = await storage.createStaffProfile({
       userId: `staff-${Date.now()}`,
-      organizationId: org.id,
+      roles: ["plumber"],
+      employmentType: "permanent",
+      permissions: [],
+      isActive: true,
     });
     createdStaffIds.push(staff.id);
     const scheduledDate = "2025-06-01";
@@ -71,9 +60,7 @@ describe.runIf(hasDb)("storage (schedule)", () => {
   });
 
   it("getScheduleEntry returns entry by id", async () => {
-    const org = await createTestOrg();
     const job = await storage.createJob({
-      organizationId: org.id,
       clientName: "Get Entry Client",
       address: "111 Get St",
       jobType: "electrical",
@@ -81,7 +68,10 @@ describe.runIf(hasDb)("storage (schedule)", () => {
     createdJobIds.push(job.id);
     const staff = await storage.createStaffProfile({
       userId: `staff-get-${Date.now()}`,
-      organizationId: org.id,
+      roles: ["plumber"],
+      employmentType: "permanent",
+      permissions: [],
+      isActive: true,
     });
     createdStaffIds.push(staff.id);
     const entry = await storage.createScheduleEntry({
@@ -102,9 +92,7 @@ describe.runIf(hasDb)("storage (schedule)", () => {
   });
 
   it("getScheduleEntriesByDateRange returns entries in range", async () => {
-    const org = await createTestOrg();
     const job = await storage.createJob({
-      organizationId: org.id,
       clientName: "Range Client",
       address: "222 Range St",
       jobType: "carpentry",
@@ -112,7 +100,10 @@ describe.runIf(hasDb)("storage (schedule)", () => {
     createdJobIds.push(job.id);
     const staff = await storage.createStaffProfile({
       userId: `staff-range-${Date.now()}`,
-      organizationId: org.id,
+      roles: ["plumber"],
+      employmentType: "permanent",
+      permissions: [],
+      isActive: true,
     });
     createdStaffIds.push(staff.id);
     const entry = await storage.createScheduleEntry({
@@ -127,9 +118,7 @@ describe.runIf(hasDb)("storage (schedule)", () => {
   });
 
   it("getScheduleEntriesByJob returns entries for job", async () => {
-    const org = await createTestOrg();
     const job = await storage.createJob({
-      organizationId: org.id,
       clientName: "By Job Client",
       address: "333 Job St",
       jobType: "general",
@@ -137,7 +126,10 @@ describe.runIf(hasDb)("storage (schedule)", () => {
     createdJobIds.push(job.id);
     const staff = await storage.createStaffProfile({
       userId: `staff-job-${Date.now()}`,
-      organizationId: org.id,
+      roles: ["plumber"],
+      employmentType: "permanent",
+      permissions: [],
+      isActive: true,
     });
     createdStaffIds.push(staff.id);
     const entry = await storage.createScheduleEntry({
@@ -153,9 +145,7 @@ describe.runIf(hasDb)("storage (schedule)", () => {
   });
 
   it("getScheduleEntriesByStaff returns entries for staff", async () => {
-    const org = await createTestOrg();
     const job = await storage.createJob({
-      organizationId: org.id,
       clientName: "By Staff Client",
       address: "444 Staff St",
       jobType: "tiling",
@@ -163,7 +153,10 @@ describe.runIf(hasDb)("storage (schedule)", () => {
     createdJobIds.push(job.id);
     const staff = await storage.createStaffProfile({
       userId: `staff-by-${Date.now()}`,
-      organizationId: org.id,
+      roles: ["plumber"],
+      employmentType: "permanent",
+      permissions: [],
+      isActive: true,
     });
     createdStaffIds.push(staff.id);
     const entry = await storage.createScheduleEntry({
@@ -178,9 +171,7 @@ describe.runIf(hasDb)("storage (schedule)", () => {
   });
 
   it("updateScheduleEntry updates fields", async () => {
-    const org = await createTestOrg();
     const job = await storage.createJob({
-      organizationId: org.id,
       clientName: "Update Entry Client",
       address: "555 Update St",
       jobType: "plumbing",
@@ -188,7 +179,10 @@ describe.runIf(hasDb)("storage (schedule)", () => {
     createdJobIds.push(job.id);
     const staff = await storage.createStaffProfile({
       userId: `staff-update-${Date.now()}`,
-      organizationId: org.id,
+      roles: ["plumber"],
+      employmentType: "permanent",
+      permissions: [],
+      isActive: true,
     });
     createdStaffIds.push(staff.id);
     const entry = await storage.createScheduleEntry({
@@ -203,9 +197,7 @@ describe.runIf(hasDb)("storage (schedule)", () => {
   });
 
   it("deleteScheduleEntry removes entry", async () => {
-    const org = await createTestOrg();
     const job = await storage.createJob({
-      organizationId: org.id,
       clientName: "Delete Entry Client",
       address: "666 Delete St",
       jobType: "plumbing",
@@ -213,7 +205,10 @@ describe.runIf(hasDb)("storage (schedule)", () => {
     createdJobIds.push(job.id);
     const staff = await storage.createStaffProfile({
       userId: `staff-del-${Date.now()}`,
-      organizationId: org.id,
+      roles: ["plumber"],
+      employmentType: "permanent",
+      permissions: [],
+      isActive: true,
     });
     createdStaffIds.push(staff.id);
     const entry = await storage.createScheduleEntry({

@@ -78,19 +78,11 @@ import {
   type TradesmanKpiSummary,
   type UserWorkingHours,
   type InsertUserWorkingHours,
-  // Multi-tenant types
-  type Organization,
-  type InsertOrganization,
-  type OrganizationSubscription,
-  type InsertOrganizationSubscription,
-  type OrganizationMember,
-  type InsertOrganizationMember,
+  // Auth/identity types
   type AuthIdentity,
   type InsertAuthIdentity,
   type VerificationCode,
   type InsertVerificationCode,
-  type OrganizationInvite,
-  type InsertOrganizationInvite,
   type UserInvite,
   type InsertUserInvite,
   // Client Portal types
@@ -119,10 +111,11 @@ import {
   type InsertQuotePaymentSchedule,
   type QuoteWorkflowEvent,
   type InsertQuoteWorkflowEvent,
-  type OrganizationSettings,
-  type InsertOrganizationSettings,
+  type AppSettings,
+  type InsertAppSettings,
   type TermsTemplate,
   type InsertTermsTemplate,
+  appSettings,
   termsTemplates,
   staffProfiles,
   userWorkingHours,
@@ -160,13 +153,8 @@ import {
   userPhaseLog,
   users,
   type User,
-  // Multi-tenant tables
-  organizations,
-  organizationSubscriptions,
-  organizationMembers,
   authIdentities,
   verificationCodes,
-  organizationInvites,
   // Client Portal tables
   clients,
   clientPortalAccounts,
@@ -180,7 +168,6 @@ import {
   quoteWorkflowEvents,
   quoteMilestones,
   quoteCustomSections,
-  organizationSettings,
   invoicePayments,
 } from "@shared/schema";
 import { db } from "./db";
@@ -216,7 +203,7 @@ export interface IStorage {
   deleteScheduleEntry(id: string): Promise<boolean>;
 
   // Activity operations
-  getActivities(organizationId: string): Promise<Activity[]>;
+  getActivities(): Promise<Activity[]>;
   getActivity(id: string): Promise<Activity | undefined>;
   createActivity(activity: InsertActivity): Promise<Activity>;
   updateActivity(id: string, activity: Partial<InsertActivity>): Promise<Activity | undefined>;
@@ -324,13 +311,12 @@ export interface IStorage {
   getInvoicePayments(invoiceId: string): Promise<InvoicePayment[]>;
   createInvoicePayment(payment: InsertInvoicePayment): Promise<InvoicePayment>;
 
-  // Organization settings operations
-  getOrganizationSettings(organizationId: string): Promise<OrganizationSettings | undefined>;
-  createOrganizationSettings(settings: InsertOrganizationSettings): Promise<OrganizationSettings>;
-  updateOrganizationSettings(organizationId: string, settings: Partial<InsertOrganizationSettings>): Promise<OrganizationSettings | undefined>;
+  // Global app settings
+  getSettings(): Promise<AppSettings | undefined>;
+  updateSettings(settings: Partial<InsertAppSettings>): Promise<AppSettings | undefined>;
 
   // Terms template operations
-  getTermsTemplates(organizationId?: string): Promise<TermsTemplate[]>;
+  getTermsTemplates(): Promise<TermsTemplate[]>;
   getTermsTemplate(id: string): Promise<TermsTemplate | undefined>;
   createTermsTemplate(template: InsertTermsTemplate): Promise<TermsTemplate>;
   updateTermsTemplate(id: string, template: Partial<InsertTermsTemplate>): Promise<TermsTemplate | undefined>;
@@ -443,47 +429,18 @@ export interface IStorage {
   setStaffWorkingHours(staffId: string, hours: InsertUserWorkingHours[]): Promise<UserWorkingHours[]>;
   getStaffAvailability(staffId: string, date: string): Promise<{ isAvailable: boolean; startTime?: string; endTime?: string }>;
 
-  // Multi-tenant: Organization operations
-  getOrganizations(): Promise<Organization[]>;
-  getOrganization(id: string): Promise<Organization | undefined>;
-  getOrganizationBySlug(slug: string): Promise<Organization | undefined>;
-  getOwnerOrganization(): Promise<Organization | undefined>;
-  createOrganization(org: InsertOrganization): Promise<Organization>;
-  updateOrganization(id: string, org: Partial<InsertOrganization>): Promise<Organization | undefined>;
-  deleteOrganization(id: string): Promise<boolean>;
-
-  // Multi-tenant: Subscription operations
-  getOrganizationSubscription(organizationId: string): Promise<OrganizationSubscription | undefined>;
-  createOrganizationSubscription(sub: InsertOrganizationSubscription): Promise<OrganizationSubscription>;
-  updateOrganizationSubscription(id: string, sub: Partial<InsertOrganizationSubscription>): Promise<OrganizationSubscription | undefined>;
-
-  // Multi-tenant: Member operations
-  getOrganizationMembers(organizationId: string): Promise<OrganizationMember[]>;
-  getOrganizationMember(organizationId: string, userId: string): Promise<OrganizationMember | undefined>;
-  getUserMemberships(userId: string): Promise<OrganizationMember[]>;
-  createOrganizationMember(member: InsertOrganizationMember): Promise<OrganizationMember>;
-  updateOrganizationMember(id: string, member: Partial<InsertOrganizationMember>): Promise<OrganizationMember | undefined>;
-  deleteOrganizationMember(id: string): Promise<boolean>;
-
-  // Multi-tenant: Auth identity operations
+  // Auth identity operations
   getAuthIdentities(userId: string): Promise<AuthIdentity[]>;
   getAuthIdentityByIdentifier(type: string, identifier: string): Promise<AuthIdentity | undefined>;
   createAuthIdentity(identity: InsertAuthIdentity): Promise<AuthIdentity>;
   updateAuthIdentity(id: string, identity: Partial<InsertAuthIdentity>): Promise<AuthIdentity | undefined>;
   deleteAuthIdentity(id: string): Promise<boolean>;
 
-  // Multi-tenant: Verification code operations
+  // Verification code operations
   createVerificationCode(code: InsertVerificationCode): Promise<VerificationCode>;
   getVerificationCode(code: string, email?: string, phone?: string): Promise<VerificationCode | undefined>;
   markVerificationCodeUsed(id: string): Promise<void>;
   cleanupExpiredCodes(): Promise<void>;
-
-  // Multi-tenant: Invite operations
-  getOrganizationInvites(organizationId: string): Promise<OrganizationInvite[]>;
-  getInviteByCode(code: string): Promise<OrganizationInvite | undefined>;
-  createOrganizationInvite(invite: InsertOrganizationInvite): Promise<OrganizationInvite>;
-  acceptInvite(id: string, userId: string): Promise<OrganizationInvite | undefined>;
-  deleteOrganizationInvite(id: string): Promise<boolean>;
 
   // User invites (admin invites new app user by email)
   createUserInvite(invite: InsertUserInvite): Promise<UserInvite>;
@@ -493,9 +450,9 @@ export interface IStorage {
   updateUserInvite(id: string, data: { token: string; expiresAt: Date }): Promise<UserInvite | undefined>;
 
   // Client operations
-  getClients(organizationId: string): Promise<Client[]>;
+  getClients(): Promise<Client[]>;
   getClient(id: string): Promise<Client | undefined>;
-  getClientByEmail(organizationId: string, email: string): Promise<Client | undefined>;
+  getClientByEmail(email: string): Promise<Client | undefined>;
   createClient(client: InsertClient): Promise<Client>;
   updateClient(id: string, client: Partial<InsertClient>): Promise<Client | undefined>;
   deleteClient(id: string): Promise<boolean>;
@@ -681,11 +638,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Activity operations
-  async getActivities(organizationId: string): Promise<Activity[]> {
+  async getActivities(): Promise<Activity[]> {
     return db
       .select()
       .from(activities)
-      .where(eq(activities.organizationId, organizationId))
       .orderBy(activities.sortOrder, activities.name);
   }
 
@@ -974,7 +930,6 @@ export class DatabaseStorage implements IStorage {
 
     // Create new quote as a revision
     const [newQuote] = await db.insert(quotes).values({
-      organizationId: originalQuote.organizationId,
       quoteNumber: newQuoteNumber,
       referenceNumber: originalQuote.referenceNumber,
       clientId: originalQuote.clientId,
@@ -1542,24 +1497,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   // =====================
-  // Organization Settings
+  // Global App Settings
   // =====================
 
-  async getOrganizationSettings(organizationId: string): Promise<OrganizationSettings | undefined> {
-    const [settings] = await db.select().from(organizationSettings)
-      .where(eq(organizationSettings.organizationId, organizationId));
+  async getSettings(): Promise<AppSettings | undefined> {
+    const [settings] = await db.select().from(appSettings).limit(1);
     return settings;
   }
 
-  async createOrganizationSettings(settings: InsertOrganizationSettings): Promise<OrganizationSettings> {
-    const [created] = await db.insert(organizationSettings).values(settings).returning();
-    return created;
-  }
-
-  async updateOrganizationSettings(organizationId: string, settings: Partial<InsertOrganizationSettings>): Promise<OrganizationSettings | undefined> {
-    const [updated] = await db.update(organizationSettings)
+  async updateSettings(settings: Partial<InsertAppSettings>): Promise<AppSettings | undefined> {
+    const existing = await this.getSettings();
+    if (!existing) {
+      const [created] = await db.insert(appSettings).values(settings as InsertAppSettings).returning();
+      return created;
+    }
+    const [updated] = await db
+      .update(appSettings)
       .set({ ...settings, updatedAt: new Date() })
-      .where(eq(organizationSettings.organizationId, organizationId))
+      .where(eq(appSettings.id, existing.id))
       .returning();
     return updated;
   }
@@ -1567,12 +1522,7 @@ export class DatabaseStorage implements IStorage {
   // =====================
   // Terms Templates Operations
   // =====================
-  async getTermsTemplates(organizationId?: string): Promise<TermsTemplate[]> {
-    if (organizationId) {
-      return db.select().from(termsTemplates)
-        .where(eq(termsTemplates.organizationId, organizationId))
-        .orderBy(termsTemplates.name);
-    }
+  async getTermsTemplates(): Promise<TermsTemplate[]> {
     return db.select().from(termsTemplates).orderBy(termsTemplates.name);
   }
 
@@ -2822,74 +2772,6 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  // =====================
-  // MULTI-TENANT OPERATIONS (delegated to AuthTenantRepository)
-  // =====================
-
-  async getOrganizations(): Promise<Organization[]> {
-    return this.authRepo.getOrganizations();
-  }
-
-  async getOrganization(id: string): Promise<Organization | undefined> {
-    return this.authRepo.getOrganization(id);
-  }
-
-  async getOrganizationBySlug(slug: string): Promise<Organization | undefined> {
-    return this.authRepo.getOrganizationBySlug(slug);
-  }
-
-  async getOwnerOrganization(): Promise<Organization | undefined> {
-    return this.authRepo.getOwnerOrganization();
-  }
-
-  async createOrganization(org: InsertOrganization): Promise<Organization> {
-    return this.authRepo.createOrganization(org);
-  }
-
-  async updateOrganization(id: string, org: Partial<InsertOrganization>): Promise<Organization | undefined> {
-    return this.authRepo.updateOrganization(id, org);
-  }
-
-  async deleteOrganization(id: string): Promise<boolean> {
-    return this.authRepo.deleteOrganization(id);
-  }
-
-  async getOrganizationSubscription(organizationId: string): Promise<OrganizationSubscription | undefined> {
-    return this.authRepo.getOrganizationSubscription(organizationId);
-  }
-
-  async createOrganizationSubscription(sub: InsertOrganizationSubscription): Promise<OrganizationSubscription> {
-    return this.authRepo.createOrganizationSubscription(sub);
-  }
-
-  async updateOrganizationSubscription(id: string, sub: Partial<InsertOrganizationSubscription>): Promise<OrganizationSubscription | undefined> {
-    return this.authRepo.updateOrganizationSubscription(id, sub);
-  }
-
-  async getOrganizationMembers(organizationId: string): Promise<OrganizationMember[]> {
-    return this.authRepo.getOrganizationMembers(organizationId);
-  }
-
-  async getOrganizationMember(organizationId: string, userId: string): Promise<OrganizationMember | undefined> {
-    return this.authRepo.getOrganizationMember(organizationId, userId);
-  }
-
-  async getUserMemberships(userId: string): Promise<OrganizationMember[]> {
-    return this.authRepo.getUserMemberships(userId);
-  }
-
-  async createOrganizationMember(member: InsertOrganizationMember): Promise<OrganizationMember> {
-    return this.authRepo.createOrganizationMember(member);
-  }
-
-  async updateOrganizationMember(id: string, member: Partial<InsertOrganizationMember>): Promise<OrganizationMember | undefined> {
-    return this.authRepo.updateOrganizationMember(id, member);
-  }
-
-  async deleteOrganizationMember(id: string): Promise<boolean> {
-    return this.authRepo.deleteOrganizationMember(id);
-  }
-
   async getAuthIdentities(userId: string): Promise<AuthIdentity[]> {
     return this.authRepo.getAuthIdentities(userId);
   }
@@ -2926,26 +2808,6 @@ export class DatabaseStorage implements IStorage {
     return this.authRepo.cleanupExpiredCodes();
   }
 
-  async getOrganizationInvites(organizationId: string): Promise<OrganizationInvite[]> {
-    return this.authRepo.getOrganizationInvites(organizationId);
-  }
-
-  async getInviteByCode(code: string): Promise<OrganizationInvite | undefined> {
-    return this.authRepo.getInviteByCode(code);
-  }
-
-  async createOrganizationInvite(invite: InsertOrganizationInvite): Promise<OrganizationInvite> {
-    return this.authRepo.createOrganizationInvite(invite);
-  }
-
-  async acceptInvite(id: string, userId: string): Promise<OrganizationInvite | undefined> {
-    return this.authRepo.acceptInvite(id, userId);
-  }
-
-  async deleteOrganizationInvite(id: string): Promise<boolean> {
-    return this.authRepo.deleteOrganizationInvite(id);
-  }
-
   async createUserInvite(invite: InsertUserInvite): Promise<UserInvite> {
     return this.authRepo.createUserInvite(invite);
   }
@@ -2971,9 +2833,8 @@ export class DatabaseStorage implements IStorage {
   // =====================
 
   // Client operations
-  async getClients(organizationId: string): Promise<Client[]> {
+  async getClients(): Promise<Client[]> {
     return db.select().from(clients)
-      .where(eq(clients.organizationId, organizationId))
       .orderBy(clients.lastName, clients.firstName);
   }
 
@@ -2982,12 +2843,9 @@ export class DatabaseStorage implements IStorage {
     return client;
   }
 
-  async getClientByEmail(organizationId: string, email: string): Promise<Client | undefined> {
+  async getClientByEmail(email: string): Promise<Client | undefined> {
     const [client] = await db.select().from(clients)
-      .where(and(
-        eq(clients.organizationId, organizationId),
-        eq(clients.email, email.toLowerCase())
-      ));
+      .where(eq(clients.email, email.toLowerCase()));
     return client;
   }
 

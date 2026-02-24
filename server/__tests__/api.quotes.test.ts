@@ -23,20 +23,13 @@ describe.runIf(hasDb)("API quotes", () => {
       password: "password123",
     });
     authCookie = loginRes.headers["set-cookie"] ?? [];
-    const userId = loginRes.body.userId;
-    await request(app).get("/api/clients").set("Cookie", authCookie);
-    const memberships = await storage.getUserMemberships(userId);
-    const orgId = memberships[0]?.organizationId;
-    if (orgId) {
-      const client = await storage.createClient({
-        organizationId: orgId,
-        firstName: "Quote",
-        lastName: "TestClient",
-        email: "client@example.com",
-        streetAddress: "456 Client Ave",
-      });
-      clientId = client.id;
-    }
+    const client = await storage.createClient({
+      firstName: "Quote",
+      lastName: "TestClient",
+      email: "client@example.com",
+      streetAddress: "456 Client Ave",
+    });
+    clientId = client.id;
   });
 
   it("GET /api/quotes returns 401 when unauthenticated", async () => {

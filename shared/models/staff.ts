@@ -2,7 +2,6 @@ import { sql, relations } from "drizzle-orm";
 import { pgTable, text, varchar, timestamp, boolean, date, index, integer, decimal } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { organizations } from "./organizations";
 
 // User roles enum
 export const userRoles = [
@@ -46,7 +45,6 @@ export type SalaryType = typeof salaryTypes[number];
 export const staffProfiles = pgTable("staff_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().unique(),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   roles: text("roles").array().notNull().default(sql`ARRAY['plumber']::text[]`),
   employmentType: varchar("employment_type", { length: 20 }).notNull().default("permanent"),
   permissions: text("permissions").array().notNull().default(sql`ARRAY[]::text[]`),
@@ -71,7 +69,6 @@ export const staffProfiles = pgTable("staff_profiles", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("idx_staff_user_id").on(table.userId),
-  index("idx_staff_org").on(table.organizationId),
   index("idx_staff_active").on(table.isActive),
 ]);
 

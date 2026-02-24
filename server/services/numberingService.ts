@@ -1,6 +1,6 @@
 import { db } from "../db";
-import { organizationCounters, organizationSettings } from "@shared/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { appSettings, appCounters } from "@shared/schema";
+import { eq, sql } from "drizzle-orm";
 import crypto from "crypto";
 
 const COUNTER_KEY = "job_invoice";
@@ -11,27 +11,23 @@ export interface NumberReservation {
   invoiceNumber: string;
 }
 
-export async function reserveNextNumber(organizationId: string): Promise<NumberReservation> {
-  const settings = await db.query.organizationSettings.findFirst({
-    where: eq(organizationSettings.organizationId, organizationId),
-  });
-
-  const jobPrefix = settings?.jobNumberPrefix || "J-";
-  const invoicePrefix = settings?.invoiceNumberPrefix || "INV-";
+/** Reserve the next global job/invoice number (single-tenant). */
+export async function reserveNextNumber(): Promise<NumberReservation> {
+  const settings = await db.query.appSettings.findFirst();
+  const jobPrefix = settings?.jobNumberPrefix ?? "J-";
+  const invoicePrefix = settings?.invoiceNumberPrefix ?? "INV-";
 
   const result = await db.execute(sql`
-    INSERT INTO organization_counters (organization_id, counter_key, next_value, prefix, pad_length, created_at, updated_at)
-    VALUES (${organizationId}, ${COUNTER_KEY}, 2, '', 4, NOW(), NOW())
-    ON CONFLICT (organization_id, counter_key)
-    DO UPDATE SET 
-      next_value = organization_counters.next_value + 1,
-      updated_at = NOW()
-    RETURNING next_value - 1 as reserved_value, pad_length
+    INSERT INTO app_counters (counter_key, next_value, pad_length, updated_at)
+    VALUES (${COUNTER_KEY}, 2, 4, NOW())
+    ON CONFLICT (counter_key)
+    DO UPDATE SET next_value = app_counters.next_value + 1, updated_at = NOW()
+    RETURNING next_value - 1 AS reserved_value, pad_length
   `);
 
   const row = result.rows[0] as { reserved_value: number; pad_length: number };
-  const reservedValue = row.reserved_value;
-  const padLength = row.pad_length || 4;
+  const reservedValue = row?.reserved_value ?? 1;
+  const padLength = row?.pad_length ?? 4;
   const paddedNumber = String(reservedValue).padStart(padLength, "0");
 
   return {

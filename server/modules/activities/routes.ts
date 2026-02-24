@@ -1,17 +1,11 @@
 import type { Express } from "express";
-import { storage, isAuthenticated, withOrganization } from "../../routes/shared";
+import { storage, isAuthenticated } from "../../routes/shared";
 import { insertActivitySchema, patchActivitySchema } from "./model";
 
 export function registerActivitiesRoutes(app: Express): void {
-  app.get("/api/activities", isAuthenticated, withOrganization, async (req: any, res) => {
+  app.get("/api/activities", isAuthenticated, async (req: any, res) => {
     try {
-      const organizationId = req.organizationId;
-      if (!organizationId) {
-        return res
-          .status(400)
-          .json({ message: "Organization context required" });
-      }
-      const list = await storage.getActivities(organizationId);
+      const list = await storage.getActivities();
       res.json(list);
     } catch (err: any) {
       console.error("Error fetching activities:", err);
@@ -19,14 +13,10 @@ export function registerActivitiesRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/activities/:id", isAuthenticated, withOrganization, async (req: any, res) => {
+  app.get("/api/activities/:id", isAuthenticated, async (req: any, res) => {
     try {
       const activity = await storage.getActivity(req.params.id);
       if (!activity) {
-        return res.status(404).json({ message: "Activity not found" });
-      }
-      const organizationId = req.organizationId;
-      if (activity.organizationId !== organizationId) {
         return res.status(404).json({ message: "Activity not found" });
       }
       res.json(activity);
@@ -36,15 +26,9 @@ export function registerActivitiesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/activities", isAuthenticated, withOrganization, async (req: any, res) => {
+  app.post("/api/activities", isAuthenticated, async (req: any, res) => {
     try {
-      const organizationId = req.organizationId;
-      if (!organizationId) {
-        return res
-          .status(400)
-          .json({ message: "Organization context required" });
-      }
-      const parsed = insertActivitySchema.safeParse({ ...req.body, organizationId });
+      const parsed = insertActivitySchema.safeParse(req.body);
       if (!parsed.success) {
         return res
           .status(400)
@@ -58,13 +42,10 @@ export function registerActivitiesRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/activities/:id", isAuthenticated, withOrganization, async (req: any, res) => {
+  app.patch("/api/activities/:id", isAuthenticated, async (req: any, res) => {
     try {
       const existing = await storage.getActivity(req.params.id);
       if (!existing) {
-        return res.status(404).json({ message: "Activity not found" });
-      }
-      if (existing.organizationId !== req.organizationId) {
         return res.status(404).json({ message: "Activity not found" });
       }
       const partial = patchActivitySchema.safeParse(req.body);
@@ -81,13 +62,10 @@ export function registerActivitiesRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/activities/:id", isAuthenticated, withOrganization, async (req: any, res) => {
+  app.delete("/api/activities/:id", isAuthenticated, async (req: any, res) => {
     try {
       const existing = await storage.getActivity(req.params.id);
       if (!existing) {
-        return res.status(404).json({ message: "Activity not found" });
-      }
-      if (existing.organizationId !== req.organizationId) {
         return res.status(404).json({ message: "Activity not found" });
       }
       const inUse = await storage.getScheduleEntriesByActivity(req.params.id);

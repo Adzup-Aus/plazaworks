@@ -6,8 +6,11 @@ import { z } from "zod";
 // Re-export auth models
 export * from "./models/auth";
 
-// Re-export organization models (multi-tenant, identity, invites)
+// Re-export auth/identity and terms (from former organizations module)
 export * from "./models/organizations";
+
+// Re-export settings (global app settings)
+export * from "./models/settings";
 
 // Re-export staff, clients, jobs, activities, schedule models
 export * from "./models/staff";
@@ -16,12 +19,8 @@ export * from "./models/jobs";
 export * from "./models/activities";
 export * from "./models/schedule";
 
-// Import org and table refs so remaining schema can reference them
-import {
-  organizations,
-  termsTemplates,
-  organizationCounters,
-} from "./models/organizations";
+// Import table refs for schema relations
+import { termsTemplates } from "./models/organizations";
 import { staffProfiles, userWorkingHours } from "./models/staff";
 import { clients } from "./models/clients";
 import { jobs, jobTypes } from "./models/jobs";
@@ -249,7 +248,6 @@ export type PaymentMethod = typeof paymentMethods[number];
 // Quotes table
 export const quotes = pgTable("quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   quoteNumber: varchar("quote_number", { length: 50 }).notNull().unique(),
   // Shared reference number linking quote/job/invoice (sequential per org)
   referenceNumber: integer("reference_number"),
@@ -309,7 +307,6 @@ export const quotes = pgTable("quotes", {
 // Invoices table
 export const invoices = pgTable("invoices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   invoiceNumber: varchar("invoice_number", { length: 50 }).notNull().unique(),
   // Shared reference number linking quote/job/invoice (sequential per org)
   referenceNumber: integer("reference_number"),
@@ -696,29 +693,6 @@ export const insertInvoicePaymentSchema = createInsertSchema(invoicePayments).om
   description: z.string().optional(),
 });
 
-export const insertTermsTemplateSchema = createInsertSchema(termsTemplates).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-}).extend({
-  name: z.string().min(1, "Template name is required"),
-  content: z.string().min(1, "Template content is required"),
-  serviceType: z.string().optional().nullable(),
-  isDefault: z.boolean().optional(),
-});
-
-export const insertOrganizationCounterSchema = createInsertSchema(organizationCounters).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-}).extend({
-  organizationId: z.string().min(1, "Organization ID is required"),
-  counterKey: z.string().min(1, "Counter key is required"),
-  nextValue: z.number().optional(),
-  prefix: z.string().optional(),
-  padLength: z.number().optional(),
-});
-
 // Phase 3 Types
 export type Quote = typeof quotes.$inferSelect;
 export type InsertQuote = z.infer<typeof insertQuoteSchema>;
@@ -747,7 +721,7 @@ export type InsertQuoteCustomSection = z.infer<typeof insertQuoteCustomSectionSc
 export type InvoicePayment = typeof invoicePayments.$inferSelect;
 export type InsertInvoicePayment = z.infer<typeof insertInvoicePaymentSchema>;
 
-// OrganizationCounter, InsertOrganizationCounter, TermsTemplate, InsertTermsTemplate re-exported from ./models/organizations
+// TermsTemplate, InsertTermsTemplate re-exported from ./models/organizations
 
 // Helper types
 export type QuoteWithLineItems = Quote & {
@@ -794,7 +768,6 @@ export type MaintenanceStatus = typeof maintenanceStatuses[number];
 // Vehicles table
 export const vehicles = pgTable("vehicles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   registrationNumber: varchar("registration_number", { length: 20 }).notNull().unique(),
   make: varchar("make", { length: 100 }).notNull(),
   model: varchar("model", { length: 100 }).notNull(),
@@ -831,7 +804,6 @@ export const vehicleAssignments = pgTable("vehicle_assignments", {
 // Checklist templates - reusable checklist definitions
 export const checklistTemplates = pgTable("checklist_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 200 }).notNull(),
   description: text("description"),
   target: varchar("target", { length: 50 }).notNull().default("vehicle"),
@@ -1814,38 +1786,7 @@ export type MilestoneStatus = typeof milestoneStatuses[number];
 export const milestonePaymentStatuses = ["pending", "requested", "approved", "paid", "overdue"] as const;
 export type MilestonePaymentStatus = typeof milestonePaymentStatuses[number];
 
-// Clients table - full contact and address details
-export const clients = pgTable("clients", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  // Contact details
-  firstName: varchar("first_name", { length: 100 }).notNull(),
-  lastName: varchar("last_name", { length: 100 }).notNull(),
-  email: varchar("email", { length: 255 }),
-  phone: varchar("phone", { length: 50 }),
-  mobilePhone: varchar("mobile_phone", { length: 50 }),
-  company: varchar("company", { length: 255 }),
-  clientType: varchar("client_type", { length: 50 }).default("residential"),
-  // Address
-  streetAddress: varchar("street_address", { length: 255 }),
-  streetAddress2: varchar("street_address_2", { length: 255 }),
-  city: varchar("city", { length: 100 }),
-  state: varchar("state", { length: 100 }),
-  postalCode: varchar("postal_code", { length: 20 }),
-  country: varchar("country", { length: 100 }).default("Australia"),
-  // Portal access
-  portalEnabled: boolean("portal_enabled").default(false),
-  // Notes
-  notes: text("notes"),
-  isActive: boolean("is_active").default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
-  index("idx_clients_org").on(table.organizationId),
-  index("idx_clients_email").on(table.email),
-  index("idx_clients_phone").on(table.phone),
-  index("idx_clients_name").on(table.lastName, table.firstName),
-]);
+// Clients table - use definition from models/clients (re-exported above); relations here
 
 // Client portal accounts - separate authentication for clients
 export const clientPortalAccounts = pgTable("client_portal_accounts", {
@@ -1976,12 +1917,8 @@ export const milestoneMedia = pgTable("milestone_media", {
   index("idx_milestone_media_type").on(table.mediaType),
 ]);
 
-// Client Portal Relations
+// Client Portal Relations (clients table from models/clients)
 export const clientsRelations = relations(clients, ({ one, many }) => ({
-  organization: one(organizations, {
-    fields: [clients.organizationId],
-    references: [organizations.id],
-  }),
   portalAccount: one(clientPortalAccounts, {
     fields: [clients.id],
     references: [clientPortalAccounts.clientId],

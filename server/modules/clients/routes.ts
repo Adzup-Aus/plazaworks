@@ -1,20 +1,11 @@
 import type { Express } from "express";
-import { storage, isAuthenticated, withOrganization } from "../../routes/shared";
+import { storage, isAuthenticated } from "../../routes/shared";
 import { insertClientSchema } from "@shared/schema";
 
 export function registerClientsRoutes(app: Express): void {
-  app.get("/api/clients", isAuthenticated, withOrganization, async (req: any, res) => {
+  app.get("/api/clients", isAuthenticated, async (req: any, res) => {
     try {
-      const organizationId = req.organizationId;
-      if (!organizationId) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "Organization context required. Please set up your organization first.",
-          });
-      }
-      const clientList = await storage.getClients(organizationId);
+      const clientList = await storage.getClients();
       res.json(clientList);
     } catch (err: any) {
       console.error("Error fetching clients:", err);
@@ -35,19 +26,9 @@ export function registerClientsRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/clients", isAuthenticated, withOrganization, async (req: any, res) => {
+  app.post("/api/clients", isAuthenticated, async (req: any, res) => {
     try {
-      const organizationId = req.organizationId;
-      if (!organizationId) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "Organization context required. Please set up your organization first.",
-          });
-      }
-
-      const parsed = insertClientSchema.safeParse({ ...req.body, organizationId });
+      const parsed = insertClientSchema.safeParse(req.body);
       if (!parsed.success) {
         return res
           .status(400)
