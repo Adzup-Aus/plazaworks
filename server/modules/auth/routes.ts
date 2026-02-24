@@ -7,7 +7,7 @@ import {
   authStorage,
   generateOTPCode,
 } from "../../routes/shared";
-import { sendOtpEmail, sendUserInviteEmail } from "../../email";
+import { sendOtpEmail, sendPasswordResetEmail, sendUserInviteEmail } from "../../email";
 
 export function registerAuthRoutes(app: Express): void {
   // Request OTP code (email or phone)
@@ -312,7 +312,7 @@ export function registerAuthRoutes(app: Express): void {
         });
 
         try {
-          await sendOtpEmail(email, code);
+          await sendPasswordResetEmail(email, code);
         } catch (e) {
           console.error("Failed to send password reset email:", e);
         }
