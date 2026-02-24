@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import Landing from "@/pages/landing";
 import Login from "@/pages/login";
+import ForgotPassword from "@/pages/forgot-password";
 import Register from "@/pages/register";
 import Onboarding from "@/pages/onboarding";
 import AcceptInvite from "@/pages/accept-invite";
@@ -119,6 +120,7 @@ function PublicRouter() {
     <Switch>
       <Route path="/" component={Landing} />
       <Route path="/login" component={Login} />
+      <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/register" component={Register} />
       <Route path="/accept-invite" component={AcceptUserInvite} />
       <Route path="/invite/:code" component={AcceptInvite} />
@@ -137,6 +139,7 @@ function AppContent() {
   const pathname = typeof window !== "undefined" ? window.location.pathname : "";
   const isPublicRoute = pathname === "/" || 
                         pathname === "/login" || 
+                        pathname === "/forgot-password" ||
                         pathname === "/register" ||
                         pathname.startsWith("/invite/") ||
                         pathname.startsWith("/accept-invite") ||

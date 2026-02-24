@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -227,13 +227,13 @@ export default function Login() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label htmlFor="password">Password</Label>
-                      <a 
+                      <Link 
                         href="/forgot-password" 
                         className="text-sm text-primary hover:underline"
                         data-testid="link-forgot-password"
                       >
                         Forgot password?
-                      </a>
+                      </Link>
                     </div>
                     <Input
                       id="password"

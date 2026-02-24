@@ -143,6 +143,25 @@ export async function sendOtpEmail(email: string, otp: string) {
   });
 }
 
+export async function sendPasswordResetEmail(email: string, code: string) {
+  return sendEmail({
+    to: email,
+    subject: "Your Password Reset Code",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Reset Your Password</h2>
+        <p>Use the following code to reset your Plaza Works password:</p>
+        <div style="background: #f5f5f5; padding: 30px; border-radius: 8px; margin: 20px 0; text-align: center;">
+          <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px;">${code}</span>
+        </div>
+        <p style="color: #666; font-size: 14px;">Enter this code on the reset password page along with your new password. This code will expire in 10 minutes.</p>
+        <p style="color: #666; font-size: 14px;">If you didn't request a password reset, please ignore this email. Your password will remain unchanged.</p>
+      </div>
+    `,
+    text: `Your password reset code is: ${code}. Enter it on the reset password page with your new password. This code will expire in 10 minutes. If you didn't request this, ignore this email.`,
+  });
+}
+
 export async function sendJobCompletionNotification(
   clientEmail: string,
   clientName: string,
