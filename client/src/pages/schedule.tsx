@@ -37,6 +37,7 @@ import {
   Clock,
   CheckCircle,
   XCircle,
+  Check,
 } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -161,6 +162,8 @@ export default function Schedule() {
   const [pendingEntryDrag, setPendingEntryDrag] = useState<{ entry: ScheduleEntry; durationSlots: number } | null>(null);
   const [entryDrag, setEntryDrag] = useState<{ entry: ScheduleEntry; durationSlots: number } | null>(null);
   const [dropTargetSlot, setDropTargetSlot] = useState<number | null>(null);
+  const [selectedStaffFilter, setSelectedStaffFilter] = useState<string[]>([]);
+  const [staffFilterOpen, setStaffFilterOpen] = useState(false);
   const dropTargetSlotRef = useRef<number | null>(null);
   const entryDragRef = useRef<{ entry: ScheduleEntry; durationSlots: number } | null>(null);
   const pendingEntryDragRef = useRef<{ entry: ScheduleEntry; durationSlots: number } | null>(null);
@@ -180,6 +183,16 @@ export default function Schedule() {
     }
   }, [rightSheetOpen, editingEntry]);
 
+  // Clear drag selection when staff filter changes to avoid referencing removed staff
+  useEffect(() => {
+    setDragSelection(null);
+    setDragCurrentTime(null);
+    setDragTooltipPos(null);
+    setEntryDrag(null);
+    setPendingEntryDrag(null);
+    setDropTargetSlot(null);
+  }, [selectedStaffFilter]);
+
   useEffect(() => {
     if (rightSheetOpen && dragSelection) {
       const startSlot = Math.min(dragSelection.startSlot, dragSelection.endSlot);
@@ -196,7 +209,7 @@ export default function Schedule() {
     if (!pendingEntryDrag && !entryDrag) return;
     const onPointerMove = () => {
       const pending = pendingEntryDragRef.current;
-      if (pending && !hasMovedRef.current) {
+      if (pending && pending.entry && !hasMovedRef.current) {
         hasMovedRef.current = true;
         const startSlot = timeToSlot(pending.entry.startTime);
         setEntryDrag({ entry: pending.entry, durationSlots: pending.durationSlots });
@@ -208,7 +221,7 @@ export default function Schedule() {
       const slot = dropTargetSlotRef.current;
       const drag = entryDragRef.current;
       const pending = pendingEntryDragRef.current;
-      if (drag && slot != null) {
+      if (drag && drag.entry && slot != null) {
         const clampedSlot = Math.max(0, Math.min(slot, TOTAL_SLOTS - drag.durationSlots));
         const newStart = slotToTime(clampedSlot);
         const newEnd = slotToTime(clampedSlot + drag.durationSlots);
@@ -221,7 +234,7 @@ export default function Schedule() {
           jobId: drag.entry.jobId ?? undefined,
           activityId: drag.entry.activityId ?? undefined,
         });
-      } else if (pending) {
+      } else if (pending && pending.entry) {
         setEditingEntry(pending.entry);
         setRightSheetOpen(true);
       }
@@ -560,6 +573,11 @@ export default function Schedule() {
     [staffProfiles]
   );
 
+  const filteredStaffList = useMemo(() => {
+    if (selectedStaffFilter.length === 0) return staffList;
+    return staffList.filter((s) => selectedStaffFilter.includes(s.id));
+  }, [staffList, selectedStaffFilter]);
+
   const handlePointerDown = (staffId: string, hour: number, e: React.PointerEvent) => {
     if (entryDrag) return;
     const cellWidth = e.currentTarget.getBoundingClientRect().width;
@@ -570,7 +588,7 @@ export default function Schedule() {
   };
 
   const handlePointerMove = (staffId: string, hour: number, e: React.PointerEvent) => {
-    if (entryDrag && entryDrag.entry.staffId === staffId) {
+    if (entryDrag && entryDrag.entry?.staffId === staffId) {
       const cellWidth = e.currentTarget.getBoundingClientRect().width;
       const slot = getSlotFromPointer(hour, e.nativeEvent.offsetX, cellWidth);
       setDropTargetSlot(slot);
@@ -673,7 +691,78 @@ export default function Schedule() {
             View and manage job schedules
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {viewMode === "day" && (
+            <Popover open={staffFilterOpen} onOpenChange={setStaffFilterOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={staffFilterOpen}
+                  className="justify-between font-normal min-w-[200px] max-w-[300px]"
+                >
+                  {selectedStaffFilter.length === 0 ? (
+                    "Filter by staff..."
+                  ) : selectedStaffFilter.length === 1 ? (
+                    (() => {
+                      const s = staffList.find((x) => x.id === selectedStaffFilter[0]);
+                      return s ? (s.userId || s.id.slice(0, 8)) : "Filter by staff...";
+                    })()
+                  ) : (
+                    `${selectedStaffFilter.length} staff selected`
+                  )}
+                  <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[280px] p-0" align="end">
+                <Command>
+                  <CommandInput placeholder="Search staff..." />
+                  <CommandList>
+                    <CommandEmpty>No staff found.</CommandEmpty>
+                    <CommandGroup>
+                      <CommandItem
+                        value="all"
+                        onSelect={() => {
+                          setSelectedStaffFilter([]);
+                        }}
+                      >
+                        <div className="flex items-center gap-2 flex-1">
+                          <div className="h-4 w-4 flex items-center justify-center">
+                            {selectedStaffFilter.length === 0 && <Check className="h-4 w-4" />}
+                          </div>
+                          <span className="text-muted-foreground">All staff</span>
+                        </div>
+                      </CommandItem>
+                      {staffList.map((staff) => {
+                        const isSelected = selectedStaffFilter.includes(staff.id);
+                        return (
+                          <CommandItem
+                            key={staff.id}
+                            value={staff.userId ?? staff.id}
+                            onSelect={() => {
+                              setSelectedStaffFilter((prev) => {
+                                if (isSelected) {
+                                  return prev.filter((id) => id !== staff.id);
+                                }
+                                return [...prev, staff.id];
+                              });
+                            }}
+                          >
+                            <div className="flex items-center gap-2 flex-1">
+                              <div className="h-4 w-4 flex items-center justify-center">
+                                {isSelected && <Check className="h-4 w-4" />}
+                              </div>
+                              <span className="truncate">{staff.userId || staff.id.slice(0, 8)}</span>
+                            </div>
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          )}
           <Button
             variant={viewMode === "day" ? "default" : "outline"}
             size="sm"
@@ -911,15 +1000,15 @@ export default function Schedule() {
                   ))}
                 </div>
               ) : (
-                <div className="min-w-[800px] overflow-visible">
-                  <div className="grid gap-0 border rounded-md overflow-visible" style={{ gridTemplateColumns: "100px repeat(24, minmax(0, 1fr))" }}>
+                <div className="min-w-[2800px] overflow-visible">
+                  <div className="grid gap-0 border rounded-md overflow-visible" style={{ gridTemplateColumns: "100px repeat(24, minmax(112px, 1fr))" }}>
                     <div className="border-b border-r bg-muted/50 p-2 text-xs font-medium sticky left-0 z-10" />
                     {HOURS.map((h) => (
-                      <div key={h} className="border-b border-r p-1 text-center text-xs text-muted-foreground" style={{ minWidth: 28 }}>
+                      <div key={h} className="border-b border-r p-1 text-center text-xs text-muted-foreground" style={{ minWidth: 112 }}>
                         {formatHour24(h)}
                       </div>
                     ))}
-                    {staffList.map((staff) => (
+                    {filteredStaffList.map((staff) => (
                       <React.Fragment key={staff.id}>
                         <div className="border-b border-r bg-muted/50 p-2 text-sm font-medium sticky left-0 z-10 truncate" title={staff.userId}>
                           {staff.userId?.split("@")[0] || staff.id.slice(0, 8)}
@@ -995,18 +1084,18 @@ export default function Schedule() {
                                   <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-primary border-2 border-background shadow-sm" />
                                 </div>
                               )}
-                              {entryDrag?.entry.staffId === staff.id && dropTargetSlot != null && Math.floor(dropTargetSlot / SLOTS_PER_HOUR) === hour && (
+                              {entryDrag?.entry?.staffId === staff.id && dropTargetSlot != null && Math.floor(dropTargetSlot / SLOTS_PER_HOUR) === hour && (
                                 <div
                                   className="absolute inset-y-0 z-[5] rounded px-1 py-0.5 text-xs text-white flex flex-col justify-center pointer-events-none border-2 border-dashed border-primary opacity-95"
                                   style={{
                                     left: `${((dropTargetSlot % SLOTS_PER_HOUR) / SLOTS_PER_HOUR) * 100}%`,
                                     width: `${(entryDrag.durationSlots / SLOTS_PER_HOUR) * 100}%`,
                                     minWidth: 0,
-                                    backgroundColor: entryDrag.entry.activityId && getActivityColor(entryDrag.entry) ? getActivityColor(entryDrag.entry)! : "hsl(var(--primary))",
+                                    backgroundColor: entryDrag?.entry?.activityId && getActivityColor(entryDrag.entry) ? getActivityColor(entryDrag.entry)! : "hsl(var(--primary))",
                                   }}
                                 >
                                   <span className="text-[10px] font-medium opacity-90 whitespace-nowrap">{slotToTime(dropTargetSlot)}</span>
-                                  <span className="truncate">{getEntryLabel(entryDrag.entry)}</span>
+                                  <span className="truncate">{entryDrag?.entry ? getEntryLabel(entryDrag.entry) : ""}</span>
                                 </div>
                               )}
                               {startMatch && entry && (
@@ -1015,7 +1104,7 @@ export default function Schedule() {
                                   tabIndex={0}
                                   className={`group absolute inset-y-0 z-10 rounded px-1 py-0.5 text-xs text-white truncate flex items-center cursor-grab active:cursor-grabbing hover:opacity-95 ${
                                     entry.activityId ? "" : getStatusColor(entry.status || "scheduled")
-                                  } ${entryDrag?.entry.id === entry.id ? "opacity-20" : ""}`}
+                                  } ${entryDrag?.entry?.id === entry.id ? "opacity-20" : ""}`}
                                   style={{
                                     left: `${leftPct}%`,
                                     width: `${widthPct}%`,
