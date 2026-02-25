@@ -135,7 +135,13 @@ export default function Login() {
               
               <TabsContent value="otp">
                 {step === "email" && (
-                  <div className="space-y-4">
+                  <form
+                    className="space-y-4"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleRequestOTP();
+                    }}
+                  >
                     <div className="space-y-2">
                       <Label htmlFor="email-otp">Email address</Label>
                       <Input
@@ -148,8 +154,8 @@ export default function Login() {
                       />
                     </div>
                     <Button 
+                      type="submit"
                       className="w-full" 
-                      onClick={handleRequestOTP}
                       disabled={isLoading}
                       data-testid="button-request-otp"
                     >
@@ -160,11 +166,17 @@ export default function Login() {
                       )}
                       Send Verification Code
                     </Button>
-                  </div>
+                  </form>
                 )}
                 
                 {step === "otp" && (
-                  <div className="space-y-4">
+                  <form
+                    className="space-y-4"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleVerifyOTP();
+                    }}
+                  >
                     <div className="space-y-2">
                       <Label htmlFor="otp-code">Verification Code</Label>
                       <Input
@@ -181,8 +193,8 @@ export default function Login() {
                       </p>
                     </div>
                     <Button 
+                      type="submit"
                       className="w-full" 
-                      onClick={handleVerifyOTP}
                       disabled={isLoading}
                       data-testid="button-verify-otp"
                     >
@@ -194,6 +206,7 @@ export default function Login() {
                       Verify & Sign In
                     </Button>
                     <Button 
+                      type="button"
                       variant="ghost" 
                       className="w-full"
                       onClick={() => setStep("email")}
@@ -201,12 +214,18 @@ export default function Login() {
                     >
                       Use different email
                     </Button>
-                  </div>
+                  </form>
                 )}
               </TabsContent>
               
               <TabsContent value="password">
-                <div className="space-y-4">
+                <form
+                  className="space-y-4"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handlePasswordLogin();
+                  }}
+                >
                   <div className="space-y-2">
                     <Label htmlFor="email-password">Email address</Label>
                     <Input
@@ -239,8 +258,8 @@ export default function Login() {
                     />
                   </div>
                   <Button 
+                    type="submit"
                     className="w-full" 
-                    onClick={handlePasswordLogin}
                     disabled={isLoading}
                     data-testid="button-password-login"
                   >
@@ -251,7 +270,7 @@ export default function Login() {
                     )}
                     Sign In
                   </Button>
-                </div>
+                </form>
               </TabsContent>
             </Tabs>
             

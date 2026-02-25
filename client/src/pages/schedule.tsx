@@ -822,7 +822,7 @@ export default function Schedule() {
                 </div>
               ) : (
                 <div className="min-w-[2800px] overflow-visible">
-                  <div className="grid gap-0 border rounded-md overflow-visible" style={{ gridTemplateColumns: "100px repeat(24, minmax(112px, 1fr))" }}>
+                  <div className="grid gap-0 border rounded-md overflow-visible" style={{ gridTemplateColumns: "180px repeat(24, minmax(112px, 1fr))" }}>
                     <div className="border-b border-r bg-muted/50 p-2 text-xs font-medium sticky left-0 z-10" />
                     {HOURS.map((h) => (
                       <div key={h} className="border-b border-r p-1 text-center text-xs text-muted-foreground" style={{ minWidth: 112 }}>
@@ -831,7 +831,7 @@ export default function Schedule() {
                     ))}
                     {filteredStaffList.map((staff) => (
                       <React.Fragment key={staff.id}>
-                        <div className="border-b border-r bg-muted/50 p-2 text-sm font-medium sticky left-0 z-10 truncate" title={staff.userId}>
+                        <div className="border-b border-r bg-muted/50 p-2 text-sm font-medium sticky left-0 z-10 break-words whitespace-normal" title={staff.userId}>
                           {staff.userId?.split("@")[0] || staff.id.slice(0, 8)}
                         </div>
                         {HOURS.map((hour) => {
