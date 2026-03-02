@@ -7,6 +7,7 @@ import {
   authStorage,
   generateOTPCode,
 } from "../../routes/shared";
+import type { Role } from "@shared/schema";
 import { sendOtpEmail, sendPasswordResetEmail, sendUserInviteEmail } from "../../email";
 
 export function registerAuthRoutes(app: Express): void {
@@ -505,11 +506,20 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(403).json({ message: "Only an admin can invite users" });
       }
 
-      const { email } = req.body;
+      const { email, roleId: rawRoleId } = req.body;
       const normalized = typeof email === "string" ? email.trim().toLowerCase() : "";
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!normalized || !emailRegex.test(normalized)) {
         return res.status(400).json({ message: "Invalid email" });
+      }
+
+      const roleId = typeof rawRoleId === "string" ? rawRoleId.trim() : undefined;
+      let role: Role | undefined;
+      if (roleId) {
+        role = await storage.getRole(roleId);
+        if (!role) {
+          return res.status(400).json({ message: "Invalid role" });
+        }
       }
 
       const existingIdentity = await storage.getAuthIdentityByIdentifier("email", normalized);
@@ -524,13 +534,18 @@ export function registerAuthRoutes(app: Express): void {
       const pendingForEmail = existingInvites.find((i) => i.email === normalized);
       let invite;
       if (pendingForEmail) {
-        const updated = await storage.updateUserInvite(pendingForEmail.id, { token, expiresAt });
+        const updated = await storage.updateUserInvite(pendingForEmail.id, {
+          token,
+          expiresAt,
+          roleId: role ? role.id : pendingForEmail.roleId ?? null,
+        });
         invite = updated ?? pendingForEmail;
       } else {
         invite = await storage.createUserInvite({
           email: normalized,
           token,
           invitedBy: userId,
+          roleId: role ? role.id : null,
           expiresAt,
         });
       }
@@ -548,6 +563,8 @@ export function registerAuthRoutes(app: Express): void {
         inviteId: invite.id,
         email: normalized,
         expiresAt: invite.expiresAt.toISOString(),
+        roleId: invite.roleId,
+        roleName: role ? role.name : undefined,
       });
     } catch (err: any) {
       console.error("Error creating invite:", err);
@@ -563,10 +580,14 @@ export function registerAuthRoutes(app: Express): void {
       const status = req.query.status as string | undefined;
       const validStatus = status === "pending" || status === "used" || status === "expired" ? status : undefined;
       const invites = await storage.listUserInvites(validStatus ? { status: validStatus } : undefined);
+      const allRoles = await storage.getRoles();
+      const roleMap = new Map(allRoles.map((r) => [r.id, r]));
       return res.json({
         invites: invites.map((i) => ({
           id: i.id,
           email: i.email,
+          roleId: i.roleId,
+          roleName: i.roleId ? roleMap.get(i.roleId)?.name : undefined,
           expiresAt: i.expiresAt,
           usedAt: i.usedAt,
           createdAt: i.createdAt,
@@ -639,6 +660,17 @@ export function registerAuthRoutes(app: Express): void {
         isVerified: true,
         isPrimary: true,
       });
+      if (invite.roleId) {
+        const role = await storage.getRole(invite.roleId);
+        if (role) {
+          const permissions = await storage.getRolePermissions(role.id);
+          await storage.createStaffProfile({
+            userId: newUserId,
+            roles: [role.name],
+            permissions,
+          });
+        }
+      }
       await storage.markUserInviteUsed(invite.id);
 
       return res.status(201).json({

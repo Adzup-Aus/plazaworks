@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
+import { roles } from "./roles";
 
 // Session storage table (used by connect-pg-simple).
 export const sessions = pgTable(
@@ -31,6 +32,7 @@ export const userInvites = pgTable(
     email: varchar("email", { length: 255 }).notNull(),
     token: varchar("token", { length: 64 }).notNull().unique(),
     invitedBy: varchar("invited_by").notNull(),
+    roleId: varchar("role_id", { length: 36 }).references(() => roles.id, { onDelete: "set null" }),
     expiresAt: timestamp("expires_at").notNull(),
     usedAt: timestamp("used_at"),
     createdAt: timestamp("created_at").defaultNow(),
