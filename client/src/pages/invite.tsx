@@ -6,13 +6,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { UserPlus, Loader2, Mail } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Role } from "@shared/schema";
 
 interface InviteRow {
   id: string;
   email: string;
+  roleId?: string | null;
+  roleName?: string | null;
   expiresAt: string;
   usedAt: string | null;
   createdAt: string;
@@ -23,9 +27,15 @@ export default function Invite() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [email, setEmail] = useState("");
+  const [roleId, setRoleId] = useState<string | undefined>();
 
   const { data: adminStatus, isLoading: adminLoading } = useQuery<{ isSuperAdmin: boolean }>({
     queryKey: ["/api/auth/is-super-admin"],
+  });
+
+  const { data: roles, isLoading: rolesLoading } = useQuery<Role[]>({
+    queryKey: ["/api/roles"],
+    enabled: !!adminStatus?.isSuperAdmin,
   });
 
   const { data: invitesData, isLoading: invitesLoading } = useQuery<{ invites: InviteRow[] }>({
@@ -34,8 +44,8 @@ export default function Invite() {
   });
 
   const createInvite = useMutation({
-    mutationFn: async (email: string) => {
-      const res = await apiRequest("POST", "/api/invites", { email });
+    mutationFn: async (payload: { email: string; roleId: string }) => {
+      const res = await apiRequest("POST", "/api/invites", payload);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || "Failed to send invite");
@@ -45,6 +55,7 @@ export default function Invite() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invites"] });
       setEmail("");
+      setRoleId(undefined);
       toast({ title: "Invitation sent", description: "The user will receive an email with a link to set their password." });
     },
     onError: (err: Error) => {
@@ -59,7 +70,11 @@ export default function Invite() {
       toast({ title: "Enter an email address", variant: "destructive" });
       return;
     }
-    createInvite.mutate(trimmed);
+    if (!roleId) {
+      toast({ title: "Select a role", variant: "destructive" });
+      return;
+    }
+    createInvite.mutate({ email: trimmed, roleId });
   };
 
   if (adminLoading || !adminStatus) {
@@ -93,19 +108,42 @@ export default function Invite() {
           <CardDescription>Enter an email address. They will receive a link to set their password (valid 7 days).</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="flex gap-2">
-            <div className="flex-1 space-y-2">
-              <Label htmlFor="invite-email" className="sr-only">Email</Label>
-              <Input
-                id="invite-email"
-                type="email"
-                placeholder="colleague@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={createInvite.isPending}
-              />
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4 md:flex-row md:items-end">
+            <div className="flex-1 space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="invite-email" className="sr-only">
+                  Email
+                </Label>
+                <Input
+                  id="invite-email"
+                  type="email"
+                  placeholder="colleague@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={createInvite.isPending}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="invite-role">Role</Label>
+                <Select
+                  value={roleId}
+                  onValueChange={setRoleId}
+                  disabled={createInvite.isPending || rolesLoading}
+                >
+                  <SelectTrigger id="invite-role">
+                    <SelectValue placeholder={rolesLoading ? "Loading roles..." : "Select a role"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {roles?.map((role) => (
+                      <SelectItem key={role.id} value={role.id}>
+                        {role.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <Button type="submit" disabled={createInvite.isPending}>
+            <Button type="submit" disabled={createInvite.isPending || rolesLoading || !roles?.length}>
               {createInvite.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
               Send invite
             </Button>
@@ -132,6 +170,7 @@ export default function Invite() {
                   <TableHead>Email</TableHead>
                   <TableHead>Sent</TableHead>
                   <TableHead>Expires</TableHead>
+                  <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -141,6 +180,7 @@ export default function Invite() {
                     <TableCell>{inv.email}</TableCell>
                     <TableCell>{new Date(inv.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell>{new Date(inv.expiresAt).toLocaleDateString()}</TableCell>
+                    <TableCell>{inv.roleName ?? "—"}</TableCell>
                     <TableCell>{inv.usedAt ? "Accepted" : new Date(inv.expiresAt) < new Date() ? "Expired" : "Pending"}</TableCell>
                   </TableRow>
                 ))}

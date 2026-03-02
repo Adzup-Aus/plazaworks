@@ -465,7 +465,10 @@ export interface IStorage {
   getUserInviteByToken(token: string): Promise<UserInvite | undefined>;
   listUserInvites(opts?: { status?: "pending" | "used" | "expired" }): Promise<UserInvite[]>;
   markUserInviteUsed(id: string): Promise<void>;
-  updateUserInvite(id: string, data: { token: string; expiresAt: Date }): Promise<UserInvite | undefined>;
+  updateUserInvite(
+    id: string,
+    data: { token: string; expiresAt: Date; roleId?: string | null }
+  ): Promise<UserInvite | undefined>;
 
   // Client operations
   getClients(): Promise<Client[]>;
@@ -2911,7 +2914,10 @@ export class DatabaseStorage implements IStorage {
     return this.authRepo.markUserInviteUsed(id);
   }
 
-  async updateUserInvite(id: string, data: { token: string; expiresAt: Date }): Promise<UserInvite | undefined> {
+  async updateUserInvite(
+    id: string,
+    data: { token: string; expiresAt: Date; roleId?: string | null }
+  ): Promise<UserInvite | undefined> {
     return this.authRepo.updateUserInvite(id, data);
   }
 

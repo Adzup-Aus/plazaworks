@@ -140,10 +140,25 @@ function formatHour24(h: number): string {
   return String(h).padStart(2, "0");
 }
 
+function getWeekStart(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay();
+  d.setDate(d.getDate() - day);
+  return d;
+}
+
+function getWeekEnd(date: Date): Date {
+  const start = getWeekStart(date);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return end;
+}
+
 export default function Schedule() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<"month" | "day">("day");
+  const [viewMode, setViewMode] = useState<"week" | "day">("day");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<string>("");
   const [scheduleDays, setScheduleDays] = useState<ScheduleDayEntry[]>([]);
@@ -254,6 +269,29 @@ export default function Schedule() {
     };
   }, [pendingEntryDrag, entryDrag]);
 
+  const weekStart = useMemo(() => getWeekStart(currentDate), [currentDate]);
+  const weekEnd = useMemo(() => getWeekEnd(currentDate), [currentDate]);
+  const weekStartStr = useMemo(
+    () => weekStart.toISOString().split("T")[0],
+    [weekStart]
+  );
+  const weekEndStr = useMemo(
+    () => weekEnd.toISOString().split("T")[0],
+    [weekEnd]
+  );
+  const weekDates = useMemo(
+    () =>
+      Array.from({ length: 7 }, (_, index) => {
+        const d = new Date(weekStart);
+        d.setDate(weekStart.getDate() + index);
+        return {
+          date: d,
+          iso: d.toISOString().split("T")[0],
+        };
+      }),
+    [weekStart]
+  );
+
   const { data: jobs, isLoading: jobsLoading } = useQuery<Job[]>({
     queryKey: ["/api/jobs"],
   });
@@ -274,6 +312,22 @@ export default function Schedule() {
       return res.json();
     },
     enabled: viewMode === "day",
+  });
+
+  const {
+    data: weekScheduleEntries,
+    isLoading: weekScheduleLoading,
+  } = useQuery<ScheduleEntry[]>({
+    queryKey: ["/api/schedule", weekStartStr, weekEndStr],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/schedule?startDate=${weekStartStr}&endDate=${weekEndStr}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) throw new Error("Failed to fetch schedule");
+      return res.json();
+    },
+    enabled: viewMode === "week" && !!weekStartStr && !!weekEndStr,
   });
 
   const allScheduleEntries = useQuery<ScheduleEntry[]>({
@@ -457,89 +511,20 @@ export default function Schedule() {
     return staff?.userId || "Unassigned";
   };
 
-  const entriesForMonth = viewMode === "month" ? (allScheduleEntries.data ?? []) : [];
-  const isLoading = jobsLoading || scheduleLoading || (viewMode === "day" && scheduleLoading);
+  const isLoading =
+    jobsLoading ||
+    (viewMode === "day" && scheduleLoading) ||
+    (viewMode === "week" && weekScheduleLoading);
 
   const unscheduledJobs = useMemo(() => {
     if (!jobs) return [];
     const scheduledJobIds = new Set((allScheduleEntries.data || []).map((e) => e.jobId).filter(Boolean));
     return jobs.filter((job) => !scheduledJobIds.has(job.id) && job.status !== "completed" && job.status !== "cancelled");
   }, [jobs, allScheduleEntries.data]);
-
-  const monthName = currentDate.toLocaleString("default", { month: "long" });
-  const year = currentDate.getFullYear();
-
-  const calendarDays = useMemo((): CalendarDay[] => {
-    const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-    const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
-    const startDay = firstDayOfMonth.getDay();
-    const daysInMonth = lastDayOfMonth.getDate();
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const days: CalendarDay[] = [];
-
-    const getSchedulesForDate = (dateStr: string): CalendarDaySchedule[] => {
-      return (entriesForMonth || [])
-        .filter((entry) => entry.scheduledDate === dateStr && entry.status !== "cancelled")
-        .map((entry) => {
-          if (entry.jobId) {
-            const job = jobs?.find((j) => j.id === entry.jobId);
-            return job ? { entry, job } : null;
-          }
-          if (entry.activityId) {
-            const activity = activities?.find((a) => a.id === entry.activityId);
-            return activity ? { entry, activity } : { entry };
-          }
-          return null;
-        })
-        .filter((s): s is CalendarDaySchedule => s !== null);
-    };
-
-    const prevMonthDays = new Date(currentDate.getFullYear(), currentDate.getMonth(), 0).getDate();
-    for (let i = startDay - 1; i >= 0; i--) {
-      const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, prevMonthDays - i);
-      const dateStr = date.toISOString().split("T")[0];
-      days.push({
-        date,
-        isCurrentMonth: false,
-        isToday: date.getTime() === today.getTime(),
-        schedules: getSchedulesForDate(dateStr),
-      });
-    }
-
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-      const dateStr = date.toISOString().split("T")[0];
-
-      days.push({
-        date,
-        isCurrentMonth: true,
-        isToday: date.getTime() === today.getTime(),
-        schedules: getSchedulesForDate(dateStr),
-      });
-    }
-
-    const remainingDays = 42 - days.length;
-    for (let i = 1; i <= remainingDays; i++) {
-      const date = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, i);
-      const dateStr = date.toISOString().split("T")[0];
-      days.push({
-        date,
-        isCurrentMonth: false,
-        isToday: date.getTime() === today.getTime(),
-        schedules: getSchedulesForDate(dateStr),
-      });
-    }
-
-    return days;
-  }, [currentDate, jobs, activities, entriesForMonth]);
-
-  const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-  const navigateMonth = (direction: number) => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + direction, 1));
+  const navigateWeek = (direction: number) => {
+    const d = new Date(currentDate);
+    d.setDate(d.getDate() + direction * 7);
+    setCurrentDate(d);
   };
 
   const navigateDay = (direction: number) => {
@@ -581,23 +566,23 @@ export default function Schedule() {
     return staffList.filter((s) => selectedStaffFilter.includes(s.id));
   }, [staffList, selectedStaffFilter]);
 
-  const handlePointerDown = (staffId: string, hour: number, e: React.PointerEvent) => {
+  const handlePointerDown = (staffId: string, dateStr: string, hour: number, e: React.PointerEvent) => {
     if (!canManageSchedule || entryDrag) return;
     const cellWidth = e.currentTarget.getBoundingClientRect().width;
     const slot = getSlotFromPointer(hour, e.nativeEvent.offsetX, cellWidth);
-    setDragSelection({ staffId, scheduledDate: selectedDateStr, startSlot: slot, endSlot: slot });
+    setDragSelection({ staffId, scheduledDate: dateStr, startSlot: slot, endSlot: slot });
     setDragCurrentTime(slotToTime(slot));
     setDragTooltipPos({ x: e.clientX, y: e.clientY });
   };
 
-  const handlePointerMove = (staffId: string, hour: number, e: React.PointerEvent) => {
-    if (entryDrag && entryDrag.entry?.staffId === staffId) {
+  const handlePointerMove = (staffId: string, dateStr: string, hour: number, e: React.PointerEvent) => {
+    if (entryDrag && entryDrag.entry?.staffId === staffId && entryDrag.entry?.scheduledDate === dateStr) {
       const cellWidth = e.currentTarget.getBoundingClientRect().width;
       const slot = getSlotFromPointer(hour, e.nativeEvent.offsetX, cellWidth);
       setDropTargetSlot(slot);
       return;
     }
-    if (!dragSelection || dragSelection.staffId !== staffId) return;
+    if (!dragSelection || dragSelection.staffId !== staffId || dragSelection.scheduledDate !== dateStr) return;
     const cellWidth = e.currentTarget.getBoundingClientRect().width;
     const slot = getSlotFromPointer(hour, e.nativeEvent.offsetX, cellWidth);
     setDragSelection((prev) => (prev ? { ...prev, endSlot: slot } : null));
@@ -620,6 +605,10 @@ export default function Schedule() {
     e.stopPropagation();
     e.preventDefault();
     if (!canManageSchedule) return;
+    if (viewMode === "week") {
+      handleOpenEdit(entry, e);
+      return;
+    }
     setPendingEntryDrag({ entry, durationSlots });
   };
 
@@ -697,7 +686,7 @@ export default function Schedule() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {viewMode === "day" && (
+          {(viewMode === "day" || viewMode === "week") && (
             <Popover open={staffFilterOpen} onOpenChange={setStaffFilterOpen}>
               <PopoverTrigger asChild>
                 <Button
@@ -771,16 +760,22 @@ export default function Schedule() {
           <Button
             variant={viewMode === "day" ? "default" : "outline"}
             size="sm"
-            onClick={() => setViewMode("day")}
+            onClick={() => {
+              setSelectedDate(currentDate);
+              setViewMode("day");
+            }}
           >
             Day
           </Button>
           <Button
-            variant={viewMode === "month" ? "default" : "outline"}
+            variant={viewMode === "week" ? "default" : "outline"}
             size="sm"
-            onClick={() => setViewMode("month")}
+            onClick={() => {
+              setCurrentDate(selectedDate);
+              setViewMode("week");
+            }}
           >
-            Month
+            Week
           </Button>
           &nbsp;
           <Button asChild variant="outline" data-testid="button-new-job">
@@ -803,14 +798,21 @@ export default function Schedule() {
                 <div className="flex items-center gap-2">
                   <CalendarIcon className="h-5 w-5 text-muted-foreground" />
                   <h2 className="text-xl font-semibold">
-                    {selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+                    {selectedDate.toLocaleDateString("en-US", {
+                      weekday: "long",
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
                   </h2>
                 </div>
                 <Button variant="outline" size="icon" onClick={() => navigateDay(1)}>
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
-              <Button variant="outline" onClick={goToToday}>Today</Button>
+              <Button variant="outline" onClick={goToToday}>
+                Today
+              </Button>
             </CardHeader>
             <CardContent className="overflow-x-auto">
               {isLoading ? (
@@ -822,69 +824,137 @@ export default function Schedule() {
                 </div>
               ) : (
                 <div className="min-w-[2800px] overflow-visible">
-                  <div className="grid gap-0 border rounded-md overflow-visible" style={{ gridTemplateColumns: "180px repeat(24, minmax(112px, 1fr))" }}>
+                  <div
+                    className="grid gap-0 border rounded-md overflow-visible"
+                    style={{ gridTemplateColumns: "180px repeat(24, minmax(112px, 1fr))" }}
+                  >
                     <div className="border-b border-r bg-muted/50 p-2 text-xs font-medium sticky left-0 z-10" />
                     {HOURS.map((h) => (
-                      <div key={h} className="border-b border-r p-1 text-center text-xs text-muted-foreground" style={{ minWidth: 112 }}>
+                      <div
+                        key={h}
+                        className="border-b border-r p-1 text-center text-xs text-muted-foreground"
+                        style={{ minWidth: 112 }}
+                      >
                         {formatHour24(h)}
                       </div>
                     ))}
                     {filteredStaffList.map((staff) => (
                       <React.Fragment key={staff.id}>
-                        <div className="border-b border-r bg-muted/50 p-2 text-sm font-medium sticky left-0 z-10 break-words whitespace-normal" title={staff.userId}>
+                        <div
+                          className="border-b border-r bg-muted/50 p-2 text-sm font-medium sticky left-0 z-10 break-words whitespace-normal"
+                          title={staff.userId}
+                        >
                           {staff.userId?.split("@")[0] || staff.id.slice(0, 8)}
                         </div>
                         {HOURS.map((hour) => {
                           const cellStartSlot = hour * SLOTS_PER_HOUR;
                           const cellEndSlot = cellStartSlot + SLOTS_PER_HOUR;
-                          const dragStart = dragSelection ? Math.min(dragSelection.startSlot, dragSelection.endSlot) : 0;
-                          const dragEnd = dragSelection ? Math.max(dragSelection.startSlot, dragSelection.endSlot) : -1;
-                          const overlapStart = dragSelection?.staffId === staff.id ? Math.max(dragStart, cellStartSlot) : cellStartSlot;
-                          const overlapEnd = dragSelection?.staffId === staff.id ? Math.min(dragEnd, cellEndSlot - 1) : -1;
+                          const hasOwnSelection =
+                            !!dragSelection &&
+                            dragSelection.staffId === staff.id &&
+                            dragSelection.scheduledDate === selectedDateStr;
+                          const dragStart = hasOwnSelection
+                            ? Math.min(dragSelection!.startSlot, dragSelection!.endSlot)
+                            : 0;
+                          const dragEnd = hasOwnSelection
+                            ? Math.max(dragSelection!.startSlot, dragSelection!.endSlot)
+                            : -1;
+                          const overlapStart = hasOwnSelection
+                            ? Math.max(dragStart, cellStartSlot)
+                            : cellStartSlot;
+                          const overlapEnd = hasOwnSelection
+                            ? Math.min(dragEnd, cellEndSlot - 1)
+                            : -1;
                           const hasSelectionInCell = overlapEnd >= overlapStart;
-                          const selectionLeftPct = hasSelectionInCell ? ((overlapStart - cellStartSlot) / SLOTS_PER_HOUR) * 100 : 0;
-                          const selectionWidthPct = hasSelectionInCell ? ((overlapEnd - overlapStart + 1) / SLOTS_PER_HOUR) * 100 : 0;
-                          const isStartSlotInCell = dragSelection?.staffId === staff.id && dragStart >= cellStartSlot && dragStart < cellEndSlot;
-                          const startMarkerLeftPct = isStartSlotInCell ? ((dragStart - cellStartSlot) / SLOTS_PER_HOUR) * 100 : 0;
-                          const selectionDurationSlots = dragSelection?.staffId === staff.id ? dragEnd - dragStart + 1 : 0;
-                          const midSlot = dragSelection?.staffId === staff.id ? (dragStart + dragEnd) / 2 : 0;
-                          const isDurationCenterInCell = hasSelectionInCell && selectionDurationSlots >= 1 && midSlot >= cellStartSlot && midSlot < cellEndSlot;
-                          const durationCenterLeftPct = isDurationCenterInCell ? ((midSlot - cellStartSlot) / SLOTS_PER_HOUR) * 100 : 0;
+                          const selectionLeftPct = hasSelectionInCell
+                            ? ((overlapStart - cellStartSlot) / SLOTS_PER_HOUR) * 100
+                            : 0;
+                          const selectionWidthPct = hasSelectionInCell
+                            ? ((overlapEnd - overlapStart + 1) / SLOTS_PER_HOUR) * 100
+                            : 0;
+                          const isStartSlotInCell =
+                            hasOwnSelection &&
+                            dragStart >= cellStartSlot &&
+                            dragStart < cellEndSlot;
+                          const startMarkerLeftPct = isStartSlotInCell
+                            ? ((dragStart - cellStartSlot) / SLOTS_PER_HOUR) * 100
+                            : 0;
+                          const selectionDurationSlots = hasOwnSelection
+                            ? dragEnd - dragStart + 1
+                            : 0;
+                          const midSlot = hasOwnSelection ? (dragStart + dragEnd) / 2 : 0;
+                          const isDurationCenterInCell =
+                            hasSelectionInCell &&
+                            selectionDurationSlots >= 1 &&
+                            midSlot >= cellStartSlot &&
+                            midSlot < cellEndSlot;
+                          const durationCenterLeftPct = isDurationCenterInCell
+                            ? ((midSlot - cellStartSlot) / SLOTS_PER_HOUR) * 100
+                            : 0;
                           const durationMinutes = selectionDurationSlots * 10;
                           const durationHours = Math.floor(durationMinutes / 60);
                           const durationMins = durationMinutes % 60;
-                          const durationLabel = durationHours > 0 && durationMins > 0
-                            ? `${durationHours}h ${durationMins}m`
-                            : durationHours > 0
+                          const durationLabel =
+                            durationHours > 0 && durationMins > 0
+                              ? `${durationHours}h ${durationMins}m`
+                              : durationHours > 0
                               ? `${durationHours}h`
                               : `${durationMins}m`;
-                          const entry = (scheduleEntries || []).find((ev: ScheduleEntry) => {
-                            if (ev.staffId !== staff.id || ev.scheduledDate !== selectedDateStr || ev.status === "cancelled") return false;
-                            const es = timeToSlot(ev.startTime);
-                            const ee = ev.endTime ? timeToSlot(ev.endTime) : es + SLOTS_PER_HOUR;
-                            return cellEndSlot > es && cellStartSlot <= ee;
-                          });
+                          const entry = (scheduleEntries || []).find(
+                            (ev: ScheduleEntry) => {
+                              if (
+                                ev.staffId !== staff.id ||
+                                ev.scheduledDate !== selectedDateStr ||
+                                ev.status === "cancelled"
+                              )
+                                return false;
+                              const es = timeToSlot(ev.startTime);
+                              const ee = ev.endTime
+                                ? timeToSlot(ev.endTime)
+                                : es + SLOTS_PER_HOUR;
+                              return cellEndSlot > es && cellStartSlot <= ee;
+                            }
+                          );
                           const entryStartSlot = entry ? timeToSlot(entry.startTime) : 0;
                           const entryEndSlot = entry
-                            ? (entry.endTime ? timeToSlot(entry.endTime) : entryStartSlot + SLOTS_PER_HOUR)
+                            ? entry.endTime
+                              ? timeToSlot(entry.endTime)
+                              : entryStartSlot + SLOTS_PER_HOUR
                             : 0;
-                          const startMatch = entry != null && Math.floor(entryStartSlot / SLOTS_PER_HOUR) === hour;
-                          const durationSlots = startMatch ? Math.max(1, entryEndSlot - entryStartSlot + 1) : 0;
-                          const leftPct = startMatch ? ((entryStartSlot % SLOTS_PER_HOUR) / SLOTS_PER_HOUR) * 100 : 0;
-                          const widthPct = startMatch ? (durationSlots / SLOTS_PER_HOUR) * 100 : 0;
+                          const startMatch =
+                            entry != null &&
+                            Math.floor(entryStartSlot / SLOTS_PER_HOUR) === hour;
+                          const durationSlots = startMatch
+                            ? Math.max(1, entryEndSlot - entryStartSlot + 1)
+                            : 0;
+                          const leftPct = startMatch
+                            ? ((entryStartSlot % SLOTS_PER_HOUR) / SLOTS_PER_HOUR) * 100
+                            : 0;
+                          const widthPct = startMatch
+                            ? (durationSlots / SLOTS_PER_HOUR) * 100
+                            : 0;
                           return (
                             <div
                               key={`${staff.id}-${hour}`}
-                              className={`border-b border-r min-h-[55px] relative overflow-visible ${startMatch ? "p-0" : ""}`}
-                              onPointerDown={(e) => handlePointerDown(staff.id, hour, e)}
-                              onPointerMove={(e) => handlePointerMove(staff.id, hour, e)}
+                              className={`border-b border-r min-h-[55px] relative overflow-visible ${
+                                startMatch ? "p-0" : ""
+                              }`}
+                              onPointerDown={(e) =>
+                                handlePointerDown(staff.id, selectedDateStr, hour, e)
+                              }
+                              onPointerMove={(e) =>
+                                handlePointerMove(staff.id, selectedDateStr, hour, e)
+                              }
                               onPointerUp={handlePointerUp}
                             >
                               {hasSelectionInCell && (
                                 <>
                                   <div
                                     className="absolute inset-y-0 bg-primary/20 ring-1 ring-primary pointer-events-none rounded-sm z-[1]"
-                                    style={{ left: `${selectionLeftPct}%`, width: `${selectionWidthPct}%` }}
+                                    style={{
+                                      left: `${selectionLeftPct}%`,
+                                      width: `${selectionWidthPct}%`,
+                                    }}
                                   />
                                   {isDurationCenterInCell && (
                                     <div
@@ -897,35 +967,64 @@ export default function Schedule() {
                                 </>
                               )}
                               {isStartSlotInCell && (
-                                <div className="absolute inset-y-0 z-[2] pointer-events-none" style={{ left: `${startMarkerLeftPct}%` }}>
+                                <div
+                                  className="absolute inset-y-0 z-[2] pointer-events-none"
+                                  style={{ left: `${startMarkerLeftPct}%` }}
+                                >
                                   <div className="absolute top-0.5 left-1 px-1 py-0.5 rounded text-[10px] font-medium bg-primary text-primary-foreground whitespace-nowrap shadow-sm border border-primary-foreground/20">
                                     {slotToTime(dragStart)}
                                   </div>
-                                  <div className="absolute inset-y-0 w-0.5 bg-primary left-0" title={`Start ${slotToTime(dragStart)}`} />
+                                  <div
+                                    className="absolute inset-y-0 w-0.5 bg-primary left-0"
+                                    title={`Start ${slotToTime(dragStart)}`}
+                                  />
                                   <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-primary border-2 border-background shadow-sm" />
                                 </div>
                               )}
-                              {entryDrag?.entry?.staffId === staff.id && dropTargetSlot != null && Math.floor(dropTargetSlot / SLOTS_PER_HOUR) === hour && (
-                                <div
-                                  className="absolute inset-y-0 z-[5] rounded px-1 py-0.5 text-xs text-white flex flex-col justify-center pointer-events-none border-2 border-dashed border-primary opacity-95"
-                                  style={{
-                                    left: `${((dropTargetSlot % SLOTS_PER_HOUR) / SLOTS_PER_HOUR) * 100}%`,
-                                    width: `${(entryDrag.durationSlots / SLOTS_PER_HOUR) * 100}%`,
-                                    minWidth: 0,
-                                    backgroundColor: entryDrag?.entry?.activityId && getActivityColor(entryDrag.entry) ? getActivityColor(entryDrag.entry)! : "hsl(var(--primary))",
-                                  }}
-                                >
-                                  <span className="text-[10px] font-medium opacity-90 whitespace-nowrap">{slotToTime(dropTargetSlot)}</span>
-                                  <span className="truncate">{entryDrag?.entry ? getEntryLabel(entryDrag.entry) : ""}</span>
-                                </div>
-                              )}
+                              {entryDrag?.entry?.staffId === staff.id &&
+                                entryDrag.entry.scheduledDate === selectedDateStr &&
+                                dropTargetSlot != null &&
+                                Math.floor(dropTargetSlot / SLOTS_PER_HOUR) === hour && (
+                                  <div
+                                    className="absolute inset-y-0 z-[5] rounded px-1 py-0.5 text-xs text-white flex flex-col justify-center pointer-events-none border-2 border-dashed border-primary opacity-95"
+                                    style={{
+                                      left: `${
+                                        ((dropTargetSlot % SLOTS_PER_HOUR) /
+                                          SLOTS_PER_HOUR) *
+                                        100
+                                      }%`,
+                                      width: `${
+                                        (entryDrag.durationSlots / SLOTS_PER_HOUR) * 100
+                                      }%`,
+                                      minWidth: 0,
+                                      backgroundColor:
+                                        entryDrag?.entry?.activityId &&
+                                        getActivityColor(entryDrag.entry)
+                                          ? getActivityColor(entryDrag.entry)!
+                                          : "hsl(var(--primary))",
+                                    }}
+                                  >
+                                    <span className="text-[10px] font-medium opacity-90 whitespace-nowrap">
+                                      {slotToTime(dropTargetSlot)}
+                                    </span>
+                                    <span className="truncate">
+                                      {entryDrag?.entry ? getEntryLabel(entryDrag.entry) : ""}
+                                    </span>
+                                  </div>
+                                )}
                               {startMatch && entry && (
                                 <div
                                   role={canManageSchedule ? "button" : undefined}
                                   tabIndex={canManageSchedule ? 0 : undefined}
                                   className={`group absolute inset-y-0 z-10 rounded px-1 py-0.5 text-xs text-white truncate flex items-center hover:opacity-95 ${
-                                    canManageSchedule ? "cursor-grab active:cursor-grabbing" : "cursor-default"
-                                  } ${entry.activityId ? "" : getStatusColor(entry.status || "scheduled")} ${
+                                    canManageSchedule
+                                      ? "cursor-grab active:cursor-grabbing"
+                                      : "cursor-default"
+                                  } ${
+                                    entry.activityId
+                                      ? ""
+                                      : getStatusColor(entry.status || "scheduled")
+                                  } ${
                                     entryDrag?.entry?.id === entry.id ? "opacity-20" : ""
                                   }`}
                                   style={{
@@ -937,9 +1036,13 @@ export default function Schedule() {
                                       : {}),
                                   }}
                                   title={getEntryLabel(entry)}
-                                  onPointerDown={(e) => handleEntryBlockPointerDown(entry, durationSlots, e)}
+                                  onPointerDown={(e) =>
+                                    handleEntryBlockPointerDown(entry, durationSlots, e)
+                                  }
                                 >
-                                  <span className="truncate flex-1 min-w-0">{getEntryLabel(entry)}</span>
+                                  <span className="truncate flex-1 min-w-0">
+                                    {getEntryLabel(entry)}
+                                  </span>
                                   {canManageSchedule && (
                                     <Button
                                       type="button"
@@ -970,127 +1073,321 @@ export default function Schedule() {
             </CardContent>
           </Card>
         ) : (
-        <Card className="lg:col-span-3 overflow-visible">
-          <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
-            <div className="flex items-center gap-4">
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => navigateMonth(-1)}
-                data-testid="button-prev-month"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <div className="flex items-center gap-2">
-                <CalendarIcon className="h-5 w-5 text-muted-foreground" />
-                <h2 className="text-xl font-semibold">
-                  {monthName} {year}
-                </h2>
+          <Card className="lg:col-span-3 overflow-visible">
+            <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
+              <div className="flex items-center gap-4">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => navigateWeek(-1)}
+                  data-testid="button-prev-month"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <div className="flex items-center gap-2">
+                  <CalendarIcon className="h-5 w-5 text-muted-foreground" />
+                  <h2 className="text-xl font-semibold">
+                    {weekStart.toLocaleDateString("en-US", {
+                      weekday: "short",
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </h2>
+                </div>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => navigateWeek(1)}
+                  data-testid="button-next-month"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
               </div>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => navigateMonth(1)}
-                data-testid="button-next-month"
-              >
-                <ChevronRight className="h-4 w-4" />
+              <Button variant="outline" onClick={goToToday} data-testid="button-today">
+                Today
               </Button>
-            </div>
-            <Button variant="outline" onClick={goToToday} data-testid="button-today">
-              Today
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-7 gap-1">
-                  {weekDays.map((day) => (
-                    <Skeleton key={day} className="h-8" />
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              {isLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-8 w-full" />
+                  {[...Array(5)].map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
                   ))}
                 </div>
-                <div className="grid grid-cols-7 gap-1">
-                  {[...Array(35)].map((_, i) => (
-                    <Skeleton key={i} className="h-24" />
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <div className="grid grid-cols-7 gap-1">
-                  {weekDays.map((day) => (
-                    <div
-                      key={day}
-                      className="py-2 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground"
-                    >
-                      {day}
-                    </div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7 gap-1">
-                  {calendarDays.map((day, index) => (
-                    <div
-                      key={index}
-                      className={`min-h-[100px] rounded-md border p-2 transition-colors ${
-                        day.isCurrentMonth
-                          ? "bg-background"
-                          : "bg-muted/30 text-muted-foreground"
-                      } ${
-                        day.isToday
-                          ? "border-primary ring-1 ring-primary"
-                          : "border-border"
-                      }`}
-                      data-testid={`calendar-day-${day.date.getDate()}`}
-                    >
+              ) : (
+                <div className="min-w-[2800px] overflow-visible">
+                  <div
+                    className="grid gap-0 border rounded-md overflow-visible"
+                    style={{
+                      gridTemplateColumns: `180px repeat(${7 * 24}, minmax(112px, 1fr))`,
+                    }}
+                  >
+                    <div className="border-b border-r bg-muted/50 p-2 text-xs font-medium sticky left-0 z-10" />
+                    {weekDates.map((day, index) => (
                       <div
-                        className={`mb-1 text-sm font-medium ${
-                          day.isToday ? "text-primary" : ""
-                        }`}
+                        key={day.iso}
+                        className="border-b border-r bg-muted/50 p-2 text-xs font-medium text-center"
+                        style={{ gridColumn: "span 24" }}
                       >
-                        {day.date.getDate()}
+                        {day.date.toLocaleDateString("en-US", {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                        })}
                       </div>
-                      <div className="space-y-1">
-                        {day.schedules.slice(0, 3).map(({ entry, job, activity }) => (
-                          job ? (
-                            <Link
-                              key={entry.id}
-                              href={`/jobs/${job.id}`}
-                              className="block"
-                            >
+                    ))}
+                    <div className="border-b border-r bg-muted/50 p-1 text-xs font-medium sticky left-0 z-10" />
+                    {weekDates.map((day) =>
+                      HOURS.map((h) => (
+                        <div
+                          key={`${day.iso}-${h}`}
+                          className="border-b border-r p-1 text-center text-xs text-muted-foreground"
+                          style={{ minWidth: 112 }}
+                        >
+                          {formatHour24(h)}
+                        </div>
+                      ))
+                    )}
+                    {filteredStaffList.map((staff) => (
+                      <React.Fragment key={staff.id}>
+                        <div
+                          className="border-b border-r bg-muted/50 p-2 text-sm font-medium sticky left-0 z-10 break-words whitespace-normal"
+                          title={staff.userId}
+                        >
+                          {staff.userId?.split("@")[0] || staff.id.slice(0, 8)}
+                        </div>
+                        {weekDates.map((day) =>
+                          HOURS.map((hour) => {
+                            const cellStartSlot = hour * SLOTS_PER_HOUR;
+                            const cellEndSlot = cellStartSlot + SLOTS_PER_HOUR;
+                            const hasOwnSelection =
+                              !!dragSelection &&
+                              dragSelection.staffId === staff.id &&
+                              dragSelection.scheduledDate === day.iso;
+                            const dragStart = hasOwnSelection
+                              ? Math.min(dragSelection!.startSlot, dragSelection!.endSlot)
+                              : 0;
+                            const dragEnd = hasOwnSelection
+                              ? Math.max(dragSelection!.startSlot, dragSelection!.endSlot)
+                              : -1;
+                            const overlapStart = hasOwnSelection
+                              ? Math.max(dragStart, cellStartSlot)
+                              : cellStartSlot;
+                            const overlapEnd = hasOwnSelection
+                              ? Math.min(dragEnd, cellEndSlot - 1)
+                              : -1;
+                            const hasSelectionInCell = overlapEnd >= overlapStart;
+                            const selectionLeftPct = hasSelectionInCell
+                              ? ((overlapStart - cellStartSlot) / SLOTS_PER_HOUR) * 100
+                              : 0;
+                            const selectionWidthPct = hasSelectionInCell
+                              ? ((overlapEnd - overlapStart + 1) / SLOTS_PER_HOUR) * 100
+                              : 0;
+                            const isStartSlotInCell =
+                              hasOwnSelection &&
+                              dragStart >= cellStartSlot &&
+                              dragStart < cellEndSlot;
+                            const startMarkerLeftPct = isStartSlotInCell
+                              ? ((dragStart - cellStartSlot) / SLOTS_PER_HOUR) * 100
+                              : 0;
+                            const selectionDurationSlots = hasOwnSelection
+                              ? dragEnd - dragStart + 1
+                              : 0;
+                            const midSlot = hasOwnSelection ? (dragStart + dragEnd) / 2 : 0;
+                            const isDurationCenterInCell =
+                              hasSelectionInCell &&
+                              selectionDurationSlots >= 1 &&
+                              midSlot >= cellStartSlot &&
+                              midSlot < cellEndSlot;
+                            const durationCenterLeftPct = isDurationCenterInCell
+                              ? ((midSlot - cellStartSlot) / SLOTS_PER_HOUR) * 100
+                              : 0;
+                            const durationMinutes = selectionDurationSlots * 10;
+                            const durationHours = Math.floor(durationMinutes / 60);
+                            const durationMins = durationMinutes % 60;
+                            const durationLabel =
+                              durationHours > 0 && durationMins > 0
+                                ? `${durationHours}h ${durationMins}m`
+                                : durationHours > 0
+                                ? `${durationHours}h`
+                                : `${durationMins}m`;
+                            const entry = (weekScheduleEntries || []).find(
+                              (ev: ScheduleEntry) => {
+                                if (
+                                  ev.staffId !== staff.id ||
+                                  ev.scheduledDate !== day.iso ||
+                                  ev.status === "cancelled"
+                                )
+                                  return false;
+                                const es = timeToSlot(ev.startTime);
+                                const ee = ev.endTime
+                                  ? timeToSlot(ev.endTime)
+                                  : es + SLOTS_PER_HOUR;
+                                return cellEndSlot > es && cellStartSlot <= ee;
+                              }
+                            );
+                            const entryStartSlot = entry ? timeToSlot(entry.startTime) : 0;
+                            const entryEndSlot = entry
+                              ? entry.endTime
+                                ? timeToSlot(entry.endTime)
+                                : entryStartSlot + SLOTS_PER_HOUR
+                              : 0;
+                            const startMatch =
+                              entry != null &&
+                              Math.floor(entryStartSlot / SLOTS_PER_HOUR) === hour;
+                            const durationSlots = startMatch
+                              ? Math.max(1, entryEndSlot - entryStartSlot + 1)
+                              : 0;
+                            const leftPct = startMatch
+                              ? ((entryStartSlot % SLOTS_PER_HOUR) / SLOTS_PER_HOUR) * 100
+                              : 0;
+                            const widthPct = startMatch
+                              ? (durationSlots / SLOTS_PER_HOUR) * 100
+                              : 0;
+                            return (
                               <div
-                                className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-white truncate ${
-                                  entry.status === "completed"
-                                    ? "bg-emerald-500"
-                                    : getStatusColor(job.status)
+                                key={`${staff.id}-${day.iso}-${hour}`}
+                                className={`border-b border-r min-h-[55px] relative overflow-visible ${
+                                  startMatch ? "p-0" : ""
                                 }`}
+                                onPointerDown={(e) =>
+                                  handlePointerDown(staff.id, day.iso, hour, e)
+                                }
+                                onPointerMove={(e) =>
+                                  handlePointerMove(staff.id, day.iso, hour, e)
+                                }
+                                onPointerUp={handlePointerUp}
                               >
-                                {entry.status === "completed" && (
-                                  <CheckCircle className="h-3 w-3 flex-shrink-0" />
+                                {hasSelectionInCell && (
+                                  <>
+                                    <div
+                                      className="absolute inset-y-0 bg-primary/20 ring-1 ring-primary pointer-events-none rounded-sm z-[1]"
+                                      style={{
+                                        left: `${selectionLeftPct}%`,
+                                        width: `${selectionWidthPct}%`,
+                                      }}
+                                    />
+                                    {isDurationCenterInCell && (
+                                      <div
+                                        className="absolute bottom-1 -translate-x-1/2 z-[2] pointer-events-none px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary text-primary-foreground whitespace-nowrap"
+                                        style={{ left: `${durationCenterLeftPct}%` }}
+                                      >
+                                        {durationLabel}
+                                      </div>
+                                    )}
+                                  </>
                                 )}
-                                <span className="truncate">{job.clientName}</span>
+                                {isStartSlotInCell && (
+                                  <div
+                                    className="absolute inset-y-0 z-[2] pointer-events-none"
+                                    style={{ left: `${startMarkerLeftPct}%` }}
+                                  >
+                                    <div className="absolute top-0.5 left-1 px-1 py-0.5 rounded text-[10px] font-medium bg-primary text-primary-foreground whitespace-nowrap shadow-sm border border-primary-foreground/20">
+                                      {slotToTime(dragStart)}
+                                    </div>
+                                    <div
+                                      className="absolute inset-y-0 w-0.5 bg-primary left-0"
+                                      title={`Start ${slotToTime(dragStart)}`}
+                                    />
+                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-primary border-2 border-background shadow-sm" />
+                                  </div>
+                                )}
+                                {entryDrag?.entry?.staffId === staff.id &&
+                                  entryDrag.entry.scheduledDate === day.iso &&
+                                  dropTargetSlot != null &&
+                                  Math.floor(dropTargetSlot / SLOTS_PER_HOUR) === hour && (
+                                    <div
+                                      className="absolute inset-y-0 z-[5] rounded px-1 py-0.5 text-xs text-white flex flex-col justify-center pointer-events-none border-2 border-dashed border-primary opacity-95"
+                                      style={{
+                                        left: `${
+                                          ((dropTargetSlot % SLOTS_PER_HOUR) /
+                                            SLOTS_PER_HOUR) *
+                                          100
+                                        }%`,
+                                        width: `${
+                                          (entryDrag.durationSlots / SLOTS_PER_HOUR) * 100
+                                        }%`,
+                                        minWidth: 0,
+                                        backgroundColor:
+                                          entryDrag?.entry?.activityId &&
+                                          getActivityColor(entryDrag.entry)
+                                            ? getActivityColor(entryDrag.entry)!
+                                            : "hsl(var(--primary))",
+                                      }}
+                                    >
+                                      <span className="text-[10px] font-medium opacity-90 whitespace-nowrap">
+                                        {slotToTime(dropTargetSlot)}
+                                      </span>
+                                      <span className="truncate">
+                                        {entryDrag?.entry
+                                          ? getEntryLabel(entryDrag.entry)
+                                          : ""}
+                                      </span>
+                                    </div>
+                                  )}
+                                {startMatch && entry && (
+                                  <div
+                                    role={canManageSchedule ? "button" : undefined}
+                                    tabIndex={canManageSchedule ? 0 : undefined}
+                                    className={`group absolute inset-y-0 z-10 rounded px-1 py-0.5 text-xs text-white truncate flex items-center hover:opacity-95 ${
+                                      canManageSchedule
+                                        ? "cursor-grab active:cursor-grabbing"
+                                        : "cursor-default"
+                                    } ${
+                                      entry.activityId
+                                        ? ""
+                                        : getStatusColor(entry.status || "scheduled")
+                                    } ${
+                                      entryDrag?.entry?.id === entry.id ? "opacity-20" : ""
+                                    }`}
+                                    style={{
+                                      left: `${leftPct}%`,
+                                      width: `${widthPct}%`,
+                                      minWidth: 0,
+                                      ...(entry.activityId && getActivityColor(entry)
+                                        ? { backgroundColor: getActivityColor(entry)! }
+                                        : {}),
+                                    }}
+                                    title={getEntryLabel(entry)}
+                                    onPointerDown={(e) =>
+                                      handleEntryBlockPointerDown(entry, durationSlots, e)
+                                    }
+                                  >
+                                    <span className="truncate flex-1 min-w-0">
+                                      {getEntryLabel(entry)}
+                                    </span>
+                                    {canManageSchedule && (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 hover:bg-white/20 text-white rounded p-0"
+                                        onPointerDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          e.preventDefault();
+                                          deleteScheduleMutation.mutate(entry.id);
+                                        }}
+                                        aria-label="Delete schedule entry"
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                )}
                               </div>
-                            </Link>
-                          ) : (
-                            <div
-                              key={entry.id}
-                              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-white truncate bg-violet-500"
-                            >
-                              <span className="truncate">{activity?.name ?? "Activity"}</span>
-                            </div>
-                          )
-                        ))}
-                        {day.schedules.length > 3 && (
-                          <div className="text-xs text-muted-foreground px-1.5">
-                            +{day.schedules.length - 3} more
-                          </div>
+                            );
+                          })
                         )}
-                      </div>
-                    </div>
-                  ))}
+                      </React.Fragment>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              )}
+            </CardContent>
+          </Card>
         )}
 
         <div className="space-y-6">
@@ -1123,32 +1420,81 @@ export default function Schedule() {
                   {upcomingJobs.map((entry) => {
                     const label = entry.job?.clientName ?? entry.activity?.name ?? "—";
                     const href = entry.jobId ? `/jobs/${entry.jobId}` : undefined;
-                    const Wrapper = href ? Link : "div";
                     return (
-                      <Wrapper
-                        key={entry.id}
-                        {...(href ? { href, className: "flex items-start gap-3 rounded-md p-2 hover-elevate active-elevate-2" } : { className: "flex items-start gap-3 rounded-md p-2" })}
-                      >
-                        <div className="flex h-10 w-10 flex-shrink-0 flex-col items-center justify-center rounded-md bg-primary/10">
-                          <span className="text-xs font-bold text-primary">
-                            {new Date(entry.scheduledDate).getDate()}
-                          </span>
-                          <span className="text-[10px] uppercase text-primary">
-                            {new Date(entry.scheduledDate).toLocaleString("default", { month: "short" })}
-                          </span>
-                        </div>
-                        <div className="flex-1 overflow-hidden">
-                          <p className="truncate text-sm font-medium">{label}</p>
-                          {entry.job && (
-                            <Badge variant="secondary" className={`text-xs ${getStatusColor(entry.job.status).replace("bg-", "bg-opacity-20 text-")}`}>
-                              {formatStatus(entry.job.status)}
-                            </Badge>
-                          )}
-                          {entry.activity && (
-                            <Badge variant="secondary" className="text-xs bg-violet-500/20 text-violet-700 dark:text-violet-300">Activity</Badge>
-                          )}
-                        </div>
-                      </Wrapper>
+                      <div key={entry.id}>
+                        {href ? (
+                          <Link
+                            href={href}
+                            className="flex items-start gap-3 rounded-md p-2 hover-elevate active-elevate-2"
+                          >
+                            <div className="flex h-10 w-10 flex-shrink-0 flex-col items-center justify-center rounded-md bg-primary/10">
+                              <span className="text-xs font-bold text-primary">
+                                {new Date(entry.scheduledDate).getDate()}
+                              </span>
+                              <span className="text-[10px] uppercase text-primary">
+                                {new Date(entry.scheduledDate).toLocaleString("default", {
+                                  month: "short",
+                                })}
+                              </span>
+                            </div>
+                            <div className="flex-1 overflow-hidden">
+                              <p className="truncate text-sm font-medium">{label}</p>
+                              {entry.job && (
+                                <Badge
+                                  variant="secondary"
+                                  className={`text-xs ${getStatusColor(
+                                    entry.job.status
+                                  ).replace("bg-", "bg-opacity-20 text-")}`}
+                                >
+                                  {formatStatus(entry.job.status)}
+                                </Badge>
+                              )}
+                              {entry.activity && (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-xs bg-violet-500/20 text-violet-700 dark:text-violet-300"
+                                >
+                                  Activity
+                                </Badge>
+                              )}
+                            </div>
+                          </Link>
+                        ) : (
+                          <div className="flex items-start gap-3 rounded-md p-2">
+                            <div className="flex h-10 w-10 flex-shrink-0 flex-col items-center justify-center rounded-md bg-primary/10">
+                              <span className="text-xs font-bold text-primary">
+                                {new Date(entry.scheduledDate).getDate()}
+                              </span>
+                              <span className="text-[10px] uppercase text-primary">
+                                {new Date(entry.scheduledDate).toLocaleString("default", {
+                                  month: "short",
+                                })}
+                              </span>
+                            </div>
+                            <div className="flex-1 overflow-hidden">
+                              <p className="truncate text-sm font-medium">{label}</p>
+                              {entry.job && (
+                                <Badge
+                                  variant="secondary"
+                                  className={`text-xs ${getStatusColor(
+                                    entry.job.status
+                                  ).replace("bg-", "bg-opacity-20 text-")}`}
+                                >
+                                  {formatStatus(entry.job.status)}
+                                </Badge>
+                              )}
+                              {entry.activity && (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-xs bg-violet-500/20 text-violet-700 dark:text-violet-300"
+                                >
+                                  Activity
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>

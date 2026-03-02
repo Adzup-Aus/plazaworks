@@ -42,9 +42,15 @@ export async function sendEmail(options: EmailOptions) {
 
   // Resend returns { data, error } and does not throw; check for API errors
   if (result.error) {
-    const err = new Error(
-      `Resend API error: ${result.error.message ?? JSON.stringify(result.error)}`
-    );
+    const message = result.error.message ?? JSON.stringify(result.error);
+
+    // In non-production (dev/test), log and continue so local email issues are non-fatal.
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("Resend email error (non-fatal in non-production):", message, result.error);
+      return result;
+    }
+
+    const err = new Error(`Resend API error: ${message}`);
     (err as any).resendError = result.error;
     throw err;
   }
