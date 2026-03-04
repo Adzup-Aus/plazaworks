@@ -180,6 +180,8 @@ import {
 import { db } from "./db";
 import { eq, desc, and, gte, lte, lt, sql, inArray, isNull, or } from "drizzle-orm";
 import crypto from "crypto";
+import { reserveNextNumber } from "./services/numberingService";
+import { createPaymentLink, stripeEnabled } from "./services/stripeService";
 import { AuthTenantRepository } from "./repositories/AuthTenantRepository";
 
 export interface IStorage {
@@ -278,10 +280,12 @@ export interface IStorage {
   createInvoice(invoice: InsertInvoice): Promise<Invoice>;
   createInvoiceFromJob(jobId: string, createdById?: string): Promise<Invoice | undefined>;
   createInvoiceFromQuote(quoteId: string, createdById?: string): Promise<Invoice | undefined>;
+  createInvoiceFromAcceptedQuote(quoteId: string, createdById?: string): Promise<Invoice | undefined>;
   updateInvoice(id: string, invoice: Partial<InsertInvoice>): Promise<Invoice | undefined>;
   sendInvoice(id: string): Promise<Invoice | undefined>;
   deleteInvoice(id: string): Promise<boolean>;
   generateInvoiceNumber(): Promise<string>;
+  createJobFromPaidInvoice(invoiceId: string): Promise<{ job: Job; quote: Quote; invoice: Invoice } | undefined>;
 
   // Line item operations
   getLineItemsByQuote(quoteId: string): Promise<LineItem[]>;
@@ -534,7 +538,7 @@ export class DatabaseStorage implements IStorage {
   // Staff profile operations
   async getStaffProfiles(): Promise<(StaffProfile & { user?: User })[]> {
     const profiles = await db.select().from(staffProfiles).orderBy(desc(staffProfiles.createdAt));
-    
+
     // Fetch associated users
     const profilesWithUsers = await Promise.all(
       profiles.map(async (profile) => {
@@ -542,7 +546,7 @@ export class DatabaseStorage implements IStorage {
         return { ...profile, user };
       })
     );
-    
+
     return profilesWithUsers;
   }
 
@@ -928,9 +932,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createQuote(quote: InsertQuote): Promise<Quote> {
-    const quoteNumber = await this.generateQuoteNumber();
-    const [created] = await db.insert(quotes).values({ ...quote, quoteNumber }).returning();
-    return created;
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const quoteNumber = await this.generateQuoteNumber();
+      try {
+        const [created] = await db.insert(quotes).values({ ...quote, quoteNumber }).returning();
+        return created;
+      } catch (err: unknown) {
+        const code = err && typeof err === "object" && "code" in err ? (err as { code: string }).code : undefined;
+        if (code === "23505" && attempt < maxAttempts - 1) {
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new Error("Failed to create quote: could not generate unique quote number");
   }
 
   async updateQuote(id: string, quote: Partial<InsertQuote>): Promise<Quote | undefined> {
@@ -973,33 +989,59 @@ export class DatabaseStorage implements IStorage {
     const quote = await this.getQuote(id);
     if (!quote || quote.status !== "accepted") return undefined;
 
-    const [job] = await db.insert(jobs).values({
-      clientName: quote.clientName,
-      clientEmail: quote.clientEmail,
-      clientPhone: quote.clientPhone,
-      address: quote.clientAddress,
-      jobType: quote.jobType,
-      description: quote.description,
-      status: "pending",
-      createdById: quote.createdById,
-    }).returning();
+    if (quote.convertedToJobId) return undefined;
 
-    // Create invoice from quote with payment link
-    const invoice = await this.createInvoiceFromQuote(id, quote.createdById ?? undefined);
-    
-    // Link the invoice to the job if created
-    if (invoice) {
-      await db.update(invoices)
-        .set({ jobId: job.id })
-        .where(eq(invoices.id, invoice.id));
+    let job: Job;
+    let invoice: Invoice | undefined;
+
+    if (quote.convertedToInvoiceId) {
+      invoice = await this.getInvoice(quote.convertedToInvoiceId);
+      if (!invoice) return undefined;
+      const settings = await this.getSettings();
+      const jobPrefix = settings?.jobNumberPrefix ?? "J-";
+      const padLength = 4;
+      const ref = quote.referenceNumber ?? 0;
+      const jobNumber = `${jobPrefix}${String(ref).padStart(padLength, "0")}`;
+      const [createdJob] = await db.insert(jobs).values({
+        clientName: quote.clientName,
+        clientEmail: quote.clientEmail,
+        clientPhone: quote.clientPhone,
+        address: quote.clientAddress,
+        jobType: quote.jobType,
+        description: quote.description,
+        status: "pending",
+        createdById: quote.createdById,
+        referenceNumber: quote.referenceNumber,
+        jobNumber,
+        quoteId: quote.id,
+        invoiceId: invoice.id,
+      }).returning();
+      job = createdJob;
+      await db.update(invoices).set({ jobId: job.id, updatedAt: new Date() }).where(eq(invoices.id, invoice.id));
+    } else {
+      const [createdJob] = await db.insert(jobs).values({
+        clientName: quote.clientName,
+        clientEmail: quote.clientEmail,
+        clientPhone: quote.clientPhone,
+        address: quote.clientAddress,
+        jobType: quote.jobType,
+        description: quote.description,
+        status: "pending",
+        createdById: quote.createdById,
+      }).returning();
+      job = createdJob;
+      invoice = await this.createInvoiceFromQuote(id, quote.createdById ?? undefined);
+      if (invoice) {
+        await db.update(invoices).set({ jobId: job.id }).where(eq(invoices.id, invoice.id));
+      }
     }
 
     const [updatedQuote] = await db
       .update(quotes)
-      .set({ 
-        convertedToJobId: job.id, 
-        convertedToInvoiceId: invoice?.id,
-        updatedAt: new Date() 
+      .set({
+        convertedToJobId: job.id,
+        convertedToInvoiceId: invoice?.id ?? quote.convertedToInvoiceId,
+        updatedAt: new Date(),
       })
       .where(eq(quotes.id, id))
       .returning();
@@ -1014,7 +1056,7 @@ export class DatabaseStorage implements IStorage {
 
     // Generate new quote number (same base, new version)
     const newQuoteNumber = await this.generateQuoteNumber();
-    
+
     // Calculate next revision number
     const revisionNumber = (originalQuote.revisionNumber || 1) + 1;
 
@@ -1049,8 +1091,8 @@ export class DatabaseStorage implements IStorage {
 
     // Mark original quote as superseded
     await db.update(quotes)
-      .set({ 
-        isLatestRevision: false, 
+      .set({
+        isLatestRevision: false,
         supersededByQuoteId: newQuote.id,
         updatedAt: new Date()
       })
@@ -1060,13 +1102,13 @@ export class DatabaseStorage implements IStorage {
     if (originalQuote.lineItems && originalQuote.lineItems.length > 0) {
       const newLineItems = originalQuote.lineItems.map(item => ({
         quoteId: newQuote.id,
-        category: item.category,
-        milestoneTitle: item.milestoneTitle,
+        quoteMilestoneId: item.quoteMilestoneId,
+        heading: item.heading,
         description: item.description,
         richDescription: item.richDescription,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
-        total: item.total,
+        amount: item.amount,
         sortOrder: item.sortOrder,
       }));
       await db.insert(lineItems).values(newLineItems);
@@ -1076,7 +1118,7 @@ export class DatabaseStorage implements IStorage {
     const originalSections = await db.select()
       .from(quoteCustomSections)
       .where(eq(quoteCustomSections.quoteId, id));
-    
+
     if (originalSections.length > 0) {
       const newSections = originalSections.map(section => ({
         quoteId: newQuote.id,
@@ -1091,7 +1133,7 @@ export class DatabaseStorage implements IStorage {
     const originalSchedules = await db.select()
       .from(quotePaymentSchedules)
       .where(eq(quotePaymentSchedules.quoteId, id));
-    
+
     if (originalSchedules.length > 0) {
       const newSchedules = originalSchedules.map(schedule => ({
         quoteId: newQuote.id,
@@ -1143,7 +1185,7 @@ export class DatabaseStorage implements IStorage {
       .from(quotes)
       .where(sql`EXTRACT(YEAR FROM ${quotes.createdAt}) = ${year}`);
     const count = (result[0]?.count || 0) + 1;
-    return `Q${year}-${String(count).padStart(4, "0")}`;
+    return `${year}-${String(count).padStart(4, "0")}`;
   }
 
   // Invoice operations
@@ -1226,7 +1268,7 @@ export class DatabaseStorage implements IStorage {
     // Get payment schedules to find deposit amount
     const paymentSchedules = await this.getQuotePaymentSchedules(quoteId);
     const depositSchedule = paymentSchedules.find(s => s.type === "deposit");
-    
+
     // Use deposit amount as initial amount due, or full total if no deposit
     const depositAmount = depositSchedule?.calculatedAmount || quoteData.total;
 
@@ -1270,6 +1312,130 @@ export class DatabaseStorage implements IStorage {
     }
 
     return invoice;
+  }
+
+  /** Create invoice from an accepted quote with same reference number (reserved at accept). Sets quote.convertedToInvoiceId. */
+  async createInvoiceFromAcceptedQuote(quoteId: string, createdById?: string): Promise<Invoice | undefined> {
+    const quoteData = await this.getQuoteWithLineItems(quoteId);
+    if (!quoteData) return undefined;
+
+    const reservation = await reserveNextNumber();
+    await db.update(quotes).set({ referenceNumber: reservation.referenceNumber, updatedAt: new Date() }).where(eq(quotes.id, quoteId));
+
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 14);
+    const paymentLinkToken = `pay_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+
+    const paymentSchedules = await this.getQuotePaymentSchedules(quoteId);
+    const depositSchedule = paymentSchedules.find(s => s.type === "deposit");
+    const depositAmount = depositSchedule?.calculatedAmount || quoteData.total;
+
+    const [invoice] = await db.insert(invoices).values({
+      invoiceNumber: reservation.invoiceNumber,
+      referenceNumber: reservation.referenceNumber,
+      quoteId,
+      clientId: quoteData.clientId,
+      clientName: quoteData.clientName,
+      clientEmail: quoteData.clientEmail,
+      clientPhone: quoteData.clientPhone,
+      clientAddress: quoteData.clientAddress,
+      status: "sent",
+      subtotal: quoteData.subtotal,
+      taxRate: quoteData.taxRate,
+      taxAmount: quoteData.taxAmount,
+      total: quoteData.total,
+      amountDue: depositAmount,
+      dueDate: dueDate.toISOString().split("T")[0],
+      paymentLinkToken,
+      createdById,
+      sentAt: new Date(),
+    }).returning();
+
+    for (const item of quoteData.lineItems) {
+      await db.insert(lineItems).values({
+        invoiceId: invoice.id,
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        amount: item.amount,
+        sortOrder: item.sortOrder,
+      });
+    }
+
+    for (const schedule of paymentSchedules) {
+      await db.update(quotePaymentSchedules)
+        .set({ invoiceId: invoice.id })
+        .where(eq(quotePaymentSchedules.id, schedule.id));
+    }
+
+    await db.update(quotes)
+      .set({ convertedToInvoiceId: invoice.id, updatedAt: new Date() })
+      .where(eq(quotes.id, quoteId));
+
+    if (stripeEnabled()) {
+      const amountCents = Math.round(parseFloat(String(depositAmount ?? "0")) * 100);
+      if (amountCents > 0) {
+        try {
+          const link = await createPaymentLink({
+            invoiceId: invoice.id,
+            amountCents,
+            description: `Invoice ${invoice.invoiceNumber}`,
+          });
+          if (link) {
+            await db.update(invoices)
+              .set({
+                stripePaymentLinkId: link.id,
+                stripePaymentLinkUrl: link.url,
+                updatedAt: new Date(),
+              })
+              .where(eq(invoices.id, invoice.id));
+          }
+        } catch (err) {
+          console.error("Stripe createPaymentLink for invoice:", err);
+        }
+      }
+    }
+
+    return invoice;
+  }
+
+  /** Create job from a paid invoice (quote-linked). Idempotent if quote already converted. */
+  async createJobFromPaidInvoice(invoiceId: string): Promise<{ job: Job; quote: Quote; invoice: Invoice } | undefined> {
+    const invoice = await this.getInvoice(invoiceId);
+    if (!invoice || !invoice.quoteId) return undefined;
+    const amountDue = parseFloat(invoice.amountDue ?? "0");
+    const isPaid = invoice.status === "paid" || amountDue <= 0;
+    if (!isPaid) return undefined;
+
+    const quote = await this.getQuote(invoice.quoteId);
+    if (!quote || quote.convertedToJobId) return undefined;
+
+    const settings = await this.getSettings();
+    const jobPrefix = settings?.jobNumberPrefix ?? "J-";
+    const padLength = 4;
+    const ref = quote.referenceNumber ?? 0;
+    const jobNumber = `${jobPrefix}${String(ref).padStart(padLength, "0")}`;
+
+    const [job] = await db.insert(jobs).values({
+      clientName: quote.clientName,
+      clientEmail: quote.clientEmail,
+      clientPhone: quote.clientPhone,
+      address: quote.clientAddress,
+      jobType: quote.jobType,
+      description: quote.description,
+      status: "pending",
+      createdById: quote.createdById,
+      referenceNumber: quote.referenceNumber,
+      jobNumber,
+      quoteId: quote.id,
+      invoiceId: invoice.id,
+    }).returning();
+
+    await db.update(invoices).set({ jobId: job.id, updatedAt: new Date() }).where(eq(invoices.id, invoiceId));
+    const [updatedQuote] = await db.update(quotes).set({ convertedToJobId: job.id, updatedAt: new Date() }).where(eq(quotes.id, quote.id)).returning();
+    const [updatedInvoice] = await db.select().from(invoices).where(eq(invoices.id, invoiceId));
+
+    return { job, quote: updatedQuote!, invoice: updatedInvoice! };
   }
 
   async updateInvoice(id: string, invoice: Partial<InsertInvoice>): Promise<Invoice | undefined> {
@@ -1581,6 +1747,17 @@ export class DatabaseStorage implements IStorage {
           updatedAt: new Date(),
         })
         .where(eq(invoices.id, payment.invoiceId));
+
+      if (newStatus === "paid" && invoice.quoteId) {
+        const settings = await this.getSettings();
+        if (settings?.autoCreateJobFromInvoice) {
+          try {
+            await this.createJobFromPaidInvoice(payment.invoiceId);
+          } catch (err) {
+            console.error("createJobFromPaidInvoice after payment:", err);
+          }
+        }
+      }
     }
 
     return created;
@@ -1822,7 +1999,7 @@ export class DatabaseStorage implements IStorage {
   // Checklist Run Operations
   async getChecklistRuns(filters?: { vehicleId?: string; jobId?: string; completedById?: string }): Promise<ChecklistRun[]> {
     let query = db.select().from(checklistRuns);
-    
+
     if (filters?.vehicleId) {
       query = query.where(eq(checklistRuns.vehicleId, filters.vehicleId)) as typeof query;
     }
@@ -1832,7 +2009,7 @@ export class DatabaseStorage implements IStorage {
     if (filters?.completedById) {
       query = query.where(eq(checklistRuns.completedById, filters.completedById)) as typeof query;
     }
-    
+
     return await query.orderBy(desc(checklistRuns.startedAt));
   }
 
@@ -2026,7 +2203,7 @@ export class DatabaseStorage implements IStorage {
 
   async getTimeEntriesByStaff(staffId: string, dateFrom?: string, dateTo?: string): Promise<JobTimeEntry[]> {
     let query = db.select().from(jobTimeEntries).where(eq(jobTimeEntries.staffId, staffId));
-    
+
     if (dateFrom && dateTo) {
       return await db.select().from(jobTimeEntries)
         .where(and(
@@ -2036,7 +2213,7 @@ export class DatabaseStorage implements IStorage {
         ))
         .orderBy(desc(jobTimeEntries.workDate));
     }
-    
+
     return await db.select().from(jobTimeEntries)
       .where(eq(jobTimeEntries.staffId, staffId))
       .orderBy(desc(jobTimeEntries.workDate));
@@ -2118,7 +2295,7 @@ export class DatabaseStorage implements IStorage {
 
   async createOrUpdateCapacityRule(rule: InsertStaffCapacityRule): Promise<StaffCapacityRule> {
     const existing = await this.getStaffCapacityRule(rule.staffId);
-    
+
     if (existing) {
       const [updated] = await db
         .update(staffCapacityRules)
@@ -2207,14 +2384,14 @@ export class DatabaseStorage implements IStorage {
 
     for (const staff of allStaff) {
       const entries = await this.getTimeEntriesByStaff(staff.id, dateFrom, dateTo);
-      
+
       const totalHours = entries.reduce((sum, e) => sum + this.safeParseFloat(e.hoursWorked, 0), 0);
       const billableHours = entries
         .filter(e => e.isBillable)
         .reduce((sum, e) => sum + this.safeParseFloat(e.hoursWorked, 0), 0);
-      
+
       const jobIds = new Set(entries.map(e => e.jobId));
-      
+
       metrics.push({
         staffId: staff.id,
         staffName: `${staff.firstName || ""} ${staff.lastName || ""}`.trim() || staff.email || "Unknown",
@@ -2234,11 +2411,11 @@ export class DatabaseStorage implements IStorage {
 
     const costEntries = await this.getJobCostEntries(jobId);
     const timeEntries = await this.getJobTimeEntries(jobId);
-    
+
     // Get quoted amount from associated quotes (safely handle missing/null values)
     const quotesResult = await db.select().from(quotes).where(eq(quotes.jobId, jobId));
     const quotedAmount = quotesResult.reduce((sum, q) => sum + this.safeParseFloat(q.totalAmount, 0), 0);
-    
+
     // Calculate labor cost from time entries (default $50/hr if rate not set)
     const DEFAULT_HOURLY_RATE = 50;
     const actualLaborCost = timeEntries.reduce((sum, e) => {
@@ -2246,21 +2423,21 @@ export class DatabaseStorage implements IStorage {
       const rate = this.safeParseFloat(e.hourlyRate, DEFAULT_HOURLY_RATE);
       return sum + (hours * rate);
     }, 0);
-    
+
     // Calculate costs by category
     const actualMaterialCost = costEntries
       .filter(e => e.category === "material")
       .reduce((sum, e) => sum + this.safeParseFloat(e.totalCost, 0), 0);
-    
+
     const actualOtherCosts = costEntries
       .filter(e => e.category !== "material" && e.category !== "labor")
       .reduce((sum, e) => sum + this.safeParseFloat(e.totalCost, 0), 0);
-    
+
     // Add manual labor entries from cost entries
     const manualLaborCost = costEntries
       .filter(e => e.category === "labor")
       .reduce((sum, e) => sum + this.safeParseFloat(e.totalCost, 0), 0);
-    
+
     const totalActualCost = actualLaborCost + manualLaborCost + actualMaterialCost + actualOtherCosts;
     const grossProfit = quotedAmount - totalActualCost;
     const profitMargin = quotedAmount > 0 ? (grossProfit / quotedAmount) * 100 : 0;
@@ -2297,7 +2474,7 @@ export class DatabaseStorage implements IStorage {
   async getStaffCapacityView(weekStartDate: string): Promise<StaffCapacityView[]> {
     const allStaff = await this.getStaffProfiles();
     const capacityRules = await this.getStaffCapacityRules();
-    
+
     // Calculate week end date (7 days from start)
     const startDate = new Date(weekStartDate);
     const endDate = new Date(startDate);
@@ -2310,9 +2487,9 @@ export class DatabaseStorage implements IStorage {
         gte(scheduleEntries.scheduledDate, weekStartDate),
         lte(scheduleEntries.scheduledDate, weekEndDate)
       ));
-    
+
     const timeResults = await this.getTimeEntriesByDateRange(weekStartDate, weekEndDate);
-    
+
     // Get time off for the week
     const timeOffResults = await this.getTimeOffByDateRange(weekStartDate, weekEndDate);
 
@@ -2320,7 +2497,7 @@ export class DatabaseStorage implements IStorage {
 
     for (const staff of allStaff) {
       const rule = capacityRules.find(r => r.staffId === staff.id);
-      
+
       // Calculate weekly capacity (sum of daily hours) using safe parsing
       const weeklyCapacity = rule ? (
         this.safeParseFloat(rule.mondayHours, 0) +
@@ -2351,7 +2528,7 @@ export class DatabaseStorage implements IStorage {
         const overlapEnd = toEnd > endDate ? endDate : toEnd;
         timeOffDays += Math.max(0, (overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24) + 1);
       }
-      
+
       const adjustedCapacity = Math.max(0, weeklyCapacity - (timeOffDays * 8));
       const availableHours = Math.max(0, adjustedCapacity - scheduledHours);
       const utilizationPercent = adjustedCapacity > 0 ? (scheduledHours / adjustedCapacity) * 100 : 0;
@@ -2382,7 +2559,7 @@ export class DatabaseStorage implements IStorage {
     if (staffId) conditions.push(eq(kpiDailySnapshots.staffId, staffId));
     if (dateFrom) conditions.push(gte(kpiDailySnapshots.snapshotDate, dateFrom));
     if (dateTo) conditions.push(lte(kpiDailySnapshots.snapshotDate, dateTo));
-    
+
     if (conditions.length > 0) {
       query = query.where(and(...conditions)) as any;
     }
@@ -2401,7 +2578,7 @@ export class DatabaseStorage implements IStorage {
         eq(kpiDailySnapshots.snapshotDate, snapshot.snapshotDate)
       ))
       .limit(1);
-    
+
     if (existing.length > 0) {
       const [updated] = await db.update(kpiDailySnapshots)
         .set(snapshot)
@@ -2418,7 +2595,7 @@ export class DatabaseStorage implements IStorage {
     const conditions = [];
     if (staffId) conditions.push(eq(kpiWeeklySnapshots.staffId, staffId));
     if (weekStart) conditions.push(eq(kpiWeeklySnapshots.weekStart, weekStart));
-    
+
     if (conditions.length > 0) {
       query = query.where(and(...conditions)) as any;
     }
@@ -2491,10 +2668,10 @@ export class DatabaseStorage implements IStorage {
 
   async acknowledgeKpiAlert(id: string, acknowledgedById: string): Promise<KpiAlert | undefined> {
     const [updated] = await db.update(kpiAlertsLog)
-      .set({ 
-        acknowledged: true, 
-        acknowledgedById, 
-        acknowledgedAt: new Date() 
+      .set({
+        acknowledged: true,
+        acknowledgedById,
+        acknowledgedAt: new Date()
       })
       .where(eq(kpiAlertsLog.id, id))
       .returning();
@@ -2562,9 +2739,9 @@ export class DatabaseStorage implements IStorage {
     const [existing] = await db.select().from(phaseProgressionChecklist)
       .where(eq(phaseProgressionChecklist.id, id))
       .limit(1);
-    
+
     if (!existing) return undefined;
-    
+
     const [updated] = await db.update(phaseProgressionChecklist)
       .set({
         completed: !existing.completed,
@@ -2593,22 +2770,22 @@ export class DatabaseStorage implements IStorage {
     const targetDate = date || new Date().toISOString().split("T")[0];
     const allStaff = await this.getStaffProfiles();
     const snapshots = await this.getKpiDailySnapshots(undefined, targetDate, targetDate);
-    
+
     const results: KpiDashboardDaily[] = [];
-    
+
     for (const staff of allStaff) {
       const snapshot = snapshots.find(s => s.staffId === staff.id);
       const laborRevenue = snapshot ? this.safeParseFloat(snapshot.laborRevenue, 0) : 0;
       const targetLabor = staff.dailyLaborTarget ? this.safeParseFloat(staff.dailyLaborTarget, 2000) : 2000;
       const ratio = targetLabor > 0 ? laborRevenue / targetLabor : 0;
-      
+
       let status: "green" | "amber" | "red" = "red";
       if (ratio >= 1) status = "green";
       else if (ratio >= 0.75) status = "amber";
-      
+
       results.push({
         staffId: staff.id,
-        staffName: staff.user?.firstName 
+        staffName: staff.user?.firstName
           ? `${staff.user.firstName} ${staff.user.lastName || ""}`.trim()
           : staff.user?.email || "Unknown",
         laborRevenue,
@@ -2620,7 +2797,7 @@ export class DatabaseStorage implements IStorage {
         status,
       });
     }
-    
+
     return results;
   }
 
@@ -2628,17 +2805,17 @@ export class DatabaseStorage implements IStorage {
     const startDate = weekStart || this.getWeekStart(new Date());
     const allStaff = await this.getStaffProfiles();
     const snapshots = await this.getKpiWeeklySnapshots(undefined, startDate);
-    
+
     const results: KpiDashboardWeekly[] = [];
-    
+
     for (const staff of allStaff) {
       const snapshot = snapshots.find(s => s.staffId === staff.id);
       const laborRevenue = snapshot ? this.safeParseFloat(snapshot.laborRevenue, 0) : 0;
       const targetLabor = staff.weeklyLaborTarget ? this.safeParseFloat(staff.weeklyLaborTarget, 10000) : 10000;
-      
+
       results.push({
         staffId: staff.id,
-        staffName: staff.user?.firstName 
+        staffName: staff.user?.firstName
           ? `${staff.user.firstName} ${staff.user.lastName || ""}`.trim()
           : staff.user?.email || "Unknown",
         laborRevenue,
@@ -2649,7 +2826,7 @@ export class DatabaseStorage implements IStorage {
         targetMet: laborRevenue >= targetLabor,
       });
     }
-    
+
     return results;
   }
 
@@ -2664,16 +2841,16 @@ export class DatabaseStorage implements IStorage {
   async getTradesmanKpiSummary(staffId: string): Promise<TradesmanKpiSummary | undefined> {
     const staff = await this.getStaffProfile(staffId);
     if (!staff) return undefined;
-    
+
     const today = new Date().toISOString().split("T")[0];
     const weekStart = this.getWeekStart(new Date());
-    
+
     const dailySnapshots = await this.getKpiDailySnapshots(staffId, today, today);
     const weeklySnapshots = await this.getKpiWeeklySnapshots(staffId, weekStart);
-    
+
     const dailySnapshot = dailySnapshots[0];
     const weeklySnapshot = weeklySnapshots[0];
-    
+
     // Calculate weeks at current phase
     let weeksAtPhase = 0;
     if (staff.phaseStartDate) {
@@ -2681,7 +2858,7 @@ export class DatabaseStorage implements IStorage {
       const now = new Date();
       weeksAtPhase = Math.floor((now.getTime() - phaseStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
     }
-    
+
     // Calculate streak days
     let streakDays = 0;
     const recentSnapshots = await this.getKpiDailySnapshots(staffId);
@@ -2689,14 +2866,14 @@ export class DatabaseStorage implements IStorage {
       if (snap.targetMet) streakDays++;
       else break;
     }
-    
+
     // Get current bonus period for projected bonus
     const bonusPeriod = await this.getCurrentBonusPeriod(staffId);
     const projectedBonus = bonusPeriod ? this.safeParseFloat(bonusPeriod.bonusAmount, 0) : 0;
-    
+
     return {
       staffId: staff.id,
-      staffName: staff.user?.firstName 
+      staffName: staff.user?.firstName
         ? `${staff.user.firstName} ${staff.user.lastName || ""}`.trim()
         : staff.user?.email || "Unknown",
       salesPhase: staff.salesPhase || 1,
@@ -2715,11 +2892,11 @@ export class DatabaseStorage implements IStorage {
   async calculateDailyKpiSnapshot(staffId: string, date: string): Promise<KpiDailySnapshot> {
     const staff = await this.getStaffProfile(staffId);
     if (!staff) throw new Error("Staff not found");
-    
+
     // Get time entries for the day
     const timeEntries = await this.getTimeEntries(staffId, date, date);
     const hoursLogged = timeEntries.reduce((sum, e) => sum + this.safeParseFloat(e.hoursWorked, 0), 0);
-    
+
     // Calculate labor revenue (hours * hourly rate or estimate from job completions)
     // Use salaryAmount if available, otherwise fall back to hourlyCostLoaded
     let hourlyRate = 266; // Default: $2000/7.5hrs
@@ -2734,17 +2911,17 @@ export class DatabaseStorage implements IStorage {
       hourlyRate = this.safeParseFloat(staff.hourlyCostLoaded, 266);
     }
     const laborRevenue = hoursLogged * hourlyRate;
-    
+
     // Count completed jobs
     const allJobs = await this.getJobs();
-    const completedJobs = allJobs.filter(j => 
-      j.status === "completed" && 
-      j.updatedAt && 
+    const completedJobs = allJobs.filter(j =>
+      j.status === "completed" &&
+      j.updatedAt &&
       j.updatedAt.toISOString().split("T")[0] === date
     ).length;
-    
+
     const targetLabor = staff.dailyLaborTarget ? this.safeParseFloat(staff.dailyLaborTarget, 2000) : 2000;
-    
+
     return this.upsertKpiDailySnapshot({
       staffId,
       snapshotDate: date,
@@ -2760,19 +2937,19 @@ export class DatabaseStorage implements IStorage {
   async advanceSalesPhase(staffId: string, changedById: string, notes?: string): Promise<void> {
     const staff = await this.getStaffProfile(staffId);
     if (!staff) throw new Error("Staff not found");
-    
+
     const currentPhase = staff.salesPhase || 1;
     if (currentPhase >= 3) throw new Error("Already at maximum phase");
-    
+
     const newPhase = currentPhase + 1;
     const today = new Date().toISOString().split("T")[0];
-    
+
     // Update staff profile
     await this.updateStaffProfile(staffId, {
       salesPhase: newPhase,
       phaseStartDate: today,
     });
-    
+
     // Log the phase change
     await this.createPhaseLogEntry({
       staffId,
@@ -2811,20 +2988,20 @@ export class DatabaseStorage implements IStorage {
   async setStaffWorkingHours(staffId: string, hours: InsertUserWorkingHours[]): Promise<UserWorkingHours[]> {
     // Delete existing hours for this staff member
     await db.delete(userWorkingHours).where(eq(userWorkingHours.staffId, staffId));
-    
+
     // Insert new hours
     if (hours.length > 0) {
       const hoursWithStaffId = hours.map(h => ({ ...h, staffId }));
       await db.insert(userWorkingHours).values(hoursWithStaffId);
     }
-    
+
     return this.getStaffWorkingHours(staffId);
   }
 
   async getStaffAvailability(staffId: string, date: string): Promise<{ isAvailable: boolean; startTime?: string; endTime?: string }> {
     const dateObj = new Date(date);
     const dayOfWeek = dateObj.getDay(); // 0=Sunday, 1=Monday, etc.
-    
+
     // Check if there's a time-off request for this date
     const timeOff = await db.select().from(staffTimeOff)
       .where(and(
@@ -2833,18 +3010,18 @@ export class DatabaseStorage implements IStorage {
         gte(staffTimeOff.endDate, date),
         eq(staffTimeOff.status, "approved")
       ));
-    
+
     if (timeOff.length > 0) {
       return { isAvailable: false };
     }
-    
+
     // Check working hours for this day
     const [workingDay] = await db.select().from(userWorkingHours)
       .where(and(
         eq(userWorkingHours.staffId, staffId),
         eq(userWorkingHours.dayOfWeek, dayOfWeek)
       ));
-    
+
     if (!workingDay) {
       // Default availability: Mon-Fri, 7:00-15:30
       const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
@@ -2854,7 +3031,7 @@ export class DatabaseStorage implements IStorage {
         endTime: isWeekday ? "15:30" : undefined,
       };
     }
-    
+
     return {
       isAvailable: workingDay.isWorkingDay,
       startTime: workingDay.isWorkingDay ? (workingDay.startTime || undefined) : undefined,
@@ -3247,7 +3424,7 @@ export class DatabaseStorage implements IStorage {
   async updateMilestoneMedia(id: string, media: Partial<InsertMilestoneMedia>): Promise<MilestoneMedia | undefined> {
     const [updated] = await db.select().from(milestoneMedia)
       .where(eq(milestoneMedia.id, id));
-    
+
     if (!updated) return undefined;
 
     const [result] = await db.update(milestoneMedia)

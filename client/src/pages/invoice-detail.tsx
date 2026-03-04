@@ -4,7 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Send, DollarSign, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Send, DollarSign, Plus, Trash2, ExternalLink, Briefcase } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -205,15 +205,31 @@ export default function InvoiceDetail() {
             </Button>
           )}
           {(invoice.status === "sent" || invoice.status === "partially_paid") && (
-            <Button
-              onClick={() => {
-                form.setValue("amount", parseFloat(invoice.amountDue || "0"));
-                setPaymentDialogOpen(true);
-              }}
-              data-testid="button-record-payment"
-            >
-              <DollarSign className="mr-2 h-4 w-4" />
-              Record Payment
+            <>
+              {invoice.stripePaymentLinkUrl && (
+                <Button asChild>
+                  <a href={invoice.stripePaymentLinkUrl} target="_blank" rel="noopener noreferrer" data-testid="button-pay-stripe">
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Pay with Stripe
+                  </a>
+                </Button>
+              )}
+              <Button
+                onClick={() => {
+                  form.setValue("amount", parseFloat(invoice.amountDue || "0"));
+                  setPaymentDialogOpen(true);
+                }}
+                data-testid="button-record-payment"
+              >
+                <DollarSign className="mr-2 h-4 w-4" />
+                Record Payment
+              </Button>
+            </>
+          )}
+          {invoice.jobId && (
+            <Button variant="outline" onClick={() => navigate(`/jobs/${invoice.jobId}`)}>
+              <Briefcase className="mr-2 h-4 w-4" />
+              View Job
             </Button>
           )}
         </div>

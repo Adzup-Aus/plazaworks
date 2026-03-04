@@ -23,28 +23,20 @@ export function registerPaymentsRoutes(app: Express): void {
         return res.status(400).json({ message: validation.error.errors[0].message });
       }
 
-      const invoice = await storage.getInvoice(req.params.invoiceId);
+      const payment = await storage.createPayment(validation.data);
       let convertedJob = null;
-
-      if (invoice?.quoteId) {
-        const quote = await storage.getQuote(invoice.quoteId);
-        if (quote && !quote.convertedToJobId) {
-          if (quote.status !== "accepted") {
-            await storage.acceptQuote(quote.id);
-          }
-
-          const result = await storage.convertQuoteToJob(invoice.quoteId);
-          if (result) {
-            convertedJob = result.job;
-          }
+      const settings = await storage.getSettings();
+      if (settings?.autoCreateJobFromInvoice) {
+        const invoice = await storage.getInvoice(req.params.invoiceId);
+        if (invoice?.quoteId && (invoice.status === "paid" || parseFloat(invoice.amountDue ?? "0") <= 0)) {
+          const result = await storage.createJobFromPaidInvoice(invoice.id);
+          if (result) convertedJob = result.job;
         }
       }
-
-      const payment = await storage.createPayment(validation.data);
       res.status(201).json({
         payment,
         convertedJob,
-        message: convertedJob ? "Payment recorded and quote converted to job" : "Payment recorded",
+        message: convertedJob ? "Payment recorded and job created" : "Payment recorded",
       });
     } catch (err: any) {
       console.error("Error creating payment:", err);
