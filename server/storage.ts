@@ -274,6 +274,7 @@ export interface IStorage {
   getInvoices(): Promise<Invoice[]>;
   getInvoice(id: string): Promise<Invoice | undefined>;
   getInvoiceByPaymentToken(token: string): Promise<InvoiceWithDetails | undefined>;
+  getInvoiceByStripeSessionId(sessionId: string): Promise<Invoice | undefined>;
   getInvoiceWithDetails(id: string): Promise<InvoiceWithDetails | undefined>;
   getInvoicesByStatus(status: string): Promise<Invoice[]>;
   getInvoicesByJob(jobId: string): Promise<Invoice[]>;
@@ -1195,6 +1196,11 @@ export class DatabaseStorage implements IStorage {
 
   async getInvoice(id: string): Promise<Invoice | undefined> {
     const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id));
+    return invoice;
+  }
+
+  async getInvoiceByStripeSessionId(sessionId: string): Promise<Invoice | undefined> {
+    const [invoice] = await db.select().from(invoices).where(eq(invoices.stripePaymentLinkId, sessionId));
     return invoice;
   }
 

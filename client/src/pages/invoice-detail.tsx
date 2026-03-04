@@ -4,7 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Send, DollarSign, Plus, Trash2, ExternalLink, Briefcase } from "lucide-react";
+import { ArrowLeft, Send, DollarSign, Plus, Trash2, ExternalLink, Briefcase, Copy, Mail } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -104,6 +104,17 @@ export default function InvoiceDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", params.id] });
       toast({ title: "Invoice sent to client" });
+    },
+  });
+
+  const sendPaymentLinkMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/invoices/${params.id}/send-payment-link`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices", params.id] });
+      toast({ title: "Payment link sent to client" });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || "Failed to send payment link", variant: "destructive" });
     },
   });
 
@@ -213,6 +224,33 @@ export default function InvoiceDetail() {
                     Pay with Stripe
                   </a>
                 </Button>
+              )}
+              {(invoice.stripePaymentLinkUrl || invoice.paymentLinkToken) && (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const url = invoice.stripePaymentLinkUrl || (invoice.paymentLinkToken && typeof window !== "undefined" ? `${window.location.origin}/pay/${invoice.paymentLinkToken}` : null);
+                      if (url) {
+                        navigator.clipboard.writeText(url);
+                        toast({ title: "Payment link copied" });
+                      }
+                    }}
+                    data-testid="button-copy-payment-link"
+                  >
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copy payment link
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => sendPaymentLinkMutation.mutate()}
+                    disabled={sendPaymentLinkMutation.isPending || !invoice.clientEmail}
+                    data-testid="button-send-payment-link"
+                  >
+                    <Mail className="mr-2 h-4 w-4" />
+                    Send payment link to client
+                  </Button>
+                </>
               )}
               <Button
                 onClick={() => {

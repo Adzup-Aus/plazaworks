@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Plus, FileText, Send, MoreHorizontal, Trash2, DollarSign } from "lucide-react";
+import { Plus, FileText, Send, MoreHorizontal, Trash2, DollarSign, Copy, Mail } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -74,6 +74,25 @@ export default function Invoices() {
       setDeleteId(null);
     },
   });
+
+  const sendPaymentLinkMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/invoices/${id}/send-payment-link`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      toast({ title: "Payment link sent to client" });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || "Failed to send payment link", variant: "destructive" });
+    },
+  });
+
+  function getPaymentLinkUrl(invoice: Invoice): string | null {
+    if (invoice.stripePaymentLinkUrl) return invoice.stripePaymentLinkUrl;
+    if (invoice.paymentLinkToken && typeof window !== "undefined") {
+      return `${window.location.origin}/pay/${invoice.paymentLinkToken}`;
+    }
+    return null;
+  }
 
   if (isLoading) {
     return (
@@ -209,6 +228,31 @@ export default function Invoices() {
                             Record Payment
                           </Link>
                         </DropdownMenuItem>
+                      )}
+                      {getPaymentLinkUrl(invoice) && (
+                        <>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              const url = getPaymentLinkUrl(invoice);
+                              if (url) {
+                                navigator.clipboard.writeText(url);
+                                toast({ title: "Payment link copied" });
+                              }
+                            }}
+                            data-testid={`action-copy-payment-link-${invoice.id}`}
+                          >
+                            <Copy className="mr-2 h-4 w-4" />
+                            Copy payment link
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => sendPaymentLinkMutation.mutate(invoice.id)}
+                            disabled={sendPaymentLinkMutation.isPending || !invoice.clientEmail}
+                            data-testid={`action-send-payment-link-${invoice.id}`}
+                          >
+                            <Mail className="mr-2 h-4 w-4" />
+                            Send payment link to client
+                          </DropdownMenuItem>
+                        </>
                       )}
                       <PermissionGate permission="delete_invoices">
                         <>

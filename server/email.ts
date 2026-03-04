@@ -168,6 +168,32 @@ export async function sendPasswordResetEmail(email: string, code: string) {
   });
 }
 
+export async function sendPaymentLinkEmail(
+  clientEmail: string,
+  clientName: string,
+  invoiceNumber: string,
+  amountDue: string,
+  paymentLinkUrl: string
+) {
+  return sendEmail({
+    to: clientEmail,
+    subject: `Pay Invoice #${invoiceNumber} - ${amountDue} due`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Hello ${clientName},</h2>
+        <p>Please use the link below to pay your invoice.</p>
+        <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <p><strong>Invoice Number:</strong> ${invoiceNumber}</p>
+          <p><strong>Amount Due:</strong> ${amountDue}</p>
+        </div>
+        <a href="${paymentLinkUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 10px 0;">Pay Now</a>
+        <p style="color: #666; font-size: 14px; margin-top: 30px;">Thank you for your business!</p>
+      </div>
+    `,
+    text: `Hello ${clientName}, Please pay invoice #${invoiceNumber} (${amountDue} due) using this link: ${paymentLinkUrl}`,
+  });
+}
+
 export async function sendJobCompletionNotification(
   clientEmail: string,
   clientName: string,

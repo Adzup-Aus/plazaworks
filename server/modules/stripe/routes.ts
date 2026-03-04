@@ -52,7 +52,20 @@ export function registerStripeRoutes(app: Express): void {
         stripePaymentIntentId: typeof session.payment_intent === "string" ? session.payment_intent : null,
         description: `Stripe payment ${session.id}`,
       });
-      // createInvoicePayment already updates invoice and calls createJobFromPaidInvoice when paid
+
+      // Guarantee job creation for Stripe-paid invoices (independent of autoCreateJobFromInvoice)
+      const updated = await storage.getInvoice(invoiceId);
+      if (
+        updated?.status === "paid" &&
+        updated.quoteId &&
+        !updated.jobId
+      ) {
+        try {
+          await storage.createJobFromPaidInvoice(invoiceId);
+        } catch (err: any) {
+          console.error("createJobFromPaidInvoice after Stripe payment:", err);
+        }
+      }
     }
 
     res.status(200).send();

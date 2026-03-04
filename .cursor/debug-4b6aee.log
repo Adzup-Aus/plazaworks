@@ -1,1 +1,4 @@
-{"sessionId":"4b6aee","location":"storage.ts:createInvoiceFromAcceptedQuote","message":"stripe branch","data":{"stripeEnabled":false,"amountCents":55000,"depositAmount":"550.00"},"timestamp":1772589428115,"hypothesisId":"A,B"}
+{"sessionId":"4b6aee","location":"App.tsx:AppContent","message":"Pay route hit","data":{"pathname":"/pay/success","isAuthenticated":false,"isLoading":true},"timestamp":1772639731481,"hypothesisId":"H1"}
+{"sessionId":"4b6aee","location":"App.tsx:AppContent","message":"Pay route hit","data":{"pathname":"/pay/success","isAuthenticated":true,"isLoading":false},"timestamp":1772639731875,"hypothesisId":"H1"}
+{"sessionId":"4b6aee","location":"App.tsx:AppContent","message":"Pay route hit","data":{"pathname":"/pay/success","isAuthenticated":false,"isLoading":true},"timestamp":1772639756465,"hypothesisId":"H1"}
+{"sessionId":"4b6aee","location":"App.tsx:AppContent","message":"Pay route hit","data":{"pathname":"/pay/success","isAuthenticated":true,"isLoading":false},"timestamp":1772639756625,"hypothesisId":"H1"}
