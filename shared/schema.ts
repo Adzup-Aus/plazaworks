@@ -331,6 +331,8 @@ export const invoices = pgTable("invoices", {
   // Payment link token for client portal access
   paymentLinkToken: varchar("payment_link_token", { length: 100 }),
   stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
+  stripePaymentLinkId: varchar("stripe_payment_link_id", { length: 255 }),
+  stripePaymentLinkUrl: varchar("stripe_payment_link_url", { length: 512 }),
   createdById: varchar("created_by_id"),
   sentAt: timestamp("sent_at"),
   paidAt: timestamp("paid_at"),

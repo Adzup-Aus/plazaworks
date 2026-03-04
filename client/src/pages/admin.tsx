@@ -182,7 +182,6 @@ export default function Admin() {
                 id="quoteNumberPrefix"
                 value={current.quoteNumberPrefix ?? ""}
                 onChange={(e) => setForm((f) => ({ ...f, quoteNumberPrefix: e.target.value }))}
-                placeholder="Q-"
               />
             </div>
             <div className="space-y-2">

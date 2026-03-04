@@ -5,8 +5,8 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format } from "date-fns";
-import { 
-  ArrowLeft, ArrowRight, Check, User, DollarSign, 
+import {
+  ArrowLeft, ArrowRight, Check, User, DollarSign,
   FileText, Plus, Trash2, UserPlus, CalendarIcon, ListOrdered,
   ChevronDown, Send, CheckCircle
 } from "lucide-react";
@@ -114,17 +114,17 @@ function formatPhoneWithCountryCode(phone: string, countryCode: string): string 
   if (!phone) return "";
   const country = COUNTRIES.find(c => c.code === countryCode);
   const dialCode = country?.dialCode || "+61";
-  
+
   let cleaned = phone.replace(/[^\d]/g, "");
-  
+
   if (cleaned.startsWith("0")) {
     cleaned = cleaned.substring(1);
   }
-  
+
   if (!phone.startsWith("+")) {
     return `${dialCode} ${cleaned}`;
   }
-  
+
   return phone;
 }
 
@@ -196,18 +196,17 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
           const Icon = step.icon;
           const isActive = currentStep === step.id;
           const isCompleted = currentStep > step.id;
-          
+
           return (
             <div key={step.id} className="flex items-center flex-1 last:flex-none">
               <div className="flex flex-col items-center">
-                <div 
-                  className={`flex items-center justify-center w-10 h-10 rounded-full border-2 transition-colors ${
-                    isCompleted 
-                      ? "bg-primary border-primary text-primary-foreground" 
-                      : isActive 
-                        ? "border-primary text-primary" 
+                <div
+                  className={`flex items-center justify-center w-10 h-10 rounded-full border-2 transition-colors ${isCompleted
+                      ? "bg-primary border-primary text-primary-foreground"
+                      : isActive
+                        ? "border-primary text-primary"
                         : "border-muted text-muted-foreground"
-                  }`}
+                    }`}
                 >
                   {isCompleted ? <Check className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
                 </div>
@@ -274,10 +273,10 @@ export default function QuoteWizard() {
     name: "milestones",
   });
 
-  const { 
-    fields: customSectionFields, 
-    append: appendSection, 
-    remove: removeSection 
+  const {
+    fields: customSectionFields,
+    append: appendSection,
+    remove: removeSection
   } = useFieldArray({
     control: form.control,
     name: "customSections",
@@ -299,7 +298,7 @@ export default function QuoteWizard() {
 
   const validateStep = async (step: number): Promise<boolean> => {
     let fields: (keyof QuoteWizardValues)[] = [];
-    
+
     switch (step) {
       case 1:
         fields = ["clientId", "clientName", "clientAddress"];
@@ -314,7 +313,7 @@ export default function QuoteWizard() {
         fields = ["customSections"];
         break;
     }
-    
+
     const result = await form.trigger(fields);
     return result;
   };
@@ -341,7 +340,7 @@ export default function QuoteWizard() {
   const handleMilestoneCountChange = (count: number) => {
     const currentMilestones = form.getValues("milestones");
     const newMilestones = [];
-    
+
     for (let i = 0; i < count; i++) {
       if (currentMilestones[i]) {
         newMilestones.push(currentMilestones[i]);
@@ -349,7 +348,7 @@ export default function QuoteWizard() {
         newMilestones.push({ heading: "", richDescription: "", price: 0 });
       }
     }
-    
+
     replace(newMilestones);
   };
 
@@ -358,15 +357,15 @@ export default function QuoteWizard() {
       const useSinglePrice = data.useSinglePrice;
       const isPriceInclusive = data.isPriceInclusive;
       const taxRate = data.taxRate || 10;
-      
-      const enteredPrice = useSinglePrice 
+
+      const enteredPrice = useSinglePrice
         ? (data.singleTotalPrice || 0)
         : data.milestones.reduce((sum, m) => sum + (m.price || 0), 0);
-      
+
       let subtotal: number;
       let taxAmount: number;
       let total: number;
-      
+
       if (isPriceInclusive) {
         total = enteredPrice;
         subtotal = total / (1 + taxRate / 100);
@@ -398,7 +397,7 @@ export default function QuoteWizard() {
 
       for (let milestoneIndex = 0; milestoneIndex < data.milestones.length; milestoneIndex++) {
         const milestone = data.milestones[milestoneIndex];
-        
+
         const milestoneTitle = `Milestone ${milestoneIndex + 1}`;
         const milestoneResponse = await apiRequest("POST", `/api/quotes/${newQuote.id}/milestones`, {
           title: milestoneTitle,
@@ -407,10 +406,10 @@ export default function QuoteWizard() {
         });
         const savedMilestone = await milestoneResponse.json();
 
-        const itemPrice = useSinglePrice 
+        const itemPrice = useSinglePrice
           ? (milestoneIndex === data.milestones.length - 1 ? (data.singleTotalPrice || 0) : 0)
           : (milestone.price || 0);
-        
+
         const lineItemPayload: Record<string, unknown> = {
           quoteMilestoneId: savedMilestone.id,
           heading: milestoneTitle,
@@ -428,11 +427,11 @@ export default function QuoteWizard() {
 
       if (data.depositType !== "none") {
         const schedules = [];
-        
+
         if (data.depositType === "percentage") {
           const depositAmount = (total * (data.depositPercentage || 20)) / 100;
           const remainingAmount = total - depositAmount;
-          
+
           schedules.push({
             type: "deposit",
             name: "Deposit",
@@ -441,12 +440,12 @@ export default function QuoteWizard() {
             calculatedAmount: depositAmount.toFixed(2),
             sortOrder: 0,
           });
-          
+
           if (data.depositBalanceStrategy === "milestones" && data.milestones.length > 0) {
             const milestoneCount = data.milestones.length;
             const baseAmountPerMilestone = Math.floor((remainingAmount * 100) / milestoneCount) / 100;
             let allocatedTotal = 0;
-            
+
             data.milestones.forEach((milestone, index) => {
               let milestoneAmount: number;
               if (index === milestoneCount - 1) {
@@ -455,7 +454,7 @@ export default function QuoteWizard() {
                 milestoneAmount = baseAmountPerMilestone;
                 allocatedTotal += milestoneAmount;
               }
-              
+
               schedules.push({
                 type: "milestone",
                 name: `Milestone ${index + 1}`,
@@ -515,7 +514,7 @@ export default function QuoteWizard() {
         await apiRequest("PATCH", `/api/quotes/${newQuote.id}`, {
           status: "sent",
         });
-        
+
         if (mode === "send") {
           try {
             await apiRequest("POST", `/api/quotes/${newQuote.id}/send`);
@@ -529,11 +528,11 @@ export default function QuoteWizard() {
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/quotes"] });
-      const message = result.mode === "send" 
-        ? "Quote created and sent to client" 
+      const message = result.mode === "send"
+        ? "Quote created and sent to client"
         : result.mode === "mark_sent"
-        ? "Quote created and marked as sent"
-        : "Quote created successfully";
+          ? "Quote created and marked as sent"
+          : "Quote created successfully";
       toast({ title: message });
       navigate("/quotes");
     },
@@ -556,15 +555,15 @@ export default function QuoteWizard() {
     const singleTotalPrice = parseFloat(String(form.watch("singleTotalPrice"))) || 0;
     const taxRate = parseFloat(String(form.watch("taxRate"))) || 10;
     const isPriceInclusive = form.watch("isPriceInclusive");
-    
-    const enteredPrice = useSinglePrice 
+
+    const enteredPrice = useSinglePrice
       ? singleTotalPrice
       : milestones.reduce((sum, m) => sum + (parseFloat(String(m.price)) || 0), 0);
-    
+
     let subtotal: number;
     let taxAmount: number;
     let total: number;
-    
+
     if (isPriceInclusive) {
       total = enteredPrice;
       subtotal = total / (1 + taxRate / 100);
@@ -574,7 +573,7 @@ export default function QuoteWizard() {
       taxAmount = subtotal * (taxRate / 100);
       total = subtotal + taxAmount;
     }
-    
+
     return { subtotal, taxAmount, total, isPriceInclusive };
   };
 
@@ -593,9 +592,9 @@ export default function QuoteWizard() {
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)}>
             {currentStep === 1 && (
-              <Step1ClientSelector 
-                form={form} 
-                clients={clients || []} 
+              <Step1ClientSelector
+                form={form}
+                clients={clients || []}
                 clientsLoading={clientsLoading}
                 onClientSelect={handleClientSelect}
               />
@@ -606,8 +605,8 @@ export default function QuoteWizard() {
             )}
 
             {currentStep === 3 && (
-              <Step3Milestones 
-                form={form} 
+              <Step3Milestones
+                form={form}
                 milestoneFields={milestoneFields}
                 onMilestoneCountChange={handleMilestoneCountChange}
                 onAppend={() => append({ richDescription: "", price: 0 })}
@@ -649,7 +648,7 @@ export default function QuoteWizard() {
               ) : (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button 
+                    <Button
                       disabled={createMutation.isPending}
                       data-testid="button-create-quote"
                     >
@@ -658,7 +657,7 @@ export default function QuoteWizard() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem 
+                    <DropdownMenuItem
                       onClick={() => {
                         submissionModeRef.current = "send";
                         form.handleSubmit(onSubmit)();
@@ -668,7 +667,7 @@ export default function QuoteWizard() {
                       <Send className="mr-2 h-4 w-4" />
                       Create and Send
                     </DropdownMenuItem>
-                    <DropdownMenuItem 
+                    <DropdownMenuItem
                       onClick={() => {
                         submissionModeRef.current = "mark_sent";
                         form.handleSubmit(onSubmit)();
@@ -678,7 +677,7 @@ export default function QuoteWizard() {
                       <CheckCircle className="mr-2 h-4 w-4" />
                       Mark as sent
                     </DropdownMenuItem>
-                    <DropdownMenuItem 
+                    <DropdownMenuItem
                       onClick={() => {
                         submissionModeRef.current = "draft";
                         form.handleSubmit(onSubmit)();
@@ -699,12 +698,12 @@ export default function QuoteWizard() {
   );
 }
 
-function Step1ClientSelector({ 
-  form, 
-  clients, 
+function Step1ClientSelector({
+  form,
+  clients,
   clientsLoading,
-  onClientSelect 
-}: { 
+  onClientSelect
+}: {
   form: ReturnType<typeof useForm<QuoteWizardValues>>;
   clients: Client[];
   clientsLoading: boolean;
@@ -741,17 +740,17 @@ function Step1ClientSelector({
     },
     onSuccess: (newClient: Client) => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
-      
+
       const fullName = `${newClient.firstName || ""} ${newClient.lastName || ""}`.trim() || newClient.company || "";
       const fullAddress = [newClient.streetAddress, newClient.streetAddress2, newClient.city, newClient.state, newClient.postalCode]
         .filter(Boolean).join(", ");
-      
+
       form.setValue("clientId", newClient.id);
       form.setValue("clientName", fullName);
       form.setValue("clientEmail", newClient.email || "");
       form.setValue("clientPhone", newClient.phone || newClient.mobilePhone || "");
       form.setValue("clientAddress", fullAddress);
-      
+
       setIsNewClientDialogOpen(false);
       newClientForm.reset();
       toast({ title: "Client created successfully" });
@@ -859,8 +858,8 @@ function Step1ClientSelector({
               <FormItem>
                 <FormLabel>Job Address</FormLabel>
                 <FormControl>
-                  <Textarea 
-                    {...field} 
+                  <Textarea
+                    {...field}
                     placeholder="Enter the job site address"
                     className="min-h-[80px]"
                     data-testid="input-job-address"
@@ -882,7 +881,7 @@ function Step1ClientSelector({
             <DialogTitle>Create New Client</DialogTitle>
             <DialogDescription>Add a new client to your database</DialogDescription>
           </DialogHeader>
-          
+
           <form onSubmit={newClientForm.handleSubmit(handleNewClientSubmit)}>
             <div className="space-y-4 py-4">
               <div className="flex gap-4">
@@ -1041,7 +1040,7 @@ function Step1ClientSelector({
               >
                 Cancel
               </Button>
-              <Button 
+              <Button
                 type="submit"
                 disabled={createClientMutation.isPending}
                 data-testid="button-save-new-client"
@@ -1056,9 +1055,9 @@ function Step1ClientSelector({
   );
 }
 
-function Step2PaymentStructure({ 
+function Step2PaymentStructure({
   form
-}: { 
+}: {
   form: ReturnType<typeof useForm<QuoteWizardValues>>;
 }) {
   const depositType = form.watch("depositType");
@@ -1086,9 +1085,8 @@ function Step2PaymentStructure({
                     {depositTypes.map((type) => (
                       <label
                         key={type.id}
-                        className={`flex items-start gap-4 p-4 rounded-md border cursor-pointer transition-colors ${
-                          field.value === type.id ? "border-primary bg-primary/5" : "hover:bg-muted/50"
-                        }`}
+                        className={`flex items-start gap-4 p-4 rounded-md border cursor-pointer transition-colors ${field.value === type.id ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+                          }`}
                         data-testid={`radio-deposit-${type.id}`}
                       >
                         <RadioGroupItem value={type.id} className="mt-1" />
@@ -1130,7 +1128,7 @@ function Step2PaymentStructure({
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="depositBalanceStrategy"
@@ -1150,9 +1148,8 @@ function Step2PaymentStructure({
                           className="grid gap-3"
                         >
                           <label
-                            className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-colors ${
-                              field.value === "on_completion" ? "border-primary bg-primary/5" : "hover:bg-muted/50"
-                            }`}
+                            className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-colors ${field.value === "on_completion" ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+                              }`}
                             data-testid="radio-balance-on-completion"
                           >
                             <RadioGroupItem value="on_completion" />
@@ -1162,9 +1159,8 @@ function Step2PaymentStructure({
                             </div>
                           </label>
                           <label
-                            className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-colors ${
-                              field.value === "milestones" ? "border-primary bg-primary/5" : "hover:bg-muted/50"
-                            }`}
+                            className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-colors ${field.value === "milestones" ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+                              }`}
                             data-testid="radio-balance-milestones"
                           >
                             <RadioGroupItem value="milestones" />
@@ -1282,13 +1278,13 @@ function Step2PaymentStructure({
   );
 }
 
-function Step3Milestones({ 
+function Step3Milestones({
   form,
   milestoneFields,
   onMilestoneCountChange,
   onAppend,
   onRemove,
-}: { 
+}: {
   form: ReturnType<typeof useForm<QuoteWizardValues>>;
   milestoneFields: { id: string }[];
   onMilestoneCountChange: (count: number) => void;
@@ -1298,7 +1294,7 @@ function Step3Milestones({
   const milestones = form.watch("milestones");
   const useSinglePrice = form.watch("useSinglePrice");
   const singleTotalPrice = parseFloat(String(form.watch("singleTotalPrice"))) || 0;
-  
+
   const itemizedTotal = milestones.reduce((sum, m) => sum + (parseFloat(String(m.price)) || 0), 0);
   const displayTotal = useSinglePrice ? singleTotalPrice : itemizedTotal;
 
@@ -1406,7 +1402,7 @@ function Step3Milestones({
                 <FormItem>
                   <FormLabel>Description (Rich Text)</FormLabel>
                   <FormControl>
-                    <RichTextEditor 
+                    <RichTextEditor
                       value={field.value || ''}
                       onChange={field.onChange}
                       placeholder="Detailed description of the work included in this milestone..."
@@ -1428,7 +1424,7 @@ function Step3Milestones({
                     <FormControl>
                       <div className="flex items-center gap-2">
                         <span className="text-muted-foreground">$</span>
-                        <Input 
+                        <Input
                           {...field}
                           type="number"
                           min={0}
@@ -1466,7 +1462,7 @@ function Step3Milestones({
                   <FormControl>
                     <div className="flex items-center gap-2">
                       <span className="text-muted-foreground text-lg">$</span>
-                      <Input 
+                      <Input
                         {...field}
                         type="number"
                         min={0}
@@ -1582,7 +1578,7 @@ function Step4CustomSections({
                 <FormItem>
                   <FormLabel>Content (Rich Text)</FormLabel>
                   <FormControl>
-                    <RichTextEditor 
+                    <RichTextEditor
                       value={field.value || ''}
                       onChange={field.onChange}
                       placeholder="Enter section content..."
@@ -1627,8 +1623,8 @@ function Step4CustomSections({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Select Terms of Trade Template</FormLabel>
-                <Select 
-                  onValueChange={handleTermsOfTradeChange} 
+                <Select
+                  onValueChange={handleTermsOfTradeChange}
                   value={field.value || ""}
                 >
                   <FormControl>
@@ -1652,7 +1648,7 @@ function Step4CustomSections({
           {selectedTermsTemplateId && selectedTermsTemplateId !== "none" && (
             <div className="mt-4 p-4 bg-muted/50 rounded-md">
               <div className="text-sm text-muted-foreground mb-2">Preview:</div>
-              <div 
+              <div
                 className="prose prose-sm max-w-none dark:prose-invert"
                 dangerouslySetInnerHTML={{ __html: form.watch("termsOfTradeContent") || "" }}
               />
@@ -1664,11 +1660,11 @@ function Step4CustomSections({
   );
 }
 
-function Step5Review({ 
-  form, 
+function Step5Review({
+  form,
   calculateTotals,
   formatCurrency
-}: { 
+}: {
   form: ReturnType<typeof useForm<QuoteWizardValues>>;
   calculateTotals: () => { subtotal: number; taxAmount: number; total: number; isPriceInclusive: boolean };
   formatCurrency: (value: number) => string;
@@ -1742,7 +1738,7 @@ function Step5Review({
                 )}
               </div>
               {milestone.richDescription && (
-                <div 
+                <div
                   className="text-sm text-muted-foreground prose prose-sm dark:prose-invert max-w-none"
                   dangerouslySetInnerHTML={{ __html: milestone.richDescription }}
                 />
@@ -1762,7 +1758,7 @@ function Step5Review({
             <p className="text-sm text-muted-foreground">Will be included with the quote and can be sent as a separate PDF</p>
           </CardHeader>
           <CardContent>
-            <div 
+            <div
               className="prose prose-sm max-w-none dark:prose-invert"
               dangerouslySetInnerHTML={{ __html: data.termsOfTradeContent }}
             />
@@ -1780,7 +1776,7 @@ function Step5Review({
               <div key={index} className="p-4 border rounded-md">
                 <div className="font-medium mb-2">Section {index + 1}</div>
                 {section.content && (
-                  <div 
+                  <div
                     className="text-sm text-muted-foreground prose prose-sm dark:prose-invert max-w-none"
                     dangerouslySetInnerHTML={{ __html: section.content }}
                   />
@@ -1857,8 +1853,8 @@ function Step5Review({
               <FormItem>
                 <FormLabel>Additional Notes</FormLabel>
                 <FormControl>
-                  <Textarea 
-                    {...field} 
+                  <Textarea
+                    {...field}
                     placeholder="Any additional notes or terms for the client..."
                     className="min-h-[100px]"
                     data-testid="input-notes"

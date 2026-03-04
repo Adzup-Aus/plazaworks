@@ -89,7 +89,11 @@ export function registerQuotesRoutes(app: Express): void {
       if (!quote) {
         return res.status(404).json({ message: "Quote not found" });
       }
-      res.json(quote);
+      if (!quote.convertedToInvoiceId) {
+        await storage.createInvoiceFromAcceptedQuote(req.params.id, requireUserId(req));
+      }
+      const updated = await storage.getQuote(req.params.id);
+      res.json(updated ?? quote);
     } catch (err: any) {
       console.error("Error accepting quote:", err);
       res.status(500).json({ message: "Failed to accept quote" });

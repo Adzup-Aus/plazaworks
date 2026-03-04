@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Send, Check, X, ArrowRight, Edit, FileText, User, Calendar, DollarSign, AlertTriangle, RotateCcw, History } from "lucide-react";
+import { ArrowLeft, Send, Check, X, ArrowRight, Edit, FileText, User, Calendar, DollarSign, AlertTriangle, RotateCcw, History, ExternalLink, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -30,6 +30,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { QuoteWithLineItems, Quote } from "@shared/schema";
+import type { Invoice } from "@shared/schema";
 
 const statusColors: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -55,6 +56,11 @@ export default function QuoteView() {
   const { data: revisionHistory } = useQuery<Quote[]>({
     queryKey: ["/api/quotes", params.id, "revisions"],
     enabled: showRevisionHistory,
+  });
+
+  const { data: convertedInvoice } = useQuery<Invoice>({
+    queryKey: ["/api/invoices", quote?.convertedToInvoiceId],
+    enabled: Boolean(quote?.convertedToInvoiceId),
   });
 
   const sendMutation = useMutation({
@@ -270,6 +276,75 @@ export default function QuoteView() {
           )}
         </div>
       </div>
+
+      {quote.status === "accepted" && quote.convertedToInvoiceId && (
+        <Card className="border-green-200 dark:border-green-900/50 bg-green-50/50 dark:bg-green-950/20">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Invoice created
+            </CardTitle>
+            <CardDescription>
+              {convertedInvoice ? (
+                <>
+                  Invoice {convertedInvoice.invoiceNumber} was created with the same reference number.
+                  {convertedInvoice.stripePaymentLinkUrl ? (
+                    <span className="block mt-2">Send the payment link to the client. After payment, a job will be created automatically.</span>
+                  ) : convertedInvoice.paymentLinkToken ? (
+                    <span className="block mt-2">Share the payment page with the client. After payment, a job will be created automatically.</span>
+                  ) : null}
+                </>
+              ) : (
+                "An invoice was created for this quote."
+              )}
+            </CardDescription>
+          </CardHeader>
+          {convertedInvoice && (
+            <CardContent className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`/invoices/${quote.convertedToInvoiceId}`)}
+              >
+                <FileText className="mr-2 h-4 w-4" />
+                View invoice
+              </Button>
+              {convertedInvoice.stripePaymentLinkUrl && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(convertedInvoice.stripePaymentLinkUrl!);
+                      toast({ title: "Payment link copied" });
+                    }}
+                  >
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copy payment link
+                  </Button>
+                  <Button
+                    size="sm"
+                    asChild
+                  >
+                    <a href={convertedInvoice.stripePaymentLinkUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="mr-2 h-4 w-4" />
+                      Pay with Stripe
+                    </a>
+                  </Button>
+                </>
+              )}
+              {!convertedInvoice.stripePaymentLinkUrl && convertedInvoice.paymentLinkToken && (
+                <Button variant="outline" size="sm" asChild>
+                  <a href={`${typeof window !== "undefined" ? window.location.origin : ""}/pay/${convertedInvoice.paymentLinkToken}`} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Open payment page
+                  </a>
+                </Button>
+              )}
+            </CardContent>
+          )}
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

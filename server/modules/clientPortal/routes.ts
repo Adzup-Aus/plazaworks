@@ -398,45 +398,29 @@ export function registerClientPortalRoutes(app: Express): void {
         });
 
         const settings = await storage.getSettings();
-        if (settings?.autoConvertApprovedQuotes) {
-            try {
-              const invoice = await storage.createInvoiceFromQuote(req.params.id, "system");
-
-              if (invoice) {
+        if (settings?.autoConvertApprovedQuotes && !updated.convertedToInvoiceId) {
+          try {
+            const invoice = await storage.createInvoiceFromAcceptedQuote(req.params.id, "system");
+            if (invoice) {
               await storage.createQuoteWorkflowEvent({
                 quoteId: req.params.id,
                 eventType: "auto_converted_to_invoice",
                 actorType: "system",
                 actorId: "system",
-                notes: `Invoice ${invoice.invoiceNumber} created automatically`,
-              });
-
-                const convertResult = await storage.convertQuoteToJob(req.params.id);
-                if (convertResult) {
-                await storage.createQuoteWorkflowEvent({
-                  quoteId: req.params.id,
-                  eventType: "auto_converted_to_job",
-                  actorType: "system",
-                  actorId: "system",
-                  notes: `Job created automatically`,
-                });
-
-                  await storage.updateInvoice(invoice.id, {
-                    jobId: convertResult.job.id,
-                  });
-                }
-              }
-            } catch (convertError: any) {
-              console.error("Auto-conversion error:", convertError);
-              await storage.createQuoteWorkflowEvent({
-                quoteId: req.params.id,
-                eventType: "auto_convert_failed",
-                actorType: "system",
-                actorId: "system",
-                notes: convertError.message || "Auto-conversion failed",
+                notes: `Invoice ${invoice.invoiceNumber} created (payment link available)`,
               });
             }
+          } catch (convertError: any) {
+            console.error("Auto-create invoice on approve error:", convertError);
+            await storage.createQuoteWorkflowEvent({
+              quoteId: req.params.id,
+              eventType: "auto_convert_failed",
+              actorType: "system",
+              actorId: "system",
+              notes: convertError.message ?? "Auto-create invoice failed",
+            });
           }
+        }
 
         res.json(updated);
       } catch (err: any) {
