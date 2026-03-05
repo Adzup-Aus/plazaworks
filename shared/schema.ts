@@ -627,9 +627,9 @@ export const insertLineItemSchema = createInsertSchema(lineItems).omit({
   id: true,
   createdAt: true,
 }).extend({
-  heading: z.string().optional(),
+  heading: z.string().nullish(),
   description: z.string().min(1, "Description is required"),
-  richDescription: z.string().optional(),
+  richDescription: z.string().nullish(),
   quantity: z.string().optional(),
   unitPrice: z.string(),
   amount: z.string(),

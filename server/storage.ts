@@ -951,9 +951,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateQuote(id: string, quote: Partial<InsertQuote>): Promise<Quote | undefined> {
+    const payload = { ...quote, updatedAt: new Date() };
+    const dateColumns: (keyof InsertQuote)[] = ["validUntil"];
+    for (const key of dateColumns) {
+      if ((payload as Record<string, unknown>)[key] === "") {
+        (payload as Record<string, unknown>)[key] = null;
+      }
+    }
     const [updated] = await db
       .update(quotes)
-      .set({ ...quote, updatedAt: new Date() })
+      .set(payload)
       .where(eq(quotes.id, id))
       .returning();
     return updated;
@@ -999,8 +1006,8 @@ export class DatabaseStorage implements IStorage {
       invoice = await this.getInvoice(quote.convertedToInvoiceId);
       if (!invoice) return undefined;
       const settings = await this.getSettings();
-      const jobPrefix = settings?.jobNumberPrefix ?? "J-";
-      const padLength = 4;
+      const jobPrefix = settings?.jobNumberPrefix ?? "";
+      const padLength = 6;
       const ref = quote.referenceNumber ?? 0;
       const jobNumber = `${jobPrefix}${String(ref).padStart(padLength, "0")}`;
       const [createdJob] = await db.insert(jobs).values({
@@ -1180,13 +1187,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async generateQuoteNumber(): Promise<string> {
-    const year = new Date().getFullYear();
-    const result = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(quotes)
-      .where(sql`EXTRACT(YEAR FROM ${quotes.createdAt}) = ${year}`);
-    const count = (result[0]?.count || 0) + 1;
-    return `${year}-${String(count).padStart(4, "0")}`;
+    const result = await db.select({ count: sql<number>`count(*)` }).from(quotes);
+    const count = (result[0]?.count ?? 0) + 1;
+    return String(count).padStart(6, "0");
   }
 
   // Invoice operations
@@ -1328,6 +1331,7 @@ export class DatabaseStorage implements IStorage {
     const reservation = await reserveNextNumber();
     await db.update(quotes).set({ referenceNumber: reservation.referenceNumber, updatedAt: new Date() }).where(eq(quotes.id, quoteId));
 
+    const invoiceNumber = await this.generateInvoiceNumber();
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 14);
     const paymentLinkToken = `pay_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
@@ -1337,7 +1341,7 @@ export class DatabaseStorage implements IStorage {
     const depositAmount = depositSchedule?.calculatedAmount || quoteData.total;
 
     const [invoice] = await db.insert(invoices).values({
-      invoiceNumber: reservation.invoiceNumber,
+      invoiceNumber,
       referenceNumber: reservation.referenceNumber,
       quoteId,
       clientId: quoteData.clientId,
@@ -1417,8 +1421,8 @@ export class DatabaseStorage implements IStorage {
     if (!quote || quote.convertedToJobId) return undefined;
 
     const settings = await this.getSettings();
-    const jobPrefix = settings?.jobNumberPrefix ?? "J-";
-    const padLength = 4;
+    const jobPrefix = settings?.jobNumberPrefix ?? "";
+    const padLength = 6;
     const ref = quote.referenceNumber ?? 0;
     const jobNumber = `${jobPrefix}${String(ref).padStart(padLength, "0")}`;
 
@@ -1468,13 +1472,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async generateInvoiceNumber(): Promise<string> {
-    const year = new Date().getFullYear();
-    const result = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(invoices)
-      .where(sql`EXTRACT(YEAR FROM ${invoices.createdAt}) = ${year}`);
-    const count = (result[0]?.count || 0) + 1;
-    return `INV${year}-${String(count).padStart(4, "0")}`;
+    const result = await db.select({ count: sql<number>`count(*)` }).from(invoices);
+    const count = (result[0]?.count ?? 0) + 1;
+    return String(count).padStart(6, "0");
   }
 
   // Line item operations

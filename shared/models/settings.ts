@@ -34,8 +34,8 @@ export const appSettings = pgTable("app_settings", {
 
   // Numbering Prefixes
   quoteNumberPrefix: varchar("quote_number_prefix", { length: 10 }).default("Q-"),
-  invoiceNumberPrefix: varchar("invoice_number_prefix", { length: 10 }).default("INV-"),
-  jobNumberPrefix: varchar("job_number_prefix", { length: 10 }).default("J-"),
+  invoiceNumberPrefix: varchar("invoice_number_prefix", { length: 10 }).default(""),
+  jobNumberPrefix: varchar("job_number_prefix", { length: 10 }).default(""),
 
   // Default Terms
   defaultQuoteTerms: text("default_quote_terms"),
@@ -56,7 +56,7 @@ export const appSettings = pgTable("app_settings", {
 export const appCounters = pgTable("app_counters", {
   counterKey: varchar("counter_key", { length: 64 }).primaryKey(),
   nextValue: integer("next_value").notNull().default(2),
-  padLength: integer("pad_length").notNull().default(4),
+  padLength: integer("pad_length").notNull().default(6),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

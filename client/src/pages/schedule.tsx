@@ -140,6 +140,40 @@ function formatHour24(h: number): string {
   return String(h).padStart(2, "0");
 }
 
+// Week view: normal calendar — time rows (6am–8pm), 7 day columns
+const WEEK_VIEW_START_HOUR = 6;
+const WEEK_VIEW_END_HOUR = 20;
+const WEEK_VIEW_HOURS = WEEK_VIEW_END_HOUR - WEEK_VIEW_START_HOUR;
+const WEEK_VIEW_ROW_HEIGHT_PX = 52;
+
+function timeStringToMinutes(timeStr: string | null): number {
+  if (!timeStr) return 0;
+  const [h, m] = timeStr.split(":").map(Number);
+  return (isNaN(h) ? 0 : Math.max(0, Math.min(23, h))) * 60 + (isNaN(m) ? 0 : Math.max(0, Math.min(59, m)));
+}
+
+function timeStringToHour(timeStr: string | null): number {
+  if (!timeStr) return 0;
+  const [h] = timeStr.split(":").map(Number);
+  return isNaN(h) ? 0 : Math.max(0, Math.min(23, h));
+}
+
+function weekViewTimeToTopPercent(timeStr: string | null): number {
+  const mins = timeStringToMinutes(timeStr);
+  const startMins = WEEK_VIEW_START_HOUR * 60;
+  const rangeMins = WEEK_VIEW_HOURS * 60;
+  return Math.max(0, Math.min(100, ((mins - startMins) / rangeMins) * 100));
+}
+
+function weekViewDurationPercent(startTime: string | null, endTime: string | null): number {
+  const startMins = timeStringToMinutes(startTime);
+  const endMins = timeStringToMinutes(endTime) || startMins + 60;
+  const durationMins = Math.max(0, endMins - startMins);
+  if (durationMins === 0 && !startTime && !endTime) return 50;
+  const rangeMins = WEEK_VIEW_HOURS * 60;
+  return Math.min(100, (durationMins / rangeMins) * 100);
+}
+
 function getWeekStart(date: Date): Date {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -678,494 +712,181 @@ export default function Schedule() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex-1 flex flex-col min-w-0 overflow-auto space-y-6 p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Schedule</h1>
-          <p className="text-muted-foreground">
-            {canManageSchedule ? "View and manage job schedules" : "View your schedule"}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {(viewMode === "day" || viewMode === "week") && (
-            <Popover open={staffFilterOpen} onOpenChange={setStaffFilterOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={staffFilterOpen}
-                  className="justify-between font-normal min-w-[200px] max-w-[300px]"
-                >
-                  {selectedStaffFilter.length === 0 ? (
-                    "Filter by staff..."
-                  ) : selectedStaffFilter.length === 1 ? (
-                    (() => {
-                      const s = staffList.find((x) => x.id === selectedStaffFilter[0]);
-                      return s ? (s.userId || s.id.slice(0, 8)) : "Filter by staff...";
-                    })()
-                  ) : (
-                    `${selectedStaffFilter.length} staff selected`
-                  )}
-                  <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[280px] p-0" align="end">
-                <Command>
-                  <CommandInput placeholder="Search staff..." />
-                  <CommandList>
-                    <CommandEmpty>No staff found.</CommandEmpty>
-                    <CommandGroup>
-                      <CommandItem
-                        value="all"
-                        onSelect={() => {
-                          setSelectedStaffFilter([]);
-                        }}
-                      >
-                        <div className="flex items-center gap-2 flex-1">
-                          <div className="h-4 w-4 flex items-center justify-center">
-                            {selectedStaffFilter.length === 0 && <Check className="h-4 w-4" />}
-                          </div>
-                          <span className="text-muted-foreground">All staff</span>
-                        </div>
-                      </CommandItem>
-                      {staffList.map((staff) => {
-                        const isSelected = selectedStaffFilter.includes(staff.id);
-                        return (
-                          <CommandItem
-                            key={staff.id}
-                            value={staff.userId ?? staff.id}
-                            onSelect={() => {
-                              setSelectedStaffFilter((prev) => {
-                                if (isSelected) {
-                                  return prev.filter((id) => id !== staff.id);
-                                }
-                                return [...prev, staff.id];
-                              });
-                            }}
-                          >
-                            <div className="flex items-center gap-2 flex-1">
-                              <div className="h-4 w-4 flex items-center justify-center">
-                                {isSelected && <Check className="h-4 w-4" />}
-                              </div>
-                              <span className="truncate">{staff.userId || staff.id.slice(0, 8)}</span>
-                            </div>
-                          </CommandItem>
-                        );
-                      })}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-          )}
-          <Button
-            variant={viewMode === "day" ? "default" : "outline"}
-            size="sm"
-            onClick={() => {
-              setSelectedDate(currentDate);
-              setViewMode("day");
-            }}
-          >
-            Day
-          </Button>
-          <Button
-            variant={viewMode === "week" ? "default" : "outline"}
-            size="sm"
-            onClick={() => {
-              setCurrentDate(selectedDate);
-              setViewMode("week");
-            }}
-          >
-            Week
-          </Button>
-          &nbsp;
-          <Button asChild variant="outline" data-testid="button-new-job">
-            <Link href="/jobs/new">
-              <Plus className="mr-2 h-4 w-4" />
-              New Job
-            </Link>
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-4">
-        {viewMode === "day" ? (
-          <Card className="lg:col-span-3 overflow-visible">
-            <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
-              <div className="flex items-center gap-4">
-                <Button variant="outline" size="icon" onClick={() => navigateDay(-1)}>
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <div className="flex items-center gap-2">
-                  <CalendarIcon className="h-5 w-5 text-muted-foreground" />
-                  <h2 className="text-xl font-semibold">
-                    {selectedDate.toLocaleDateString("en-US", {
-                      weekday: "long",
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </h2>
-                </div>
-                <Button variant="outline" size="icon" onClick={() => navigateDay(1)}>
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-              <Button variant="outline" onClick={goToToday}>
-                Today
-              </Button>
-            </CardHeader>
-            <CardContent className="overflow-x-auto">
-              {isLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-8 w-full" />
-                  {[...Array(5)].map((_, i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : (
-                <div className="min-w-[2800px] overflow-visible">
-                  <div
-                    className="grid gap-0 border rounded-md overflow-visible"
-                    style={{ gridTemplateColumns: "180px repeat(24, minmax(112px, 1fr))" }}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Schedule</h1>
+            <p className="text-muted-foreground">
+              {canManageSchedule ? "View and manage job schedules" : "View your schedule"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {(viewMode === "day" || viewMode === "week") && (
+              <Popover open={staffFilterOpen} onOpenChange={setStaffFilterOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={staffFilterOpen}
+                    className="justify-between font-normal min-w-[200px] max-w-[300px]"
                   >
-                    <div className="border-b border-r bg-muted/50 p-2 text-xs font-medium sticky left-0 z-10" />
-                    {HOURS.map((h) => (
-                      <div
-                        key={h}
-                        className="border-b border-r p-1 text-center text-xs text-muted-foreground"
-                        style={{ minWidth: 112 }}
-                      >
-                        {formatHour24(h)}
-                      </div>
-                    ))}
-                    {filteredStaffList.map((staff) => (
-                      <React.Fragment key={staff.id}>
-                        <div
-                          className="border-b border-r bg-muted/50 p-2 text-sm font-medium sticky left-0 z-10 break-words whitespace-normal"
-                          title={staff.userId}
+                    {selectedStaffFilter.length === 0 ? (
+                      "Filter by staff..."
+                    ) : selectedStaffFilter.length === 1 ? (
+                      (() => {
+                        const s = staffList.find((x) => x.id === selectedStaffFilter[0]);
+                        return s ? (s.userId || s.id.slice(0, 8)) : "Filter by staff...";
+                      })()
+                    ) : (
+                      `${selectedStaffFilter.length} staff selected`
+                    )}
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[280px] p-0" align="end">
+                  <Command>
+                    <CommandInput placeholder="Search staff..." />
+                    <CommandList>
+                      <CommandEmpty>No staff found.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem
+                          value="all"
+                          onSelect={() => {
+                            setSelectedStaffFilter([]);
+                          }}
                         >
-                          {staff.userId?.split("@")[0] || staff.id.slice(0, 8)}
-                        </div>
-                        {HOURS.map((hour) => {
-                          const cellStartSlot = hour * SLOTS_PER_HOUR;
-                          const cellEndSlot = cellStartSlot + SLOTS_PER_HOUR;
-                          const hasOwnSelection =
-                            !!dragSelection &&
-                            dragSelection.staffId === staff.id &&
-                            dragSelection.scheduledDate === selectedDateStr;
-                          const dragStart = hasOwnSelection
-                            ? Math.min(dragSelection!.startSlot, dragSelection!.endSlot)
-                            : 0;
-                          const dragEnd = hasOwnSelection
-                            ? Math.max(dragSelection!.startSlot, dragSelection!.endSlot)
-                            : -1;
-                          const overlapStart = hasOwnSelection
-                            ? Math.max(dragStart, cellStartSlot)
-                            : cellStartSlot;
-                          const overlapEnd = hasOwnSelection
-                            ? Math.min(dragEnd, cellEndSlot - 1)
-                            : -1;
-                          const hasSelectionInCell = overlapEnd >= overlapStart;
-                          const selectionLeftPct = hasSelectionInCell
-                            ? ((overlapStart - cellStartSlot) / SLOTS_PER_HOUR) * 100
-                            : 0;
-                          const selectionWidthPct = hasSelectionInCell
-                            ? ((overlapEnd - overlapStart + 1) / SLOTS_PER_HOUR) * 100
-                            : 0;
-                          const isStartSlotInCell =
-                            hasOwnSelection &&
-                            dragStart >= cellStartSlot &&
-                            dragStart < cellEndSlot;
-                          const startMarkerLeftPct = isStartSlotInCell
-                            ? ((dragStart - cellStartSlot) / SLOTS_PER_HOUR) * 100
-                            : 0;
-                          const selectionDurationSlots = hasOwnSelection
-                            ? dragEnd - dragStart + 1
-                            : 0;
-                          const midSlot = hasOwnSelection ? (dragStart + dragEnd) / 2 : 0;
-                          const isDurationCenterInCell =
-                            hasSelectionInCell &&
-                            selectionDurationSlots >= 1 &&
-                            midSlot >= cellStartSlot &&
-                            midSlot < cellEndSlot;
-                          const durationCenterLeftPct = isDurationCenterInCell
-                            ? ((midSlot - cellStartSlot) / SLOTS_PER_HOUR) * 100
-                            : 0;
-                          const durationMinutes = selectionDurationSlots * 10;
-                          const durationHours = Math.floor(durationMinutes / 60);
-                          const durationMins = durationMinutes % 60;
-                          const durationLabel =
-                            durationHours > 0 && durationMins > 0
-                              ? `${durationHours}h ${durationMins}m`
-                              : durationHours > 0
-                              ? `${durationHours}h`
-                              : `${durationMins}m`;
-                          const entry = (scheduleEntries || []).find(
-                            (ev: ScheduleEntry) => {
-                              if (
-                                ev.staffId !== staff.id ||
-                                ev.scheduledDate !== selectedDateStr ||
-                                ev.status === "cancelled"
-                              )
-                                return false;
-                              const es = timeToSlot(ev.startTime);
-                              const ee = ev.endTime
-                                ? timeToSlot(ev.endTime)
-                                : es + SLOTS_PER_HOUR;
-                              return cellEndSlot > es && cellStartSlot <= ee;
-                            }
-                          );
-                          const entryStartSlot = entry ? timeToSlot(entry.startTime) : 0;
-                          const entryEndSlot = entry
-                            ? entry.endTime
-                              ? timeToSlot(entry.endTime)
-                              : entryStartSlot + SLOTS_PER_HOUR
-                            : 0;
-                          const startMatch =
-                            entry != null &&
-                            Math.floor(entryStartSlot / SLOTS_PER_HOUR) === hour;
-                          const durationSlots = startMatch
-                            ? Math.max(1, entryEndSlot - entryStartSlot + 1)
-                            : 0;
-                          const leftPct = startMatch
-                            ? ((entryStartSlot % SLOTS_PER_HOUR) / SLOTS_PER_HOUR) * 100
-                            : 0;
-                          const widthPct = startMatch
-                            ? (durationSlots / SLOTS_PER_HOUR) * 100
-                            : 0;
-                          return (
-                            <div
-                              key={`${staff.id}-${hour}`}
-                              className={`border-b border-r min-h-[55px] relative overflow-visible ${
-                                startMatch ? "p-0" : ""
-                              }`}
-                              onPointerDown={(e) =>
-                                handlePointerDown(staff.id, selectedDateStr, hour, e)
-                              }
-                              onPointerMove={(e) =>
-                                handlePointerMove(staff.id, selectedDateStr, hour, e)
-                              }
-                              onPointerUp={handlePointerUp}
-                            >
-                              {hasSelectionInCell && (
-                                <>
-                                  <div
-                                    className="absolute inset-y-0 bg-primary/20 ring-1 ring-primary pointer-events-none rounded-sm z-[1]"
-                                    style={{
-                                      left: `${selectionLeftPct}%`,
-                                      width: `${selectionWidthPct}%`,
-                                    }}
-                                  />
-                                  {isDurationCenterInCell && (
-                                    <div
-                                      className="absolute bottom-1 -translate-x-1/2 z-[2] pointer-events-none px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary text-primary-foreground whitespace-nowrap"
-                                      style={{ left: `${durationCenterLeftPct}%` }}
-                                    >
-                                      {durationLabel}
-                                    </div>
-                                  )}
-                                </>
-                              )}
-                              {isStartSlotInCell && (
-                                <div
-                                  className="absolute inset-y-0 z-[2] pointer-events-none"
-                                  style={{ left: `${startMarkerLeftPct}%` }}
-                                >
-                                  <div className="absolute top-0.5 left-1 px-1 py-0.5 rounded text-[10px] font-medium bg-primary text-primary-foreground whitespace-nowrap shadow-sm border border-primary-foreground/20">
-                                    {slotToTime(dragStart)}
-                                  </div>
-                                  <div
-                                    className="absolute inset-y-0 w-0.5 bg-primary left-0"
-                                    title={`Start ${slotToTime(dragStart)}`}
-                                  />
-                                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-primary border-2 border-background shadow-sm" />
-                                </div>
-                              )}
-                              {entryDrag?.entry?.staffId === staff.id &&
-                                entryDrag.entry.scheduledDate === selectedDateStr &&
-                                dropTargetSlot != null &&
-                                Math.floor(dropTargetSlot / SLOTS_PER_HOUR) === hour && (
-                                  <div
-                                    className="absolute inset-y-0 z-[5] rounded px-1 py-0.5 text-xs text-white flex flex-col justify-center pointer-events-none border-2 border-dashed border-primary opacity-95"
-                                    style={{
-                                      left: `${
-                                        ((dropTargetSlot % SLOTS_PER_HOUR) /
-                                          SLOTS_PER_HOUR) *
-                                        100
-                                      }%`,
-                                      width: `${
-                                        (entryDrag.durationSlots / SLOTS_PER_HOUR) * 100
-                                      }%`,
-                                      minWidth: 0,
-                                      backgroundColor:
-                                        entryDrag?.entry?.activityId &&
-                                        getActivityColor(entryDrag.entry)
-                                          ? getActivityColor(entryDrag.entry)!
-                                          : "hsl(var(--primary))",
-                                    }}
-                                  >
-                                    <span className="text-[10px] font-medium opacity-90 whitespace-nowrap">
-                                      {slotToTime(dropTargetSlot)}
-                                    </span>
-                                    <span className="truncate">
-                                      {entryDrag?.entry ? getEntryLabel(entryDrag.entry) : ""}
-                                    </span>
-                                  </div>
-                                )}
-                              {startMatch && entry && (
-                                <div
-                                  role={canManageSchedule ? "button" : undefined}
-                                  tabIndex={canManageSchedule ? 0 : undefined}
-                                  className={`group absolute inset-y-0 z-10 rounded px-1 py-0.5 text-xs text-white truncate flex items-center hover:opacity-95 ${
-                                    canManageSchedule
-                                      ? "cursor-grab active:cursor-grabbing"
-                                      : "cursor-default"
-                                  } ${
-                                    entry.activityId
-                                      ? ""
-                                      : getStatusColor(entry.status || "scheduled")
-                                  } ${
-                                    entryDrag?.entry?.id === entry.id ? "opacity-20" : ""
-                                  }`}
-                                  style={{
-                                    left: `${leftPct}%`,
-                                    width: `${widthPct}%`,
-                                    minWidth: 0,
-                                    ...(entry.activityId && getActivityColor(entry)
-                                      ? { backgroundColor: getActivityColor(entry)! }
-                                      : {}),
-                                  }}
-                                  title={getEntryLabel(entry)}
-                                  onPointerDown={(e) =>
-                                    handleEntryBlockPointerDown(entry, durationSlots, e)
-                                  }
-                                >
-                                  <span className="truncate flex-1 min-w-0">
-                                    {getEntryLabel(entry)}
-                                  </span>
-                                  {canManageSchedule && (
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 hover:bg-white/20 text-white rounded p-0"
-                                      onPointerDown={(e) => e.stopPropagation()}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        e.preventDefault();
-                                        deleteScheduleMutation.mutate(entry.id);
-                                      }}
-                                      aria-label="Delete schedule entry"
-                                    >
-                                      <X className="h-3 w-3" />
-                                    </Button>
-                                  )}
-                                </div>
-                              )}
+                          <div className="flex items-center gap-2 flex-1">
+                            <div className="h-4 w-4 flex items-center justify-center">
+                              {selectedStaffFilter.length === 0 && <Check className="h-4 w-4" />}
                             </div>
+                            <span className="text-muted-foreground">All staff</span>
+                          </div>
+                        </CommandItem>
+                        {staffList.map((staff) => {
+                          const isSelected = selectedStaffFilter.includes(staff.id);
+                          return (
+                            <CommandItem
+                              key={staff.id}
+                              value={staff.userId ?? staff.id}
+                              onSelect={() => {
+                                setSelectedStaffFilter((prev) => {
+                                  if (isSelected) {
+                                    return prev.filter((id) => id !== staff.id);
+                                  }
+                                  return [...prev, staff.id];
+                                });
+                              }}
+                            >
+                              <div className="flex items-center gap-2 flex-1">
+                                <div className="h-4 w-4 flex items-center justify-center">
+                                  {isSelected && <Check className="h-4 w-4" />}
+                                </div>
+                                <span className="truncate">{staff.userId || staff.id.slice(0, 8)}</span>
+                              </div>
+                            </CommandItem>
                           );
                         })}
-                      </React.Fragment>
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            )}
+            <Button
+              variant={viewMode === "day" ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setSelectedDate(currentDate);
+                setViewMode("day");
+              }}
+            >
+              Day
+            </Button>
+            <Button
+              variant={viewMode === "week" ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setCurrentDate(selectedDate);
+                setViewMode("week");
+              }}
+            >
+              Week
+            </Button>
+            &nbsp;
+            <Button asChild variant="outline" data-testid="button-new-job">
+              <Link href="/jobs/new">
+                <Plus className="mr-2 h-4 w-4" />
+                New Job
+              </Link>
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-4">
+          {viewMode === "day" ? (
+            <Card className="lg:col-span-3 overflow-visible">
+              <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
+                <div className="flex items-center gap-4">
+                  <Button variant="outline" size="icon" onClick={() => navigateDay(-1)}>
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <div className="flex items-center gap-2">
+                    <CalendarIcon className="h-5 w-5 text-muted-foreground" />
+                    <h2 className="text-xl font-semibold">
+                      {selectedDate.toLocaleDateString("en-US", {
+                        weekday: "long",
+                        month: "long",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </h2>
+                  </div>
+                  <Button variant="outline" size="icon" onClick={() => navigateDay(1)}>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Button variant="outline" onClick={goToToday}>
+                  Today
+                </Button>
+              </CardHeader>
+              <CardContent className="overflow-x-auto">
+                {isLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-8 w-full" />
+                    {[...Array(5)].map((_, i) => (
+                      <Skeleton key={i} className="h-12 w-full" />
                     ))}
                   </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="lg:col-span-3 overflow-visible">
-            <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
-              <div className="flex items-center gap-4">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => navigateWeek(-1)}
-                  data-testid="button-prev-month"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <div className="flex items-center gap-2">
-                  <CalendarIcon className="h-5 w-5 text-muted-foreground" />
-                  <h2 className="text-xl font-semibold">
-                    {weekStart.toLocaleDateString("en-US", {
-                      weekday: "short",
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </h2>
-                </div>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => navigateWeek(1)}
-                  data-testid="button-next-month"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-              <Button variant="outline" onClick={goToToday} data-testid="button-today">
-                Today
-              </Button>
-            </CardHeader>
-            <CardContent className="overflow-x-auto">
-              {isLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-8 w-full" />
-                  {[...Array(5)].map((_, i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : (
-                <div className="min-w-[2800px] overflow-visible">
-                  <div
-                    className="grid gap-0 border rounded-md overflow-visible"
-                    style={{
-                      gridTemplateColumns: `180px repeat(${7 * 24}, minmax(112px, 1fr))`,
-                    }}
-                  >
-                    <div className="border-b border-r bg-muted/50 p-2 text-xs font-medium sticky left-0 z-10" />
-                    {weekDates.map((day, index) => (
-                      <div
-                        key={day.iso}
-                        className="border-b border-r bg-muted/50 p-2 text-xs font-medium text-center"
-                        style={{ gridColumn: "span 24" }}
-                      >
-                        {day.date.toLocaleDateString("en-US", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </div>
-                    ))}
-                    <div className="border-b border-r bg-muted/50 p-1 text-xs font-medium sticky left-0 z-10" />
-                    {weekDates.map((day) =>
-                      HOURS.map((h) => (
+                ) : (
+                  <div className="min-w-[2800px] overflow-visible">
+                    <div
+                      className="grid gap-0 border rounded-md overflow-visible"
+                      style={{ gridTemplateColumns: "180px repeat(24, minmax(112px, 1fr))" }}
+                    >
+                      <div className="border-b border-r bg-muted/50 p-2 text-xs font-medium sticky left-0 z-10" />
+                      {HOURS.map((h) => (
                         <div
-                          key={`${day.iso}-${h}`}
+                          key={h}
                           className="border-b border-r p-1 text-center text-xs text-muted-foreground"
                           style={{ minWidth: 112 }}
                         >
                           {formatHour24(h)}
                         </div>
-                      ))
-                    )}
-                    {filteredStaffList.map((staff) => (
-                      <React.Fragment key={staff.id}>
-                        <div
-                          className="border-b border-r bg-muted/50 p-2 text-sm font-medium sticky left-0 z-10 break-words whitespace-normal"
-                          title={staff.userId}
-                        >
-                          {staff.userId?.split("@")[0] || staff.id.slice(0, 8)}
-                        </div>
-                        {weekDates.map((day) =>
-                          HOURS.map((hour) => {
+                      ))}
+                      {filteredStaffList.map((staff) => (
+                        <React.Fragment key={staff.id}>
+                          <div
+                            className="border-b border-r bg-muted/50 p-2 text-sm font-medium sticky left-0 z-10 break-words whitespace-normal"
+                            title={staff.userId}
+                          >
+                            {staff.userId?.split("@")[0] || staff.id.slice(0, 8)}
+                          </div>
+                          {HOURS.map((hour) => {
                             const cellStartSlot = hour * SLOTS_PER_HOUR;
                             const cellEndSlot = cellStartSlot + SLOTS_PER_HOUR;
                             const hasOwnSelection =
                               !!dragSelection &&
                               dragSelection.staffId === staff.id &&
-                              dragSelection.scheduledDate === day.iso;
+                              dragSelection.scheduledDate === selectedDateStr;
                             const dragStart = hasOwnSelection
                               ? Math.min(dragSelection!.startSlot, dragSelection!.endSlot)
                               : 0;
@@ -1211,13 +932,13 @@ export default function Schedule() {
                               durationHours > 0 && durationMins > 0
                                 ? `${durationHours}h ${durationMins}m`
                                 : durationHours > 0
-                                ? `${durationHours}h`
-                                : `${durationMins}m`;
-                            const entry = (weekScheduleEntries || []).find(
+                                  ? `${durationHours}h`
+                                  : `${durationMins}m`;
+                            const entry = (scheduleEntries || []).find(
                               (ev: ScheduleEntry) => {
                                 if (
                                   ev.staffId !== staff.id ||
-                                  ev.scheduledDate !== day.iso ||
+                                  ev.scheduledDate !== selectedDateStr ||
                                   ev.status === "cancelled"
                                 )
                                   return false;
@@ -1248,15 +969,14 @@ export default function Schedule() {
                               : 0;
                             return (
                               <div
-                                key={`${staff.id}-${day.iso}-${hour}`}
-                                className={`border-b border-r min-h-[55px] relative overflow-visible ${
-                                  startMatch ? "p-0" : ""
-                                }`}
+                                key={`${staff.id}-${hour}`}
+                                className={`border-b border-r min-h-[55px] relative overflow-visible ${startMatch ? "p-0" : ""
+                                  }`}
                                 onPointerDown={(e) =>
-                                  handlePointerDown(staff.id, day.iso, hour, e)
+                                  handlePointerDown(staff.id, selectedDateStr, hour, e)
                                 }
                                 onPointerMove={(e) =>
-                                  handlePointerMove(staff.id, day.iso, hour, e)
+                                  handlePointerMove(staff.id, selectedDateStr, hour, e)
                                 }
                                 onPointerUp={handlePointerUp}
                               >
@@ -1295,24 +1015,22 @@ export default function Schedule() {
                                   </div>
                                 )}
                                 {entryDrag?.entry?.staffId === staff.id &&
-                                  entryDrag.entry.scheduledDate === day.iso &&
+                                  entryDrag.entry.scheduledDate === selectedDateStr &&
                                   dropTargetSlot != null &&
                                   Math.floor(dropTargetSlot / SLOTS_PER_HOUR) === hour && (
                                     <div
                                       className="absolute inset-y-0 z-[5] rounded px-1 py-0.5 text-xs text-white flex flex-col justify-center pointer-events-none border-2 border-dashed border-primary opacity-95"
                                       style={{
-                                        left: `${
-                                          ((dropTargetSlot % SLOTS_PER_HOUR) /
-                                            SLOTS_PER_HOUR) *
+                                        left: `${((dropTargetSlot % SLOTS_PER_HOUR) /
+                                          SLOTS_PER_HOUR) *
                                           100
-                                        }%`,
-                                        width: `${
-                                          (entryDrag.durationSlots / SLOTS_PER_HOUR) * 100
-                                        }%`,
+                                          }%`,
+                                        width: `${(entryDrag.durationSlots / SLOTS_PER_HOUR) * 100
+                                          }%`,
                                         minWidth: 0,
                                         backgroundColor:
                                           entryDrag?.entry?.activityId &&
-                                          getActivityColor(entryDrag.entry)
+                                            getActivityColor(entryDrag.entry)
                                             ? getActivityColor(entryDrag.entry)!
                                             : "hsl(var(--primary))",
                                       }}
@@ -1321,9 +1039,7 @@ export default function Schedule() {
                                         {slotToTime(dropTargetSlot)}
                                       </span>
                                       <span className="truncate">
-                                        {entryDrag?.entry
-                                          ? getEntryLabel(entryDrag.entry)
-                                          : ""}
+                                        {entryDrag?.entry ? getEntryLabel(entryDrag.entry) : ""}
                                       </span>
                                     </div>
                                   )}
@@ -1331,17 +1047,14 @@ export default function Schedule() {
                                   <div
                                     role={canManageSchedule ? "button" : undefined}
                                     tabIndex={canManageSchedule ? 0 : undefined}
-                                    className={`group absolute inset-y-0 z-10 rounded px-1 py-0.5 text-xs text-white truncate flex items-center hover:opacity-95 ${
-                                      canManageSchedule
-                                        ? "cursor-grab active:cursor-grabbing"
-                                        : "cursor-default"
-                                    } ${
-                                      entry.activityId
+                                    className={`group absolute inset-y-0 z-10 rounded px-1 py-0.5 text-xs text-white truncate flex items-center hover:opacity-95 ${canManageSchedule
+                                      ? "cursor-grab active:cursor-grabbing"
+                                      : "cursor-default"
+                                      } ${entry.activityId
                                         ? ""
                                         : getStatusColor(entry.status || "scheduled")
-                                    } ${
-                                      entryDrag?.entry?.id === entry.id ? "opacity-20" : ""
-                                    }`}
+                                      } ${entryDrag?.entry?.id === entry.id ? "opacity-20" : ""
+                                      }`}
                                     style={{
                                       left: `${leftPct}%`,
                                       width: `${widthPct}%`,
@@ -1379,155 +1092,293 @@ export default function Schedule() {
                                 )}
                               </div>
                             );
-                          })
-                        )}
-                      </React.Fragment>
+                          })}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="lg:col-span-3 overflow-hidden rounded-xl border shadow-sm">
+              <CardContent className="p-0 overflow-hidden">
+                {isLoading ? (
+                  <div className="p-6 space-y-3">
+                    <Skeleton className="h-8 w-48 rounded-lg" />
+                    <div className="space-y-2">
+                      {[...Array(5)].map((_, i) => (
+                        <Skeleton key={i} className="h-14 w-full rounded-lg" />
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="overflow-auto max-h-[calc(100vh-12rem)] rounded-b-xl">
+                    <div className="min-w-0 grid border border-border/60 border-t-0 bg-card" style={{ gridTemplateColumns: "140px repeat(7, minmax(0, 1fr))" }}>
+                      <div className="sticky top-0 left-0 z-20 border-b border-r border-border/60 bg-muted/40 shrink-0 w-[140px]" />
+                      {weekDates.map((day) => {
+                        const isToday = day.iso === new Date().toISOString().split("T")[0];
+                        return (
+                          <div
+                            key={day.iso}
+                            className="sticky top-0 z-20 border-b border-r border-border/50 bg-muted/30 px-2 py-3 text-center shrink-0 min-w-0"
+                          >
+                            <div className={`text-[11px] font-medium uppercase tracking-wider ${isToday ? "text-primary" : "text-muted-foreground"}`}>
+                              {day.date.toLocaleDateString("en-US", { weekday: "short" })}
+                            </div>
+                            <div className={`mt-0.5 text-sm font-semibold tabular-nums ${isToday ? "text-primary" : "text-foreground"}`}>
+                              {day.date.getDate()}
+                            </div>
+                            {isToday && <div className="mt-1 h-0.5 w-4 mx-auto rounded-full bg-primary" />}
+                          </div>
+                        );
+                      })}
+                      {filteredStaffList.map((staff, staffIndex) => {
+                        const rowBg = staffIndex % 2 === 0 ? "bg-muted/15" : "bg-background";
+                        return (
+                          <React.Fragment key={staff.id}>
+                            <div
+                              className={`sticky left-0 z-10 border-b border-r border-border/50 px-3 py-2 text-sm font-medium break-words ${rowBg} shrink-0 w-[140px]`}
+                              style={{ minHeight: WEEK_VIEW_ROW_HEIGHT_PX }}
+                              title={staff.userId}
+                            >
+                              {staff.userId?.split("@")[0] || staff.id.slice(0, 8)}
+                            </div>
+                            {weekDates.map((day) => {
+                              const dayEntries = (weekScheduleEntries || []).filter(
+                                (e: ScheduleEntry) =>
+                                  e.staffId === staff.id &&
+                                  e.scheduledDate === day.iso &&
+                                  e.status !== "cancelled"
+                              );
+                              return (
+                                <div
+                                  key={day.iso}
+                                  className={`border-b border-r border-border/40 relative overflow-hidden ${rowBg} ${canManageSchedule ? "cursor-pointer hover:bg-muted/30" : ""}`}
+                                  style={{ minHeight: WEEK_VIEW_ROW_HEIGHT_PX, minWidth: 0 }}
+                                  onClick={(e) => {
+                                    if (!canManageSchedule) return;
+                                    if ((e.target as HTMLElement).closest("[data-schedule-block]")) return;
+                                    setEditingEntry(null);
+                                    setDragSelection({
+                                      staffId: staff.id,
+                                      scheduledDate: day.iso,
+                                      startSlot: 9 * SLOTS_PER_HOUR,
+                                      endSlot: 17 * SLOTS_PER_HOUR,
+                                    });
+                                    setSlotStartTime("09:00");
+                                    setSlotEndTime("17:00");
+                                    setSelectedSlotStaffId(staff.id);
+                                    setRightSheetOpen(true);
+                                  }}
+                                >
+                                  {dayEntries
+                                    .sort((a, b) => timeStringToMinutes(a.startTime) - timeStringToMinutes(b.startTime))
+                                    .map((entry) => {
+                                      const hasTime = entry.startTime != null || entry.endTime != null;
+                                      const top = hasTime ? weekViewTimeToTopPercent(entry.startTime) : 0;
+                                      const height = weekViewDurationPercent(entry.startTime, entry.endTime);
+                                      const minHeightPx = 14;
+                                      const bgColor = entry.activityId && getActivityColor(entry) ? getActivityColor(entry)! : undefined;
+                                      return (
+                                        <div
+                                          key={entry.id}
+                                          data-schedule-block
+                                          role={canManageSchedule ? "button" : undefined}
+                                          tabIndex={canManageSchedule ? 0 : undefined}
+                                          className={`group absolute left-0.5 right-0.5 z-10 rounded-md px-1.5 py-1 text-[11px] text-white truncate flex items-center shadow-sm border border-black/10 hover:shadow ${canManageSchedule ? "cursor-pointer" : "cursor-default"} ${!bgColor ? getStatusColor(entry.status || "scheduled") : ""}`}
+                                          style={{
+                                            top: `${top}%`,
+                                            height: `${Math.max(height, (minHeightPx / WEEK_VIEW_ROW_HEIGHT_PX) * 100)}%`,
+                                            minHeight: `${minHeightPx}px`,
+                                            ...(bgColor ? { backgroundColor: bgColor } : {}),
+                                          }}
+                                          title={`${getEntryLabel(entry)} ${entry.startTime || ""}–${entry.endTime || ""}`}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenEdit(entry, e as unknown as React.MouseEvent);
+                                          }}
+                                        >
+                                          <span className="truncate flex-1 min-w-0 font-medium">{getEntryLabel(entry)}</span>
+                                          {(entry.startTime || entry.endTime) && (
+                                            <span className="text-[10px] opacity-90 shrink-0 ml-0.5">
+                                              {entry.startTime || "?"}–{entry.endTime || "?"}
+                                            </span>
+                                          )}
+                                          {canManageSchedule && (
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 hover:bg-white/20 text-white rounded p-0 ml-0.5"
+                                              onPointerDown={(e) => e.stopPropagation()}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                e.preventDefault();
+                                                deleteScheduleMutation.mutate(entry.id);
+                                              }}
+                                              aria-label="Delete schedule entry"
+                                            >
+                                              <X className="h-3 w-3" />
+                                            </Button>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                </div>
+                              );
+                            })}
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+                    <div className="px-3 py-2 border-t border-border/50 bg-muted/30 text-[10px] text-muted-foreground">
+                      {WEEK_VIEW_START_HOUR}:00 – {WEEK_VIEW_END_HOUR}:00 · Click a cell to add, click a block to edit
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="space-y-6">
+            <Card className="overflow-visible">
+              <CardHeader>
+                <CardTitle className="text-base">Upcoming Jobs</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <div className="space-y-3">
+                    {[...Array(5)].map((_, i) => (
+                      <div key={i} className="flex items-center gap-3">
+                        <Skeleton className="h-10 w-10 rounded-md" />
+                        <div className="flex-1 space-y-1">
+                          <Skeleton className="h-4 w-full" />
+                          <Skeleton className="h-3 w-2/3" />
+                        </div>
+                      </div>
                     ))}
                   </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
+                ) : upcomingJobs.length === 0 ? (
+                  <div className="py-8 text-center">
+                    <Briefcase className="mx-auto h-8 w-8 text-muted-foreground/50" />
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      No upcoming scheduled jobs
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {upcomingJobs.map((entry) => {
+                      const label = entry.job?.clientName ?? entry.activity?.name ?? "—";
+                      const href = entry.jobId ? `/jobs/${entry.jobId}` : undefined;
+                      return (
+                        <div key={entry.id}>
+                          {href ? (
+                            <Link
+                              href={href}
+                              className="flex items-start gap-3 rounded-md p-2 hover-elevate active-elevate-2"
+                            >
+                              <div className="flex h-10 w-10 flex-shrink-0 flex-col items-center justify-center rounded-md bg-primary/10">
+                                <span className="text-xs font-bold text-primary">
+                                  {new Date(entry.scheduledDate).getDate()}
+                                </span>
+                                <span className="text-[10px] uppercase text-primary">
+                                  {new Date(entry.scheduledDate).toLocaleString("default", {
+                                    month: "short",
+                                  })}
+                                </span>
+                              </div>
+                              <div className="flex-1 overflow-hidden">
+                                <p className="truncate text-sm font-medium">{label}</p>
+                                {entry.job && (
+                                  <Badge
+                                    variant="secondary"
+                                    className={`text-xs ${getStatusColor(
+                                      entry.job.status
+                                    ).replace("bg-", "bg-opacity-20 text-")}`}
+                                  >
+                                    {formatStatus(entry.job.status)}
+                                  </Badge>
+                                )}
+                                {entry.activity && (
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-xs bg-violet-500/20 text-violet-700 dark:text-violet-300"
+                                  >
+                                    Activity
+                                  </Badge>
+                                )}
+                              </div>
+                            </Link>
+                          ) : (
+                            <div className="flex items-start gap-3 rounded-md p-2">
+                              <div className="flex h-10 w-10 flex-shrink-0 flex-col items-center justify-center rounded-md bg-primary/10">
+                                <span className="text-xs font-bold text-primary">
+                                  {new Date(entry.scheduledDate).getDate()}
+                                </span>
+                                <span className="text-[10px] uppercase text-primary">
+                                  {new Date(entry.scheduledDate).toLocaleString("default", {
+                                    month: "short",
+                                  })}
+                                </span>
+                              </div>
+                              <div className="flex-1 overflow-hidden">
+                                <p className="truncate text-sm font-medium">{label}</p>
+                                {entry.job && (
+                                  <Badge
+                                    variant="secondary"
+                                    className={`text-xs ${getStatusColor(
+                                      entry.job.status
+                                    ).replace("bg-", "bg-opacity-20 text-")}`}
+                                  >
+                                    {formatStatus(entry.job.status)}
+                                  </Badge>
+                                )}
+                                {entry.activity && (
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-xs bg-violet-500/20 text-violet-700 dark:text-violet-300"
+                                  >
+                                    Activity
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-        <div className="space-y-6">
-          <Card className="overflow-visible">
-            <CardHeader>
-              <CardTitle className="text-base">Upcoming Jobs</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="space-y-3">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <Skeleton className="h-10 w-10 rounded-md" />
-                      <div className="flex-1 space-y-1">
-                        <Skeleton className="h-4 w-full" />
-                        <Skeleton className="h-3 w-2/3" />
-                      </div>
+            <Card className="overflow-visible">
+              <CardHeader>
+                <CardTitle className="text-base">Legend</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {[
+                    { status: "pending", label: "Pending" },
+                    { status: "scheduled", label: "Scheduled" },
+                    { status: "in_progress", label: "In Progress" },
+                    { status: "on_hold", label: "On Hold" },
+                    { status: "completed", label: "Completed" },
+                    { status: "cancelled", label: "Cancelled" },
+                  ].map(({ status, label }) => (
+                    <div key={status} className="flex items-center gap-2">
+                      <div
+                        className={`h-3 w-3 rounded-full ${getStatusColor(status)}`}
+                      />
+                      <span className="text-sm">{label}</span>
                     </div>
                   ))}
                 </div>
-              ) : upcomingJobs.length === 0 ? (
-                <div className="py-8 text-center">
-                  <Briefcase className="mx-auto h-8 w-8 text-muted-foreground/50" />
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    No upcoming scheduled jobs
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {upcomingJobs.map((entry) => {
-                    const label = entry.job?.clientName ?? entry.activity?.name ?? "—";
-                    const href = entry.jobId ? `/jobs/${entry.jobId}` : undefined;
-                    return (
-                      <div key={entry.id}>
-                        {href ? (
-                          <Link
-                            href={href}
-                            className="flex items-start gap-3 rounded-md p-2 hover-elevate active-elevate-2"
-                          >
-                            <div className="flex h-10 w-10 flex-shrink-0 flex-col items-center justify-center rounded-md bg-primary/10">
-                              <span className="text-xs font-bold text-primary">
-                                {new Date(entry.scheduledDate).getDate()}
-                              </span>
-                              <span className="text-[10px] uppercase text-primary">
-                                {new Date(entry.scheduledDate).toLocaleString("default", {
-                                  month: "short",
-                                })}
-                              </span>
-                            </div>
-                            <div className="flex-1 overflow-hidden">
-                              <p className="truncate text-sm font-medium">{label}</p>
-                              {entry.job && (
-                                <Badge
-                                  variant="secondary"
-                                  className={`text-xs ${getStatusColor(
-                                    entry.job.status
-                                  ).replace("bg-", "bg-opacity-20 text-")}`}
-                                >
-                                  {formatStatus(entry.job.status)}
-                                </Badge>
-                              )}
-                              {entry.activity && (
-                                <Badge
-                                  variant="secondary"
-                                  className="text-xs bg-violet-500/20 text-violet-700 dark:text-violet-300"
-                                >
-                                  Activity
-                                </Badge>
-                              )}
-                            </div>
-                          </Link>
-                        ) : (
-                          <div className="flex items-start gap-3 rounded-md p-2">
-                            <div className="flex h-10 w-10 flex-shrink-0 flex-col items-center justify-center rounded-md bg-primary/10">
-                              <span className="text-xs font-bold text-primary">
-                                {new Date(entry.scheduledDate).getDate()}
-                              </span>
-                              <span className="text-[10px] uppercase text-primary">
-                                {new Date(entry.scheduledDate).toLocaleString("default", {
-                                  month: "short",
-                                })}
-                              </span>
-                            </div>
-                            <div className="flex-1 overflow-hidden">
-                              <p className="truncate text-sm font-medium">{label}</p>
-                              {entry.job && (
-                                <Badge
-                                  variant="secondary"
-                                  className={`text-xs ${getStatusColor(
-                                    entry.job.status
-                                  ).replace("bg-", "bg-opacity-20 text-")}`}
-                                >
-                                  {formatStatus(entry.job.status)}
-                                </Badge>
-                              )}
-                              {entry.activity && (
-                                <Badge
-                                  variant="secondary"
-                                  className="text-xs bg-violet-500/20 text-violet-700 dark:text-violet-300"
-                                >
-                                  Activity
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="overflow-visible">
-            <CardHeader>
-              <CardTitle className="text-base">Legend</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {[
-                  { status: "pending", label: "Pending" },
-                  { status: "scheduled", label: "Scheduled" },
-                  { status: "in_progress", label: "In Progress" },
-                  { status: "on_hold", label: "On Hold" },
-                  { status: "completed", label: "Completed" },
-                  { status: "cancelled", label: "Cancelled" },
-                ].map(({ status, label }) => (
-                  <div key={status} className="flex items-center gap-2">
-                    <div
-                      className={`h-3 w-3 rounded-full ${getStatusColor(status)}`}
-                    />
-                    <span className="text-sm">{label}</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </div>
       </div>
 
       {dragSelection && dragCurrentTime != null && dragTooltipPos && (
@@ -1571,9 +1422,9 @@ export default function Schedule() {
                     >
                       {selectedSlotStaffId
                         ? (() => {
-                            const s = staffList.find((x) => x.id === selectedSlotStaffId);
-                            return s ? (s.userId?.split("@")[0] || s.id.slice(0, 8)) : "Select staff...";
-                          })()
+                          const s = staffList.find((x) => x.id === selectedSlotStaffId);
+                          return s ? (s.userId?.split("@")[0] || s.id.slice(0, 8)) : "Select staff...";
+                        })()
                         : "Select staff..."}
                       <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
@@ -1634,9 +1485,9 @@ export default function Schedule() {
                     >
                       {selectedSlotJobId
                         ? (() => {
-                            const j = jobs?.find((x) => x.id === selectedSlotJobId);
-                            return j ? `${j.clientName} – ${j.jobType}` : "Select job...";
-                          })()
+                          const j = jobs?.find((x) => x.id === selectedSlotJobId);
+                          return j ? `${j.clientName} – ${j.jobType}` : "Select job...";
+                        })()
                         : "Select job..."}
                       <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
