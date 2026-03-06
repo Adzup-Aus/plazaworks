@@ -58,31 +58,174 @@ export async function sendEmail(options: EmailOptions) {
   return result;
 }
 
-export async function sendQuoteNotification(
-  clientEmail: string,
-  clientName: string,
-  quoteNumber: string,
-  quoteTotal: string,
-  portalUrl: string
-) {
+export interface QuoteLineItemForEmail {
+  description: string;
+  quantity?: string | number;
+  unitPrice?: string;
+  amount: string;
+}
+
+export interface QuotePaymentScheduleForEmail {
+  name: string;
+  type: string;
+  amount: string;
+  dueWhen?: string; // e.g. "On acceptance", "30 days after acceptance"
+}
+
+export interface SendQuoteNotificationParams {
+  clientEmail: string;
+  clientName: string;
+  quoteNumber: string;
+  subtotal: string;
+  taxRate: string;
+  taxAmount: string;
+  total: string;
+  validUntil?: string;
+  lineItems: QuoteLineItemForEmail[];
+  paymentSchedules?: QuotePaymentScheduleForEmail[];
+  respondUrl: string;
+}
+
+function formatCurrency(value: string): string {
+  const n = parseFloat(value);
+  if (Number.isNaN(n)) return value;
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+export async function sendQuoteNotification(params: SendQuoteNotificationParams) {
+  const {
+    clientEmail,
+    clientName,
+    quoteNumber,
+    subtotal,
+    taxRate,
+    taxAmount,
+    total,
+    validUntil,
+    lineItems,
+    paymentSchedules = [],
+    respondUrl,
+  } = params;
+  const subtotalFmt = formatCurrency(subtotal);
+  const taxAmountFmt = formatCurrency(taxAmount);
+  const totalFmt = formatCurrency(total);
+  const validUntilBlock =
+    validUntil &&
+    `<tr><td style="padding: 6px 0; color: #4b5563; font-size: 14px;">Valid until</td><td style="padding: 6px 0; text-align: right; font-size: 14px;">${escapeHtml(validUntil)}</td></tr>`;
+  const lineItemsTable =
+    lineItems.length > 0
+      ? `
+        <table style="width: 100%; border-collapse: collapse; margin: 16px 0 0; font-size: 14px;">
+          <thead>
+            <tr style="background: #f3f4f6;">
+              <th style="text-align: left; padding: 10px 12px; font-weight: 600; color: #374151;">Description</th>
+              <th style="text-align: right; padding: 10px 12px; font-weight: 600; color: #374151;">Qty</th>
+              <th style="text-align: right; padding: 10px 12px; font-weight: 600; color: #374151;">Unit Price</th>
+              <th style="text-align: right; padding: 10px 12px; font-weight: 600; color: #374151;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${lineItems
+        .map(
+          (item, i) => `
+            <tr style="border-bottom: 1px solid #e5e7eb; background: ${i % 2 === 0 ? "#fff" : "#fafafa"};">
+              <td style="padding: 10px 12px; color: #1f2937;">${escapeHtml(item.description || "—")}</td>
+              <td style="text-align: right; padding: 10px 12px; color: #4b5563;">${escapeHtml(String(item.quantity ?? "—"))}</td>
+              <td style="text-align: right; padding: 10px 12px; color: #4b5563;">${escapeHtml(item.unitPrice ?? "—")}</td>
+              <td style="text-align: right; padding: 10px 12px; font-weight: 500; color: #1f2937;">${escapeHtml(item.amount ?? "—")}</td>
+            </tr>
+            `
+        )
+        .join("")}
+          </tbody>
+        </table>
+      `
+      : "";
+  const summaryTable = `
+    <table style="width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px;">
+      <tr><td style="padding: 6px 0; color: #4b5563;">Subtotal</td><td style="padding: 6px 0; text-align: right;">${escapeHtml(subtotalFmt)}</td></tr>
+      <tr><td style="padding: 6px 0; color: #4b5563;">Tax (${escapeHtml(taxRate)}%)</td><td style="padding: 6px 0; text-align: right;">${escapeHtml(taxAmountFmt)}</td></tr>
+      <tr style="border-top: 2px solid #e5e7eb;"><td style="padding: 10px 0 0; font-weight: 600; color: #1f2937;">Total</td><td style="padding: 10px 0 0; text-align: right; font-weight: 600; font-size: 18px; color: #1f2937;">${escapeHtml(totalFmt)}</td></tr>
+    </table>
+  `;
+  const paymentScheduleTotal = paymentSchedules.reduce((sum, s) => sum + parseFloat(s.amount) || 0, 0);
+  const paymentStructureSection =
+    paymentSchedules.length > 0
+      ? `
+        <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
+          <p style="font-weight: 600; color: #374151; font-size: 14px; margin-bottom: 10px;">Payment structure (due details)</p>
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <thead>
+              <tr style="background: #f3f4f6;">
+                <th style="text-align: left; padding: 8px 12px; font-weight: 600; color: #374151;">Payment</th>
+                <th style="text-align: right; padding: 8px 12px; font-weight: 600; color: #374151;">Amount</th>
+                <th style="text-align: left; padding: 8px 12px; font-weight: 600; color: #374151;">When due</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${paymentSchedules
+                .map(
+                  (s, i) => `
+              <tr style="border-bottom: 1px solid #e5e7eb; background: ${i % 2 === 0 ? "#fff" : "#fafafa"};">
+                <td style="padding: 10px 12px; color: #1f2937;">${escapeHtml(s.name)}</td>
+                <td style="text-align: right; padding: 10px 12px; font-weight: 500; color: #1f2937;">${escapeHtml(formatCurrency(s.amount))}</td>
+                <td style="padding: 10px 12px; color: #4b5563;">${escapeHtml(s.dueWhen ?? "—")}</td>
+              </tr>
+              `
+                )
+                .join("")}
+              <tr style="border-top: 2px solid #e5e7eb; background: #f9fafb;">
+                <td style="padding: 10px 12px; font-weight: 600; color: #374151;">Total</td>
+                <td style="text-align: right; padding: 10px 12px; font-weight: 600; color: #1f2937;">${escapeHtml(formatCurrency(String(paymentScheduleTotal)))}</td>
+                <td style="padding: 10px 12px; color: #6b7280; font-size: 13px;">Equals quote total above</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      `
+      : "";
   return sendEmail({
     to: clientEmail,
-    subject: `New Quote #${quoteNumber} Ready for Review`,
+    subject: `Quote #${quoteNumber} – ${totalFmt} – Ready for your response`,
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Hello ${clientName},</h2>
-        <p>A new quote has been prepared for you.</p>
-        <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-          <p><strong>Quote Number:</strong> ${quoteNumber}</p>
-          <p><strong>Total:</strong> ${quoteTotal}</p>
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1f2937;">
+        <p style="font-size: 16px; margin-bottom: 24px;">Hello ${escapeHtml(clientName)},</p>
+        <p style="font-size: 15px; line-height: 1.5; margin-bottom: 20px;">A new quote has been prepared for you. Review the details below and use the buttons to accept, reject, or request changes.</p>
+
+        <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 20px; margin-bottom: 24px;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 6px 0; font-size: 14px; color: #4b5563;">Quote number</td>
+              <td style="padding: 6px 0; text-align: right; font-weight: 600; font-size: 15px;">${escapeHtml(quoteNumber)}</td>
+            </tr>
+            ${validUntilBlock ?? ""}
+            <tr>
+              <td style="padding: 10px 0 6px; font-size: 14px; color: #4b5563;">Quote total</td>
+              <td style="padding: 10px 0 6px; text-align: right; font-weight: 700; font-size: 22px; color: #111827;">${escapeHtml(totalFmt)}</td>
+            </tr>
+          </table>
+          ${lineItemsTable}
+          ${summaryTable}
+          ${paymentStructureSection}
         </div>
-        <p>You can review and approve this quote through your client portal:</p>
-        <a href="${portalUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 10px 0;">View Quote</a>
-        <p style="color: #666; font-size: 14px; margin-top: 30px;">If you have any questions, please don't hesitate to contact us.</p>
+
+        <p style="font-size: 14px; color: #4b5563; margin-bottom: 16px;">Choose an option below. You will confirm your choice on the next page.</p>
+        <p style="margin: 20px 0;">
+          <a href="${respondUrl}" style="display: inline-block; background: #16a34a; color: white !important; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin: 4px 8px 4px 0; font-weight: 600; font-size: 14px;">Respond</a>
+        </p>
+        <p style="color: #6b7280; font-size: 13px; margin-top: 28px;">If you have any questions, please contact us.</p>
       </div>
     `,
-    text: `Hello ${clientName}, A new quote #${quoteNumber} for ${quoteTotal} is ready for review. View it at: ${portalUrl}`,
+    text: `Hello ${clientName},\n\nQuote #${quoteNumber} – Amount due: ${totalFmt}${validUntil ? ` (valid until ${validUntil})` : ""}.\n\nSubtotal: ${subtotalFmt} | Tax: ${taxAmountFmt} | Total: ${totalFmt}${paymentSchedules.length > 0 ? `\n\nPayment structure:\n${paymentSchedules.map((s) => `- ${s.name}: ${formatCurrency(s.amount)}${s.dueWhen ? ` (${s.dueWhen})` : ""}`).join("\n")}` : ""}\n\nRespond: ${respondUrl}`,
   });
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 export async function sendInvoiceNotification(

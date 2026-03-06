@@ -397,8 +397,7 @@ export function registerClientPortalRoutes(app: Express): void {
           notes: req.body.notes || null,
         });
 
-        const settings = await storage.getSettings();
-        if (settings?.autoConvertApprovedQuotes && !updated.convertedToInvoiceId) {
+        if (!updated.convertedToInvoiceId) {
           try {
             const invoice = await storage.createInvoiceFromAcceptedQuote(req.params.id, "system");
             if (invoice) {
@@ -411,18 +410,19 @@ export function registerClientPortalRoutes(app: Express): void {
               });
             }
           } catch (convertError: any) {
-            console.error("Auto-create invoice on approve error:", convertError);
+            console.error("Create invoice on approve error:", convertError);
             await storage.createQuoteWorkflowEvent({
               quoteId: req.params.id,
               eventType: "auto_convert_failed",
               actorType: "system",
               actorId: "system",
-              notes: convertError.message ?? "Auto-create invoice failed",
+              notes: convertError.message ?? "Create invoice failed",
             });
           }
         }
 
-        res.json(updated);
+        const refreshed = await storage.getQuote(req.params.id);
+        res.json(refreshed ?? updated);
       } catch (err: any) {
         console.error("Error approving quote:", err);
         res.status(500).json({ message: "Failed to approve quote" });

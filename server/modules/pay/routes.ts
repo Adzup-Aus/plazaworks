@@ -35,7 +35,7 @@ export function registerPayRoutes(app: Express): void {
               });
               const updated = await storage.getInvoice(invoice.id);
               if (
-                updated?.status === "paid" &&
+                (updated?.status === "partially_paid" || updated?.status === "paid") &&
                 updated.quoteId &&
                 !updated.jobId
               ) {

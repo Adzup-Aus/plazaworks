@@ -1,7 +1,11 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 import { loginAsAdmin } from "./helpers/auth";
+
+vi.mock("../email", () => ({
+  sendQuoteNotification: vi.fn().mockResolvedValue(undefined),
+}));
 
 const hasDb = !!process.env.DATABASE_URL;
 let app: Express;
@@ -110,6 +114,7 @@ describe.runIf(hasDb)("API quotes", () => {
       .send({
         clientId,
         clientName: "Send Quote Client",
+        clientEmail: "send-quote@example.com",
         clientAddress: "111 Send St",
         jobType: "general",
       });
@@ -123,7 +128,27 @@ describe.runIf(hasDb)("API quotes", () => {
     expect(res.body.sentAt).toBeDefined();
   });
 
-  it("POST /api/quotes/:id/accept with auth returns accepted quote", async () => {
+  it("POST /api/quotes/:id/send returns 400 when quote has no client email", async () => {
+    if (!clientId) return;
+    const createRes = await request(app)
+      .post("/api/quotes")
+      .set("Cookie", authCookie)
+      .send({
+        clientId,
+        clientName: "No Email Client",
+        clientAddress: "999 No Email St",
+        jobType: "general",
+      });
+    const quoteId = createRes.body?.id;
+    if (!quoteId) return;
+    const res = await request(app)
+      .post(`/api/quotes/${quoteId}/send`)
+      .set("Cookie", authCookie);
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/client email/i);
+  });
+
+  it("POST /api/quotes/:id/accept with auth returns accepted quote and creates invoice", async () => {
     if (!clientId) return;
     const createRes = await request(app)
       .post("/api/quotes")
@@ -143,6 +168,7 @@ describe.runIf(hasDb)("API quotes", () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("accepted");
     expect(res.body.acceptedAt).toBeDefined();
+    expect(res.body.convertedToInvoiceId ?? res.body.createdInvoiceId).toBeDefined();
   });
 
   it("DELETE /api/quotes/:id with auth removes quote", async () => {

@@ -114,11 +114,29 @@ export function registerInvoicesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/invoices/:id/send-payment-link", isAuthenticated, requirePermission("edit_invoices"), async (req, res) => {
+  app.post("/api/invoices/:id/payment-link", isAuthenticated, requirePermission("edit_invoices"), async (req, res) => {
     try {
-      const invoice = await storage.getInvoice(req.params.id);
+      const invoice = await storage.ensureStripePaymentLinkForInvoice(req.params.id);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
+      }
+      res.json(invoice);
+    } catch (err: any) {
+      console.error("Error ensuring payment link:", err);
+      res.status(500).json({ message: "Failed to ensure payment link" });
+    }
+  });
+
+  app.post("/api/invoices/:id/send-payment-link", isAuthenticated, requirePermission("edit_invoices"), async (req, res) => {
+    try {
+      let invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+      const amountDue = parseFloat(String(invoice.amountDue ?? "0"));
+      if (amountDue > 0) {
+        const updated = await storage.ensureStripePaymentLinkForInvoice(req.params.id);
+        if (updated) invoice = updated;
       }
       const paymentLinkUrl =
         invoice.stripePaymentLinkUrl ||
@@ -132,12 +150,12 @@ export function registerInvoicesRoutes(app: Express): void {
       if (!clientEmail) {
         return res.status(400).json({ message: "Invoice has no client email; add one before sending the payment link" });
       }
-      const amountDue = parseFloat(invoice.amountDue ?? "0").toFixed(2);
+      const amountDueFormatted = parseFloat(String(invoice.amountDue ?? "0")).toFixed(2);
       await sendPaymentLinkEmail(
         clientEmail,
         invoice.clientName || "Client",
         invoice.invoiceNumber,
-        amountDue,
+        amountDueFormatted,
         paymentLinkUrl
       );
       res.json({ sent: true, message: "Payment link sent to client" });

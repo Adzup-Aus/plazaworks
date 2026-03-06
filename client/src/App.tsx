@@ -43,6 +43,7 @@ import ClientPortalLogin from "@/pages/client-portal-login";
 import ClientPortalDashboard from "@/pages/client-portal-dashboard";
 import InvoicePayment from "@/pages/invoice-payment";
 import PaymentSuccess from "@/pages/payment-success";
+import QuoteRespond from "@/pages/quote-respond";
 import NotFound from "@/pages/not-found";
 import NoAccess from "@/pages/no-access";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -154,6 +155,7 @@ function PublicRouter() {
       <Route path="/portal/:token" component={ClientPortal} />
       <Route path="/pay/success" component={PaymentSuccess} />
       <Route path="/pay/:token" component={InvoicePayment} />
+      <Route path="/quote/respond/:token" component={QuoteRespond} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -170,7 +172,8 @@ function AppContent() {
     pathname.startsWith("/invite/") ||
     pathname.startsWith("/accept-invite") ||
     pathname.startsWith("/portal/") ||
-    pathname.startsWith("/pay/");
+    pathname.startsWith("/pay/") ||
+    pathname.startsWith("/quote/");
 
   // Accept-invite must be reachable whether user is logged in or not (invite link in email).
   if (pathname.startsWith("/accept-invite")) {
@@ -179,6 +182,11 @@ function AppContent() {
 
   // Payment success and pay-by-token must work even when user is logged in (e.g. after Stripe redirect).
   if (pathname.startsWith("/pay/")) {
+    return <PublicRouter />;
+  }
+
+  // Quote respond link (email) must work with or without login so clients can accept/reject.
+  if (pathname.startsWith("/quote/respond/")) {
     return <PublicRouter />;
   }
 

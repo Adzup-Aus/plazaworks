@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Plus, FileText, Send, Check, X, ArrowRight, MoreHorizontal, Trash2 } from "lucide-react";
+import { Plus, FileText, Send, Check, X, ArrowRight, MoreHorizontal, Trash2, History } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,9 +42,63 @@ const statusColors: Record<string, string> = {
   expired: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
 };
 
+function QuoteVersionsList({
+  quoteId,
+  currentQuoteId,
+  isOpen,
+}: {
+  quoteId: string;
+  currentQuoteId: string;
+  isOpen: boolean;
+}) {
+  const { data: revisions, isLoading } = useQuery<Quote[]>({
+    queryKey: ["/api/quotes", quoteId, "revisions"],
+    queryFn: async () => {
+      const res = await fetch(`/api/quotes/${quoteId}/revisions`);
+      if (!res.ok) throw new Error("Failed to load versions");
+      return res.json();
+    },
+    enabled: isOpen,
+  });
+
+  if (!isOpen) return null;
+  if (isLoading) {
+    return (
+      <div className="py-2 text-sm text-muted-foreground">Loading versions…</div>
+    );
+  }
+  if (!revisions?.length) {
+    return (
+      <div className="py-2 text-sm text-muted-foreground">No versions</div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-xs font-medium text-muted-foreground mb-1">Versions</p>
+      {revisions.map((rev) => (
+        <Link
+          key={rev.id}
+          href={`/quotes/${rev.id}`}
+          className="flex items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted"
+        >
+          <span>
+            Version {rev.revisionNumber ?? 1}
+            {rev.id === currentQuoteId && (
+              <span className="ml-1 text-muted-foreground">(current)</span>
+            )}
+          </span>
+          <span className="text-xs text-muted-foreground">{rev.status}</span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 export default function Quotes() {
   const { toast } = useToast();
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [openVersionsQuoteId, setOpenVersionsQuoteId] = useState<string | null>(null);
 
   const { data: quotes, isLoading } = useQuery<Quote[]>({
     queryKey: ["/api/quotes"],
@@ -163,9 +222,16 @@ export default function Quotes() {
             <Card key={quote.id} className="flex flex-col" data-testid={`card-quote-${quote.id}`}>
               <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
                 <div>
-                  <CardTitle className="text-base font-medium">
-                    {quote.quoteNumber}
-                  </CardTitle>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <CardTitle className="text-base font-medium">
+                      {quote.quoteNumber}
+                    </CardTitle>
+                    {(quote.revisionNumber ?? 1) > 1 && (
+                      <Badge variant="secondary" className="text-xs">
+                        Rev {(quote.revisionNumber ?? 1)}
+                      </Badge>
+                    )}
+                  </div>
                   <p className="text-sm text-muted-foreground">{quote.clientName}</p>
                 </div>
                 <Badge className={statusColors[quote.status] || ""}>
@@ -188,12 +254,38 @@ export default function Quotes() {
                     </p>
                   )}
                 </div>
-                <div className="mt-4 flex items-center justify-between gap-2 pt-2">
+                <div className="mt-4 flex flex-wrap items-center gap-2 pt-2">
                   <Link href={`/quotes/${quote.id}`}>
                     <Button variant="outline" size="sm" data-testid={`button-view-quote-${quote.id}`}>
                       View
                     </Button>
                   </Link>
+                  <Popover
+                    open={openVersionsQuoteId === quote.id}
+                    onOpenChange={(open) => setOpenVersionsQuoteId(open ? quote.id : null)}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground"
+                        data-testid={`button-versions-quote-${quote.id}`}
+                      >
+                        <History className="mr-1 h-4 w-4" />
+                        Versions
+                        {(quote.revisionNumber ?? 1) > 1 && (
+                          <span className="ml-1">({quote.revisionNumber})</span>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="w-64">
+                      <QuoteVersionsList
+                        quoteId={quote.id}
+                        currentQuoteId={quote.id}
+                        isOpen={openVersionsQuoteId === quote.id}
+                      />
+                    </PopoverContent>
+                  </Popover>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon" data-testid={`button-quote-actions-${quote.id}`}>

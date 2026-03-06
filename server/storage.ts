@@ -257,6 +257,8 @@ export interface IStorage {
   getQuotes(): Promise<Quote[]>;
   getQuote(id: string): Promise<Quote | undefined>;
   getQuoteWithLineItems(id: string): Promise<QuoteWithLineItems | undefined>;
+  getQuoteByClientResponseToken(token: string): Promise<Quote | undefined>;
+  getQuoteWithLineItemsByClientResponseToken(token: string): Promise<QuoteWithLineItems | undefined>;
   getQuotesByStatus(status: string): Promise<Quote[]>;
   getQuotesByClient(clientId: string): Promise<Quote[]>;
   createQuote(quote: InsertQuote): Promise<Quote>;
@@ -286,6 +288,7 @@ export interface IStorage {
   sendInvoice(id: string): Promise<Invoice | undefined>;
   deleteInvoice(id: string): Promise<boolean>;
   generateInvoiceNumber(): Promise<string>;
+  ensureStripePaymentLinkForInvoice(invoiceId: string): Promise<Invoice | undefined>;
   createJobFromPaidInvoice(invoiceId: string): Promise<{ job: Job; quote: Quote; invoice: Invoice } | undefined>;
 
   // Line item operations
@@ -905,9 +908,13 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
 
-  // Quote operations
+  // Quote operations (list only latest revision of each quote)
   async getQuotes(): Promise<Quote[]> {
-    return db.select().from(quotes).orderBy(desc(quotes.createdAt));
+    return db
+      .select()
+      .from(quotes)
+      .where(eq(quotes.isLatestRevision, true))
+      .orderBy(desc(quotes.createdAt));
   }
 
   async getQuote(id: string): Promise<Quote | undefined> {
@@ -922,8 +929,24 @@ export class DatabaseStorage implements IStorage {
     return { ...quote, lineItems: items };
   }
 
+  async getQuoteByClientResponseToken(token: string): Promise<Quote | undefined> {
+    if (!token?.trim()) return undefined;
+    const [quote] = await db.select().from(quotes).where(eq(quotes.clientResponseToken, token.trim()));
+    return quote;
+  }
+
+  async getQuoteWithLineItemsByClientResponseToken(token: string): Promise<QuoteWithLineItems | undefined> {
+    const quote = await this.getQuoteByClientResponseToken(token);
+    if (!quote) return undefined;
+    return this.getQuoteWithLineItems(quote.id);
+  }
+
   async getQuotesByStatus(status: string): Promise<Quote[]> {
-    return db.select().from(quotes).where(eq(quotes.status, status)).orderBy(desc(quotes.createdAt));
+    return db
+      .select()
+      .from(quotes)
+      .where(and(eq(quotes.status, status), eq(quotes.isLatestRevision, true)))
+      .orderBy(desc(quotes.createdAt));
   }
 
   async getQuotesByClient(clientId: string): Promise<Quote[]> {
@@ -1409,13 +1432,15 @@ export class DatabaseStorage implements IStorage {
     return invoice;
   }
 
-  /** Create job from a paid invoice (quote-linked). Idempotent if quote already converted. */
+  /** Create job from a paid invoice (quote-linked). Idempotent if quote already converted. Runs when invoice has any payment (partially_paid or paid). */
   async createJobFromPaidInvoice(invoiceId: string): Promise<{ job: Job; quote: Quote; invoice: Invoice } | undefined> {
     const invoice = await this.getInvoice(invoiceId);
     if (!invoice || !invoice.quoteId) return undefined;
-    const amountDue = parseFloat(invoice.amountDue ?? "0");
-    const isPaid = invoice.status === "paid" || amountDue <= 0;
-    if (!isPaid) return undefined;
+    const hasAnyPayment =
+      invoice.status === "partially_paid" ||
+      invoice.status === "paid" ||
+      parseFloat(invoice.amountPaid ?? "0") > 0;
+    if (!hasAnyPayment) return undefined;
 
     const quote = await this.getQuote(invoice.quoteId);
     if (!quote || quote.convertedToJobId) return undefined;
@@ -1446,6 +1471,37 @@ export class DatabaseStorage implements IStorage {
     const [updatedInvoice] = await db.select().from(invoices).where(eq(invoices.id, invoiceId));
 
     return { job, quote: updatedQuote!, invoice: updatedInvoice! };
+  }
+
+  /** Ensure invoice has a Stripe Checkout link for the current amountDue; always creates/updates link for remaining due when Stripe is enabled. */
+  async ensureStripePaymentLinkForInvoice(invoiceId: string): Promise<Invoice | undefined> {
+    const invoice = await this.getInvoice(invoiceId);
+    if (!invoice) return undefined;
+    const amountDue = parseFloat(String(invoice.amountDue ?? "0"));
+    if (amountDue <= 0) return invoice;
+    if (!stripeEnabled()) return invoice;
+    try {
+      const amountCents = Math.round(amountDue * 100);
+      const link = await createPaymentLink({
+        invoiceId: invoice.id,
+        amountCents,
+        description: `Invoice ${invoice.invoiceNumber}`,
+      });
+      if (!link) return invoice;
+      const [updated] = await db
+        .update(invoices)
+        .set({
+          stripePaymentLinkId: link.id,
+          stripePaymentLinkUrl: link.url,
+          updatedAt: new Date(),
+        })
+        .where(eq(invoices.id, invoice.id))
+        .returning();
+      return updated;
+    } catch (err) {
+      console.error("ensureStripePaymentLinkForInvoice:", err);
+      return invoice;
+    }
   }
 
   async updateInvoice(id: string, invoice: Partial<InsertInvoice>): Promise<Invoice | undefined> {
@@ -1754,14 +1810,15 @@ export class DatabaseStorage implements IStorage {
         })
         .where(eq(invoices.id, payment.invoiceId));
 
-      if (newStatus === "paid" && invoice.quoteId) {
-        const settings = await this.getSettings();
-        if (settings?.autoCreateJobFromInvoice) {
-          try {
-            await this.createJobFromPaidInvoice(payment.invoiceId);
-          } catch (err) {
-            console.error("createJobFromPaidInvoice after payment:", err);
-          }
+      if (
+        (newStatus === "partially_paid" || newStatus === "paid") &&
+        invoice.quoteId &&
+        !invoice.jobId
+      ) {
+        try {
+          await this.createJobFromPaidInvoice(payment.invoiceId);
+        } catch (err) {
+          console.error("createJobFromPaidInvoice after payment:", err);
         }
       }
     }

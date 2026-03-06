@@ -1,11 +1,14 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FileText } from "lucide-react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import {
   Select,
   SelectContent,
@@ -57,12 +60,28 @@ function formatStatus(status: string): string {
 
 export default function Jobs() {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
 
   const { data: jobs, isLoading } = useQuery<Job[]>({
     queryKey: ["/api/jobs"],
+  });
+
+  const createInvoiceMutation = useMutation({
+    mutationFn: async (jobId: string) => {
+      const res = await apiRequest("POST", `/api/invoices/generate/job/${jobId}`);
+      return res.json() as Promise<{ id: string }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      if (data?.id) setLocation(`/invoices/${data.id}`);
+      toast({ title: "Invoice created" });
+    },
+    onError: () => {
+      toast({ title: "Failed to create invoice", variant: "destructive" });
+    },
   });
 
   const filteredJobs = (jobs || []).filter((job) => {
@@ -223,6 +242,22 @@ export default function Jobs() {
                           <span>{job.clientPhone}</span>
                         </div>
                       )}
+                      <PermissionGate permission="create_invoices">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full mt-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            createInvoiceMutation.mutate(job.id);
+                          }}
+                          disabled={createInvoiceMutation.isPending}
+                          data-testid={`button-create-invoice-${job.id}`}
+                        >
+                          <FileText className="mr-2 h-4 w-4" />
+                          Create Invoice
+                        </Button>
+                      </PermissionGate>
                     </div>
                   </CardContent>
                 </Card>
@@ -237,6 +272,7 @@ export default function Jobs() {
                     <TableHead>Address</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Created</TableHead>
+                    <TableHead className="w-[120px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -268,6 +304,20 @@ export default function Jobs() {
                         {job.createdAt
                           ? new Date(job.createdAt).toLocaleDateString()
                           : "-"}
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <PermissionGate permission="create_invoices">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => createInvoiceMutation.mutate(job.id)}
+                            disabled={createInvoiceMutation.isPending}
+                            data-testid={`button-create-invoice-${job.id}`}
+                          >
+                            <FileText className="mr-2 h-4 w-4" />
+                            Create Invoice
+                          </Button>
+                        </PermissionGate>
                       </TableCell>
                     </TableRow>
                   ))}

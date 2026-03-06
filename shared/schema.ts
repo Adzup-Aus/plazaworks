@@ -295,6 +295,8 @@ export const quotes = pgTable("quotes", {
   rejectedAt: timestamp("rejected_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  // Token for client to respond (accept/reject) via email link without logging in
+  clientResponseToken: varchar("client_response_token", { length: 64 }),
 }, (table) => [
   index("idx_quotes_status").on(table.status),
   index("idx_quotes_number").on(table.quoteNumber),
@@ -303,6 +305,7 @@ export const quotes = pgTable("quotes", {
   index("idx_quotes_client_status").on(table.clientStatus),
   index("idx_quotes_ref").on(table.referenceNumber),
   index("idx_quotes_parent").on(table.parentQuoteId),
+  index("idx_quotes_client_response_token").on(table.clientResponseToken),
 ]);
 
 // Invoices table

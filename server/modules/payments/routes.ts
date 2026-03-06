@@ -25,12 +25,19 @@ export function registerPaymentsRoutes(app: Express): void {
 
       const payment = await storage.createPayment(validation.data);
       let convertedJob = null;
-      const settings = await storage.getSettings();
-      if (settings?.autoCreateJobFromInvoice) {
-        const invoice = await storage.getInvoice(req.params.invoiceId);
-        if (invoice?.quoteId && (invoice.status === "paid" || parseFloat(invoice.amountDue ?? "0") <= 0)) {
+      const invoice = await storage.getInvoice(req.params.invoiceId);
+      if (
+        invoice?.quoteId &&
+        (invoice.status === "partially_paid" ||
+          invoice.status === "paid" ||
+          parseFloat(invoice.amountDue ?? "0") <= 0) &&
+        !invoice.jobId
+      ) {
+        try {
           const result = await storage.createJobFromPaidInvoice(invoice.id);
           if (result) convertedJob = result.job;
+        } catch (err: any) {
+          console.error("createJobFromPaidInvoice after manual payment:", err);
         }
       }
       res.status(201).json({

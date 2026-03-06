@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Plus, FileText, Send, MoreHorizontal, Trash2, DollarSign, Copy, Mail } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -24,9 +24,24 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Invoice } from "@shared/schema";
+import type { Invoice, Job } from "@shared/schema";
 import { PermissionGate } from "@/components/permission-gate";
 
 const statusColors: Record<string, string> = {
@@ -49,10 +64,35 @@ const statusLabels: Record<string, string> = {
 
 export default function Invoices() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [newInvoiceDialogOpen, setNewInvoiceDialogOpen] = useState(false);
+  const [selectedJobId, setSelectedJobId] = useState<string>("");
 
   const { data: invoices, isLoading } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
+  });
+
+  const { data: jobs } = useQuery<Job[]>({
+    queryKey: ["/api/jobs"],
+    enabled: newInvoiceDialogOpen,
+  });
+
+  const createFromJobMutation = useMutation({
+    mutationFn: async (jobId: string) => {
+      const res = await apiRequest("POST", `/api/invoices/generate/job/${jobId}`);
+      return res.json() as Promise<Invoice>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      setNewInvoiceDialogOpen(false);
+      setSelectedJobId("");
+      if (data?.id) setLocation(`/invoices/${data.id}`);
+      toast({ title: "Invoice created from job" });
+    },
+    onError: () => {
+      toast({ title: "Failed to create invoice", variant: "destructive" });
+    },
   });
 
   const sendMutation = useMutation({
@@ -72,6 +112,16 @@ export default function Invoices() {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       toast({ title: "Invoice deleted" });
       setDeleteId(null);
+    },
+  });
+
+  const ensurePaymentLinkMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/invoices/${id}/payment-link`);
+      return res.json() as Promise<Invoice>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
     },
   });
 
@@ -131,12 +181,13 @@ export default function Invoices() {
           </p>
         </div>
         <PermissionGate permission="create_invoices">
-          <Link href="/invoices/new">
-            <Button data-testid="button-new-invoice">
-              <Plus className="mr-2 h-4 w-4" />
-              New Invoice
-            </Button>
-          </Link>
+          <Button
+            data-testid="button-new-invoice"
+            onClick={() => setNewInvoiceDialogOpen(true)}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            New Invoice
+          </Button>
         </PermissionGate>
       </div>
 
@@ -149,12 +200,14 @@ export default function Invoices() {
               Create your first invoice to get started
             </p>
             <PermissionGate permission="create_invoices">
-              <Link href="/invoices/new">
-                <Button className="mt-4" data-testid="button-create-first-invoice">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Invoice
-                </Button>
-              </Link>
+              <Button
+                className="mt-4"
+                data-testid="button-create-first-invoice"
+                onClick={() => setNewInvoiceDialogOpen(true)}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Create Invoice
+              </Button>
             </PermissionGate>
           </CardContent>
         </Card>
@@ -229,16 +282,31 @@ export default function Invoices() {
                           </Link>
                         </DropdownMenuItem>
                       )}
-                      {getPaymentLinkUrl(invoice) && (
+                      {(getPaymentLinkUrl(invoice) || (parseFloat(invoice.amountDue ?? "0") > 0 && (invoice.status === "sent" || invoice.status === "partially_paid"))) && (
                         <>
                           <DropdownMenuItem
-                            onClick={() => {
-                              const url = getPaymentLinkUrl(invoice);
-                              if (url) {
-                                navigator.clipboard.writeText(url);
-                                toast({ title: "Payment link copied" });
+                            onClick={async () => {
+                              const amountDue = parseFloat(invoice.amountDue ?? "0");
+                              if (amountDue > 0) {
+                                try {
+                                  const updated = await ensurePaymentLinkMutation.mutateAsync(invoice.id);
+                                  const url = getPaymentLinkUrl(updated) ?? (updated.stripePaymentLinkUrl || (updated.paymentLinkToken && typeof window !== "undefined" ? `${window.location.origin}/pay/${updated.paymentLinkToken}` : null));
+                                  if (url) {
+                                    navigator.clipboard.writeText(url);
+                                    toast({ title: "Payment link copied" });
+                                  }
+                                } catch {
+                                  toast({ title: "Failed to create payment link", variant: "destructive" });
+                                }
+                              } else {
+                                const url = getPaymentLinkUrl(invoice);
+                                if (url) {
+                                  navigator.clipboard.writeText(url);
+                                  toast({ title: "Payment link copied" });
+                                }
                               }
                             }}
+                            disabled={ensurePaymentLinkMutation.isPending}
                             data-testid={`action-copy-payment-link-${invoice.id}`}
                           >
                             <Copy className="mr-2 h-4 w-4" />
@@ -275,6 +343,61 @@ export default function Invoices() {
           ))}
         </div>
       )}
+
+      <Dialog open={newInvoiceDialogOpen} onOpenChange={setNewInvoiceDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>New Invoice</DialogTitle>
+            <DialogDescription>
+              Create a blank invoice or generate one from an existing job. When you select a job, client and details are pre-filled.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Job (optional)</label>
+              <Select value={selectedJobId || "_none"} onValueChange={(v) => setSelectedJobId(v === "_none" ? "" : v)}>
+                <SelectTrigger data-testid="select-new-invoice-job">
+                  <SelectValue placeholder="No job — create blank invoice" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">No job — create blank invoice</SelectItem>
+                  {(jobs ?? []).map((job) => (
+                    <SelectItem key={job.id} value={job.id}>
+                      {job.jobNumber ?? job.id} — {job.clientName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setNewInvoiceDialogOpen(false);
+                setLocation("/invoices/new");
+              }}
+              data-testid="button-new-invoice-blank"
+            >
+              Create blank invoice
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedJobId) {
+                  createFromJobMutation.mutate(selectedJobId);
+                } else {
+                  setNewInvoiceDialogOpen(false);
+                  setLocation("/invoices/new");
+                }
+              }}
+              disabled={createFromJobMutation.isPending}
+              data-testid="button-new-invoice-confirm"
+            >
+              {createFromJobMutation.isPending ? "Creating…" : selectedJobId ? "Create from job" : "Create blank"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>

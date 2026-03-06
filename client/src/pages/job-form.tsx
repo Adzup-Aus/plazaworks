@@ -2495,6 +2495,21 @@ export default function JobForm() {
     },
   });
 
+  const createInvoiceFromJobMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/invoices/generate/job/${id}`);
+      return res.json() as Promise<{ id: string }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      if (data?.id) setLocation(`/invoices/${data.id}`);
+      toast({ title: "Invoice created" });
+    },
+    onError: () => {
+      toast({ title: "Failed to create invoice", variant: "destructive" });
+    },
+  });
+
   const onSubmit = (data: FormData) => {
     if (isEditing) {
       updateMutation.mutate(data);
@@ -2528,25 +2543,40 @@ export default function JobForm() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setLocation("/jobs")}
-          data-testid="button-back"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-3xl font-bold">
-            {isEditing ? "Edit Job" : "New Job"}
-          </h1>
-          <p className="text-muted-foreground">
-            {isEditing
-              ? "Update job details and status"
-              : "Create a new job entry"}
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setLocation("/jobs")}
+            data-testid="button-back"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold">
+              {isEditing ? "Edit Job" : "New Job"}
+            </h1>
+            <p className="text-muted-foreground">
+              {isEditing
+                ? "Update job details and status"
+                : "Create a new job entry"}
+            </p>
+          </div>
         </div>
+        {isEditing && id && (
+          <PermissionGate permission="create_invoices">
+            <Button
+              variant="outline"
+              onClick={() => createInvoiceFromJobMutation.mutate()}
+              disabled={createInvoiceFromJobMutation.isPending}
+              data-testid="button-create-invoice-from-job"
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              Create Invoice
+            </Button>
+          </PermissionGate>
+        )}
       </div>
 
       <Form {...form}>

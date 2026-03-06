@@ -7,7 +7,7 @@ import { z } from "zod";
 import { ArrowLeft, Send, DollarSign, Plus, Trash2, ExternalLink, Briefcase, Copy, Mail } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +44,52 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { InvoiceWithDetails, Payment } from "@shared/schema";
+import type { InvoiceWithDetails, Payment, InvoicePayment } from "@shared/schema";
+
+/** Unified row for display: manual payments (payments) + Stripe/token (invoicePayments), sorted by date */
+interface InvoiceTransactionRow {
+  id: string;
+  date: string | null;
+  method: string;
+  amount: string;
+  reference: string;
+  status: string;
+  source: "manual" | "stripe";
+}
+
+function buildTransactionRows(invoice: InvoiceWithDetails): InvoiceTransactionRow[] {
+  const rows: InvoiceTransactionRow[] = [];
+  (invoice.payments ?? []).forEach((p: Payment) => {
+    const d = p.paidAt ?? p.createdAt;
+    rows.push({
+      id: `manual-${p.id}`,
+      date: d ? new Date(d).toISOString() : null,
+      method: (p.paymentMethod ?? "").replace("_", " "),
+      amount: String(p.amount ?? "0"),
+      reference: p.transactionReference ?? p.notes ?? "",
+      status: p.status ?? "completed",
+      source: "manual",
+    });
+  });
+  (invoice.invoicePayments ?? []).forEach((p: InvoicePayment) => {
+    const d = p.paidAt ?? p.createdAt;
+    rows.push({
+      id: `stripe-${p.id}`,
+      date: d ? new Date(d).toISOString() : null,
+      method: (p.paymentMethod ?? "stripe").replace("_", " "),
+      amount: String(p.amount ?? "0"),
+      reference: p.description ?? "",
+      status: p.status ?? "completed",
+      source: "stripe",
+    });
+  });
+  rows.sort((a, b) => {
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    return new Date(b.date).getTime() - new Date(a.date).getTime();
+  });
+  return rows;
+}
 
 const statusColors: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -104,6 +149,16 @@ export default function InvoiceDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", params.id] });
       toast({ title: "Invoice sent to client" });
+    },
+  });
+
+  const ensurePaymentLinkMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/invoices/${params.id}/payment-link`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices", params.id] });
     },
   });
 
@@ -217,25 +272,54 @@ export default function InvoiceDetail() {
           )}
           {(invoice.status === "sent" || invoice.status === "partially_paid") && (
             <>
-              {invoice.stripePaymentLinkUrl && (
-                <Button asChild>
-                  <a href={invoice.stripePaymentLinkUrl} target="_blank" rel="noopener noreferrer" data-testid="button-pay-stripe">
-                    <ExternalLink className="mr-2 h-4 w-4" />
-                    Pay with Stripe
-                  </a>
+              {parseFloat(invoice.amountDue ?? "0") > 0 && (
+                <Button
+                  disabled={ensurePaymentLinkMutation.isPending}
+                  onClick={async () => {
+                    try {
+                      const updated = await ensurePaymentLinkMutation.mutateAsync();
+                      const url = updated?.stripePaymentLinkUrl ?? (updated?.paymentLinkToken && typeof window !== "undefined" ? `${window.location.origin}/pay/${updated.paymentLinkToken}` : null);
+                      if (url) {
+                        window.open(url, "_blank", "noopener,noreferrer");
+                      } else {
+                        toast({ title: "No payment link available", variant: "destructive" });
+                      }
+                    } catch {
+                      toast({ title: "Failed to create payment link", variant: "destructive" });
+                    }
+                  }}
+                  data-testid="button-pay-stripe"
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  {ensurePaymentLinkMutation.isPending ? "Creating link…" : "Pay with Stripe"}
                 </Button>
               )}
-              {(invoice.stripePaymentLinkUrl || invoice.paymentLinkToken) && (
+              {(invoice.stripePaymentLinkUrl || invoice.paymentLinkToken || parseFloat(invoice.amountDue ?? "0") > 0) && (
                 <>
                   <Button
                     variant="outline"
-                    onClick={() => {
-                      const url = invoice.stripePaymentLinkUrl || (invoice.paymentLinkToken && typeof window !== "undefined" ? `${window.location.origin}/pay/${invoice.paymentLinkToken}` : null);
-                      if (url) {
-                        navigator.clipboard.writeText(url);
-                        toast({ title: "Payment link copied" });
+                    onClick={async () => {
+                      const amountDue = parseFloat(invoice.amountDue ?? "0");
+                      if (amountDue > 0) {
+                        try {
+                          const updated = await ensurePaymentLinkMutation.mutateAsync();
+                          const url = (updated?.stripePaymentLinkUrl || (updated?.paymentLinkToken && typeof window !== "undefined" ? `${window.location.origin}/pay/${updated.paymentLinkToken}` : null)) ?? null;
+                          if (url) {
+                            navigator.clipboard.writeText(url);
+                            toast({ title: "Payment link copied" });
+                          }
+                        } catch {
+                          toast({ title: "Failed to create payment link", variant: "destructive" });
+                        }
+                      } else {
+                        const url = invoice.stripePaymentLinkUrl || (invoice.paymentLinkToken && typeof window !== "undefined" ? `${window.location.origin}/pay/${invoice.paymentLinkToken}` : null);
+                        if (url) {
+                          navigator.clipboard.writeText(url);
+                          toast({ title: "Payment link copied" });
+                        }
                       }
                     }}
+                    disabled={ensurePaymentLinkMutation.isPending}
                     data-testid="button-copy-payment-link"
                   >
                     <Copy className="mr-2 h-4 w-4" />
@@ -369,54 +453,71 @@ export default function InvoiceDetail() {
         </CardContent>
       </Card>
 
-      {invoice.payments && invoice.payments.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Payment History</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Method</TableHead>
-                  <TableHead>Reference</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {invoice.payments.map((payment) => (
-                  <TableRow key={payment.id} data-testid={`row-payment-${payment.id}`}>
-                    <TableCell>
-                      {payment.paidAt
-                        ? format(new Date(payment.paidAt), "dd MMM yyyy")
-                        : payment.createdAt
-                          ? format(new Date(payment.createdAt), "dd MMM yyyy")
-                          : "-"}
-                    </TableCell>
-                    <TableCell className="capitalize">
-                      {payment.paymentMethod.replace("_", " ")}
-                    </TableCell>
-                    <TableCell>{payment.transactionReference || "-"}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={payment.status === "completed" ? "default" : "secondary"}
-                        className={payment.status === "completed" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : ""}
-                      >
-                        {payment.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right font-medium">
-                      ${parseFloat(payment.amount).toFixed(2)}
-                    </TableCell>
+      <Card>
+        <CardHeader>
+          <CardTitle>Transaction history</CardTitle>
+          <CardDescription>
+            All payments for this invoice (manual and Stripe)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {(() => {
+            const transactions = buildTransactionRows(invoice);
+            if (transactions.length === 0) {
+              return (
+                <p className="text-sm text-muted-foreground py-4">No transactions yet.</p>
+              );
+            }
+            return (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Method</TableHead>
+                    <TableHead>Reference</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+                </TableHeader>
+                <TableBody>
+                  {transactions.map((tx) => (
+                    <TableRow key={tx.id} data-testid={`row-transaction-${tx.id}`}>
+                      <TableCell>
+                        {tx.date ? format(new Date(tx.date), "dd MMM yyyy") : "—"}
+                      </TableCell>
+                      <TableCell className="capitalize">{tx.method || "—"}</TableCell>
+                      <TableCell className="max-w-[200px] truncate" title={tx.reference}>
+                        {tx.reference || "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={tx.status === "completed" ? "default" : "secondary"}
+                          className={
+                            tx.status === "completed"
+                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                              : ""
+                          }
+                        >
+                          {tx.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="font-normal">
+                          {tx.source === "stripe" ? "Stripe" : "Manual"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        ${parseFloat(tx.amount).toFixed(2)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            );
+          })()}
+        </CardContent>
+      </Card>
 
       {invoice.notes && (
         <Card>

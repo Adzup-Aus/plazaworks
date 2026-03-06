@@ -56,7 +56,7 @@ export function registerStripeRoutes(app: Express): void {
       // Guarantee job creation for Stripe-paid invoices (independent of autoCreateJobFromInvoice)
       const updated = await storage.getInvoice(invoiceId);
       if (
-        updated?.status === "paid" &&
+        (updated?.status === "partially_paid" || updated?.status === "paid") &&
         updated.quoteId &&
         !updated.jobId
       ) {
