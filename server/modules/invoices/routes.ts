@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { storage, isAuthenticated, requireUserId, requirePermission } from "../../routes/shared";
 import { insertInvoiceSchema } from "@shared/schema";
+import { sendPaymentLinkEmail } from "../../email";
 
 export function registerInvoicesRoutes(app: Express): void {
   app.get("/api/invoices", isAuthenticated, requirePermission("view_invoices"), async (req, res) => {
@@ -110,6 +111,57 @@ export function registerInvoicesRoutes(app: Express): void {
     } catch (err: any) {
       console.error("Error sending invoice:", err);
       res.status(500).json({ message: "Failed to send invoice" });
+    }
+  });
+
+  app.post("/api/invoices/:id/payment-link", isAuthenticated, requirePermission("edit_invoices"), async (req, res) => {
+    try {
+      const invoice = await storage.ensureStripePaymentLinkForInvoice(req.params.id);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+      res.json(invoice);
+    } catch (err: any) {
+      console.error("Error ensuring payment link:", err);
+      res.status(500).json({ message: "Failed to ensure payment link" });
+    }
+  });
+
+  app.post("/api/invoices/:id/send-payment-link", isAuthenticated, requirePermission("edit_invoices"), async (req, res) => {
+    try {
+      let invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+      const amountDue = parseFloat(String(invoice.amountDue ?? "0"));
+      if (amountDue > 0) {
+        const updated = await storage.ensureStripePaymentLinkForInvoice(req.params.id);
+        if (updated) invoice = updated;
+      }
+      const paymentLinkUrl =
+        invoice.stripePaymentLinkUrl ||
+        (invoice.paymentLinkToken
+          ? `${process.env.APP_URL || ""}/pay/${invoice.paymentLinkToken}`
+          : null);
+      if (!paymentLinkUrl) {
+        return res.status(400).json({ message: "No payment link available for this invoice" });
+      }
+      const clientEmail = invoice.clientEmail?.trim();
+      if (!clientEmail) {
+        return res.status(400).json({ message: "Invoice has no client email; add one before sending the payment link" });
+      }
+      const amountDueFormatted = parseFloat(String(invoice.amountDue ?? "0")).toFixed(2);
+      await sendPaymentLinkEmail(
+        clientEmail,
+        invoice.clientName || "Client",
+        invoice.invoiceNumber,
+        amountDueFormatted,
+        paymentLinkUrl
+      );
+      res.json({ sent: true, message: "Payment link sent to client" });
+    } catch (err: any) {
+      console.error("Error sending payment link email:", err);
+      res.status(500).json({ message: err?.message || "Failed to send payment link" });
     }
   });
 

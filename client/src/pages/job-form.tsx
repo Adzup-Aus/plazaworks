@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useLocation, useParams } from "wouter";
+import { Link, useLocation, useParams } from "wouter";
 import { z } from "zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -69,18 +70,20 @@ import {
   DollarSign,
   Undo2,
   FileText,
-  Eye
+  Eye,
+  ExternalLink
 } from "lucide-react";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
-import { jobStatuses, pcItemStatuses, type Job, type PCItem, type ClientAccessToken, type JobPhoto, type JobReceipt, type ScheduleEntry, type StaffProfile, type Quote, type QuoteWithDetails, type LineItem, type QuoteMilestone, type QuotePaymentSchedule, type Invoice, type JobMilestone } from "@shared/schema";
+import { jobStatuses, pcItemStatuses, type Job, type PCItem, type Client, type ClientAccessToken, type JobPhoto, type JobReceipt, type ScheduleEntry, type StaffProfile, type Quote, type QuoteWithDetails, type LineItem, type QuoteMilestone, type QuotePaymentSchedule, type Invoice, type JobMilestone } from "@shared/schema";
 import type { User as AuthUser } from "@shared/models/auth";
 
 type StaffProfileWithUser = StaffProfile & { user?: AuthUser };
 
 const formSchema = z.object({
+  clientId: z.string().optional(),
   clientName: z.string().min(1, "Client name is required"),
   clientEmail: z.string().email("Invalid email").optional().or(z.literal("")),
   clientPhone: z.string().optional(),
@@ -1621,13 +1624,20 @@ function ShareLinkSection({ jobId }: { jobId: string }) {
 
 function InvoicePreviewSection({ job }: { job: Job }) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  
+
+  const { data: invoicesByJob } = useQuery<Invoice[]>({
+    queryKey: [`/api/invoices?jobId=${job.id}`],
+    enabled: !!job?.id,
+  });
+
   const { data: quoteDetails, isLoading } = useQuery<QuoteWithDetails>({
     queryKey: [`/api/quotes/${job.quoteId}`],
     enabled: !!job.quoteId && isPreviewOpen,
   });
 
-  if (!job.quoteId && !job.invoiceId) {
+  const hasQuote = !!job.quoteId;
+  const hasInvoices = !!job.invoiceId || (invoicesByJob && invoicesByJob.length > 0);
+  if (!hasQuote && !hasInvoices) {
     return null;
   }
 
@@ -1779,19 +1789,72 @@ function InvoicePreviewSection({ job }: { job: Job }) {
           </DialogContent>
         </Dialog>
       </CardHeader>
-      <CardContent>
-        <div className="flex items-center gap-4 text-sm">
-          {job.quoteId && (
-            <div className="flex items-center gap-2">
-              <Badge variant="outline">Quote #{job.referenceNumber || job.quoteId.slice(0, 8)}</Badge>
+      <CardContent className="space-y-5">
+        {job.quoteId && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Quote
+            </p>
+            <Link
+              href={`/quotes/${job.quoteId}`}
+              className="flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3 transition-colors hover:bg-muted/60 hover:border-primary/30"
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10">
+                <FileText className="h-4 w-4 text-primary" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="font-medium">
+                  Quote #{job.referenceNumber || job.quoteId.slice(0, 8)}
+                </span>
+                <p className="text-xs text-muted-foreground">View quote details and line items</p>
+              </div>
+              <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </Link>
+          </div>
+        )}
+        {((invoicesByJob && invoicesByJob.length > 0) || job.invoiceId) && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Invoices
+            </p>
+            <div className="space-y-2">
+              {(invoicesByJob && invoicesByJob.length > 0)
+                ? invoicesByJob.map((inv) => (
+                    <Link
+                      key={inv.id}
+                      href={`/invoices/${inv.id}`}
+                      className="flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3 transition-colors hover:bg-muted/60 hover:border-primary/30"
+                    >
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10">
+                        <Receipt className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="font-medium">{inv.invoiceNumber}</span>
+                        <p className="text-xs text-muted-foreground">
+                          {inv.status ? `${inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}` : "View invoice"}
+                        </p>
+                      </div>
+                      <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    </Link>
+                  ))
+                : job.invoiceId && (
+                    <Link
+                      href={`/invoices/${job.invoiceId}`}
+                      className="flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3 transition-colors hover:bg-muted/60 hover:border-primary/30"
+                    >
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10">
+                        <Receipt className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="font-medium">Linked invoice</span>
+                        <p className="text-xs text-muted-foreground">View invoice details</p>
+                      </div>
+                      <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    </Link>
+                  )}
             </div>
-          )}
-          {job.invoiceId && (
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary">Invoice Linked</Badge>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -2402,9 +2465,25 @@ export default function JobForm() {
     enabled: isEditing,
   });
 
+  const { hasPermission } = usePermissions();
+  const canViewClients = hasPermission("view_clients");
+  const canCreateClients = hasPermission("create_clients");
+  const [createClientDialogOpen, setCreateClientDialogOpen] = useState(false);
+  const [newClientFirstName, setNewClientFirstName] = useState("");
+  const [newClientLastName, setNewClientLastName] = useState("");
+  const [newClientEmail, setNewClientEmail] = useState("");
+  const [newClientPhone, setNewClientPhone] = useState("");
+  const [newClientAddress, setNewClientAddress] = useState("");
+
+  const { data: clientsList } = useQuery<Client[]>({
+    queryKey: ["/api/clients"],
+    enabled: canViewClients,
+  });
+
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      clientId: "",
       clientName: "",
       clientEmail: "",
       clientPhone: "",
@@ -2425,6 +2504,7 @@ export default function JobForm() {
       const hours = Math.round((totalHours % 8) * 10) / 10;
       
       form.reset({
+        clientId: job.clientId || "",
         clientName: job.clientName,
         clientEmail: job.clientEmail || "",
         clientPhone: job.clientPhone || "",
@@ -2439,12 +2519,79 @@ export default function JobForm() {
     }
   }, [job, isEditing, form]);
 
+  function buildAddressFromClient(c: Client): string {
+    const parts = [
+      c.streetAddress,
+      c.streetAddress2,
+      c.city,
+      c.state,
+      c.postalCode,
+      c.country,
+    ].filter(Boolean);
+    return parts.join(", ") || "";
+  }
+
+  const createClientMutation = useMutation({
+    mutationFn: async (data: { firstName: string; lastName: string; email?: string; phone?: string; streetAddress?: string }) => {
+      const res = await apiRequest("POST", "/api/clients", {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email || undefined,
+        phone: data.phone || undefined,
+        streetAddress: data.streetAddress || undefined,
+      });
+      return res.json() as Promise<Client>;
+    },
+    onSuccess: (newClient) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      form.setValue("clientId", newClient.id);
+      form.setValue("clientName", `${newClient.firstName} ${newClient.lastName}`);
+      form.setValue("clientEmail", newClient.email || "");
+      form.setValue("clientPhone", newClient.phone || newClient.mobilePhone || "");
+      form.setValue("address", buildAddressFromClient(newClient));
+      setCreateClientDialogOpen(false);
+      toast({ title: "Client created", description: "Client has been added and selected for this job." });
+    },
+    onError: () => {
+      toast({ title: "Failed to create client", variant: "destructive" });
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: async (data: FormData) => {
       const totalHours = ((data.estimatedDurationDays || 0) * 8) + (data.estimatedDurationHours || 0);
       const { estimatedDurationDays, estimatedDurationHours, ...rest } = data;
+
+      let clientId = rest.clientId;
+      let clientName = rest.clientName;
+      let clientEmail = rest.clientEmail;
+      let clientPhone = rest.clientPhone;
+
+      // Manual entry on create: create a client first, then link the job to it
+      if (!clientId && rest.clientName?.trim()) {
+        const nameParts = rest.clientName.trim().split(/\s+/);
+        const firstName = nameParts[0] || "Client";
+        const lastName = nameParts.slice(1).join(" ") || "—";
+        const clientRes = await apiRequest("POST", "/api/clients", {
+          firstName,
+          lastName,
+          email: rest.clientEmail || undefined,
+          phone: rest.clientPhone || undefined,
+          streetAddress: rest.address || undefined,
+        });
+        const newClient = (await clientRes.json()) as Client;
+        clientId = newClient.id;
+        clientName = `${newClient.firstName} ${newClient.lastName}`;
+        clientEmail = newClient.email ?? rest.clientEmail ?? "";
+        clientPhone = newClient.phone ?? newClient.mobilePhone ?? rest.clientPhone ?? "";
+      }
+
       const response = await apiRequest("POST", "/api/jobs", {
         ...rest,
+        clientId: clientId || undefined,
+        clientName,
+        clientEmail: clientEmail || undefined,
+        clientPhone: clientPhone || undefined,
         estimatedDurationHours: totalHours > 0 ? totalHours.toString() : null,
         jobType: "general", // Default job type - field is hidden per project requirements
       });
@@ -2452,6 +2599,7 @@ export default function JobForm() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       toast({
         title: "Job created",
         description: "The job has been created successfully.",
@@ -2495,6 +2643,10 @@ export default function JobForm() {
     },
   });
 
+  const handleCreateInvoiceFromJob = () => {
+    if (id) setLocation(`/invoices/new?jobId=${id}`);
+  };
+
   const onSubmit = (data: FormData) => {
     if (isEditing) {
       updateMutation.mutate(data);
@@ -2528,25 +2680,39 @@ export default function JobForm() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setLocation("/jobs")}
-          data-testid="button-back"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-3xl font-bold">
-            {isEditing ? "Edit Job" : "New Job"}
-          </h1>
-          <p className="text-muted-foreground">
-            {isEditing
-              ? "Update job details and status"
-              : "Create a new job entry"}
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setLocation("/jobs")}
+            data-testid="button-back"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold">
+              {isEditing ? "Edit Job" : "New Job"}
+            </h1>
+            <p className="text-muted-foreground">
+              {isEditing
+                ? "Update job details and status"
+                : "Create a new job entry"}
+            </p>
+          </div>
         </div>
+        {isEditing && id && (
+          <PermissionGate permission="create_invoices">
+            <Button
+              variant="outline"
+              onClick={handleCreateInvoiceFromJob}
+              data-testid="button-create-invoice-from-job"
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              Create Invoice
+            </Button>
+          </PermissionGate>
+        )}
       </div>
 
       <Form {...form}>
@@ -2559,60 +2725,136 @@ export default function JobForm() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
+              {canViewClients && (
                 <FormField
                   control={form.control}
-                  name="clientName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Client Name *</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="John Smith"
-                          {...field}
-                          data-testid="input-client-name"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  name="clientId"
+                  render={({ field }) => {
+                    const clientLocked = isEditing && !!job?.clientId;
+                    return (
+                      <FormItem>
+                        <FormLabel>Client</FormLabel>
+                        <Select
+                          value={field.value || "_manual"}
+                          onValueChange={(value) => {
+                            if (value === "_manual") {
+                              field.onChange("");
+                              return;
+                            }
+                            if (value === "__create__") {
+                              field.onChange("");
+                              setCreateClientDialogOpen(true);
+                              return;
+                            }
+                            field.onChange(value);
+                            const client = (clientsList || []).find((c) => c.id === value);
+                            if (client) {
+                              form.setValue("clientName", `${client.firstName} ${client.lastName}`);
+                              form.setValue("clientEmail", client.email || "");
+                              form.setValue("clientPhone", client.phone || client.mobilePhone || "");
+                              form.setValue("address", buildAddressFromClient(client));
+                            }
+                          }}
+                          disabled={clientLocked}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-job-client">
+                              <SelectValue placeholder="Select client or enter manually" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="_manual">Manual entry</SelectItem>
+                            {(clientsList || []).map((c) => (
+                              <SelectItem key={c.id} value={c.id}>
+                                {c.company ? `${c.company} (${c.firstName} ${c.lastName})` : `${c.firstName} ${c.lastName}`}
+                              </SelectItem>
+                            ))}
+                            {canCreateClients && !clientLocked && (
+                              <SelectItem value="__create__" data-testid="option-create-new-client">
+                                Create new client…
+                              </SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {clientLocked && (
+                          <p className="text-xs text-muted-foreground">Client cannot be changed for this job.</p>
+                        )}
+                        <FormMessage />
+                      </FormItem>
+                    );
+                  }}
                 />
-                <FormField
-                  control={form.control}
-                  name="clientPhone"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Phone</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="+61 400 000 000"
-                          {...field}
-                          data-testid="input-client-phone"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              <FormField
-                control={form.control}
-                name="clientEmail"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="email"
-                        placeholder="client@example.com"
-                        {...field}
-                        data-testid="input-client-email"
+              )}
+              {(() => {
+                const hasClientSelected = !!form.watch("clientId");
+                return (
+                  <>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <FormField
+                        control={form.control}
+                        name="clientName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Client Name *</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="John Smith"
+                                {...field}
+                                disabled={hasClientSelected}
+                                readOnly={hasClientSelected}
+                                className={hasClientSelected ? "bg-muted" : undefined}
+                                data-testid="input-client-name"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
                       />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      <FormField
+                        control={form.control}
+                        name="clientPhone"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Phone</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="+61 400 000 000"
+                                {...field}
+                                disabled={hasClientSelected}
+                                readOnly={hasClientSelected}
+                                className={hasClientSelected ? "bg-muted" : undefined}
+                                data-testid="input-client-phone"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <FormField
+                      control={form.control}
+                      name="clientEmail"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="email"
+                              placeholder="client@example.com"
+                              {...field}
+                              disabled={hasClientSelected}
+                              readOnly={hasClientSelected}
+                              className={hasClientSelected ? "bg-muted" : undefined}
+                              data-testid="input-client-email"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </>
+                );
+              })()}
               <FormField
                 control={form.control}
                 name="address"
@@ -2829,6 +3071,103 @@ export default function JobForm() {
           <ShareLinkSection jobId={id} />
         </>
       )}
+
+      <Dialog open={createClientDialogOpen} onOpenChange={(open) => {
+        setCreateClientDialogOpen(open);
+        if (!open) {
+          setNewClientFirstName("");
+          setNewClientLastName("");
+          setNewClientEmail("");
+          setNewClientPhone("");
+          setNewClientAddress("");
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create new client</DialogTitle>
+            <DialogDescription>
+              Add a client and use them for this job. They will appear in the client list for future jobs.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-client-first">First name *</Label>
+                <Input
+                  id="new-client-first"
+                  value={newClientFirstName}
+                  onChange={(e) => setNewClientFirstName(e.target.value)}
+                  placeholder="John"
+                  data-testid="input-new-client-first"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-client-last">Last name *</Label>
+                <Input
+                  id="new-client-last"
+                  value={newClientLastName}
+                  onChange={(e) => setNewClientLastName(e.target.value)}
+                  placeholder="Smith"
+                  data-testid="input-new-client-last"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-client-email">Email</Label>
+              <Input
+                id="new-client-email"
+                type="email"
+                value={newClientEmail}
+                onChange={(e) => setNewClientEmail(e.target.value)}
+                placeholder="john@example.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-client-phone">Phone</Label>
+              <Input
+                id="new-client-phone"
+                value={newClientPhone}
+                onChange={(e) => setNewClientPhone(e.target.value)}
+                placeholder="+61 400 000 000"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-client-address">Address</Label>
+              <Input
+                id="new-client-address"
+                value={newClientAddress}
+                onChange={(e) => setNewClientAddress(e.target.value)}
+                placeholder="123 Main St, Sydney NSW 2000"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCreateClientDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={!newClientFirstName.trim() || !newClientLastName.trim() || createClientMutation.isPending}
+              onClick={() => {
+                createClientMutation.mutate({
+                  firstName: newClientFirstName.trim(),
+                  lastName: newClientLastName.trim(),
+                  email: newClientEmail.trim() || undefined,
+                  phone: newClientPhone.trim() || undefined,
+                  streetAddress: newClientAddress.trim() || undefined,
+                });
+              }}
+              data-testid="button-submit-new-client"
+            >
+              {createClientMutation.isPending ? "Creating…" : "Create client"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

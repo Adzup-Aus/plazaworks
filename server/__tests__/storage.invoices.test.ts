@@ -185,4 +185,49 @@ describe.runIf(hasDb)("storage (invoices)", () => {
     expect(afterDelete).toBeUndefined();
     createdInvoiceIds.pop();
   });
+
+  it("createJobFromPaidInvoice returns a job when invoice is partially_paid with quote and no existing job", async () => {
+    const client = await createTestClient();
+    const quote = await storage.createQuote({
+      clientId: client.id,
+      clientName: `${client.firstName} ${client.lastName}`,
+      clientAddress: "123 Quote St",
+      jobType: "plumbing",
+      total: "200.00",
+      subtotal: "200.00",
+    });
+    const invoice = await storage.createInvoiceFromQuote(quote.id);
+    if (!invoice) throw new Error("createInvoiceFromQuote failed");
+    await storage.updateInvoice(invoice.id, {
+      status: "partially_paid",
+      amountPaid: "50.00",
+      amountDue: "150.00",
+    });
+    const result = await storage.createJobFromPaidInvoice(invoice.id);
+    expect(result).toBeDefined();
+    expect(result?.job).toBeDefined();
+    expect(result?.job.id).toBeDefined();
+    expect(result?.invoice.id).toBe(invoice.id);
+    await storage.deleteJob(result!.job.id);
+    await storage.deleteInvoice(invoice.id);
+    await storage.deleteQuote(quote.id);
+  });
+
+  it("createJobFromPaidInvoice returns undefined when invoice has no payment (sent, amountPaid 0)", async () => {
+    const client = await createTestClient();
+    const quote = await storage.createQuote({
+      clientId: client.id,
+      clientName: `${client.firstName} ${client.lastName}`,
+      clientAddress: "456 No Pay St",
+      jobType: "electrical",
+      total: "100.00",
+      subtotal: "100.00",
+    });
+    const invoice = await storage.createInvoiceFromQuote(quote.id);
+    if (!invoice) throw new Error("createInvoiceFromQuote failed");
+    const result = await storage.createJobFromPaidInvoice(invoice.id);
+    expect(result).toBeUndefined();
+    await storage.deleteInvoice(invoice.id);
+    await storage.deleteQuote(quote.id);
+  });
 });

@@ -1,13 +1,13 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Send, DollarSign, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Send, DollarSign, Plus, Trash2, ExternalLink, Briefcase, Copy, Mail } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +44,52 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { InvoiceWithDetails, Payment } from "@shared/schema";
+import type { InvoiceWithDetails, Payment, InvoicePayment, Job } from "@shared/schema";
+
+/** Unified row for display: manual payments (payments) + Stripe/token (invoicePayments), sorted by date */
+interface InvoiceTransactionRow {
+  id: string;
+  date: string | null;
+  method: string;
+  amount: string;
+  reference: string;
+  status: string;
+  source: "manual" | "stripe";
+}
+
+function buildTransactionRows(invoice: InvoiceWithDetails): InvoiceTransactionRow[] {
+  const rows: InvoiceTransactionRow[] = [];
+  (invoice.payments ?? []).forEach((p: Payment) => {
+    const d = p.paidAt ?? p.createdAt;
+    rows.push({
+      id: `manual-${p.id}`,
+      date: d ? new Date(d).toISOString() : null,
+      method: (p.paymentMethod ?? "").replace("_", " "),
+      amount: String(p.amount ?? "0"),
+      reference: p.transactionReference ?? p.notes ?? "",
+      status: p.status ?? "completed",
+      source: "manual",
+    });
+  });
+  (invoice.invoicePayments ?? []).forEach((p: InvoicePayment) => {
+    const d = p.paidAt ?? p.createdAt;
+    rows.push({
+      id: `stripe-${p.id}`,
+      date: d ? new Date(d).toISOString() : null,
+      method: (p.paymentMethod ?? "stripe").replace("_", " "),
+      amount: String(p.amount ?? "0"),
+      reference: p.description ?? "",
+      status: p.status ?? "completed",
+      source: "stripe",
+    });
+  });
+  rows.sort((a, b) => {
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    return new Date(b.date).getTime() - new Date(a.date).getTime();
+  });
+  return rows;
+}
 
 const statusColors: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -80,14 +125,61 @@ const paymentMethods = [
   { value: "other", label: "Other" },
 ];
 
+const DEFAULT_TAX_RATE = 10;
+
+const createInvoiceFormSchema = z.object({
+  clientName: z.string().min(1, "Client name is required"),
+  clientEmail: z.string().email("Invalid email").optional().or(z.literal("")),
+  clientPhone: z.string().optional(),
+  clientAddress: z.string().min(1, "Address is required"),
+  dueDate: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+type CreateInvoiceFormValues = z.infer<typeof createInvoiceFormSchema>;
+
+interface CreateLineItemRow {
+  id: string;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  amount: string;
+}
+
+function createEmptyLineItem(): CreateLineItemRow {
+  return {
+    id: crypto.randomUUID(),
+    description: "",
+    quantity: "1",
+    unitPrice: "0",
+    amount: "0",
+  };
+}
+
+function getJobIdFromUrl(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  return new URLSearchParams(window.location.search).get("jobId") || undefined;
+}
+
 export default function InvoiceDetail() {
+  const [location, navigate] = useLocation();
   const params = useParams<{ id: string }>();
-  const [, navigate] = useLocation();
   const { toast } = useToast();
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [createLineItems, setCreateLineItems] = useState<CreateLineItemRow[]>([createEmptyLineItem()]);
+  const jobIdFromUrl = getJobIdFromUrl();
+
+  // Route is /invoices/new (no :id), so params.id is undefined; detect create by path
+  const isCreateMode = location === "/invoices/new" || location.startsWith("/invoices/new?");
 
   const { data: invoice, isLoading } = useQuery<InvoiceWithDetails>({
     queryKey: ["/api/invoices", params.id],
+    enabled: !isCreateMode,
+  });
+
+  const { data: job } = useQuery<Job>({
+    queryKey: ["/api/jobs", jobIdFromUrl],
+    enabled: !!jobIdFromUrl && isCreateMode,
   });
 
   const form = useForm<PaymentFormValues>({
@@ -99,11 +191,132 @@ export default function InvoiceDetail() {
     },
   });
 
+  const createForm = useForm<CreateInvoiceFormValues>({
+    resolver: zodResolver(createInvoiceFormSchema),
+    defaultValues: {
+      clientName: "",
+      clientEmail: "",
+      clientPhone: "",
+      clientAddress: "",
+      dueDate: "",
+      notes: "",
+    },
+  });
+
+  const createSubtotal = useMemo(
+    () => createLineItems.reduce((sum, row) => sum + parseFloat(row.amount || "0"), 0),
+    [createLineItems]
+  );
+  const updateLineItem = (id: string, updates: Partial<CreateLineItemRow>) => {
+    setCreateLineItems((prev) =>
+      prev.map((row) => {
+        if (row.id !== id) return row;
+        const next = { ...row, ...updates };
+        const qty = parseFloat(next.quantity || "0");
+        const unit = parseFloat(next.unitPrice || "0");
+        if ("quantity" in updates || "unitPrice" in updates) {
+          next.amount = (qty * unit).toFixed(2);
+        }
+        return next;
+      })
+    );
+  };
+  const addLineItem = () => setCreateLineItems((prev) => [...prev, createEmptyLineItem()]);
+  const removeLineItem = (id: string) =>
+    setCreateLineItems((prev) => (prev.length > 1 ? prev.filter((r) => r.id !== id) : prev));
+
+  useEffect(() => {
+    if (!isCreateMode || !job) return;
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 14);
+    createForm.reset({
+      clientName: job.clientName ?? "",
+      clientEmail: job.clientEmail ?? "",
+      clientPhone: job.clientPhone ?? "",
+      clientAddress: job.address ?? "",
+      dueDate: dueDate.toISOString().split("T")[0],
+      notes: "",
+    });
+  }, [isCreateMode, job]);
+
+  const createInvoiceMutation = useMutation({
+    mutationFn: async (data: CreateInvoiceFormValues) => {
+      const subtotal = createLineItems.reduce((sum, row) => sum + parseFloat(row.amount || "0"), 0);
+      const taxRate = DEFAULT_TAX_RATE;
+      const taxAmount = (subtotal * taxRate) / 100;
+      const total = subtotal + taxAmount;
+      const res = await apiRequest("POST", "/api/invoices", {
+        ...(jobIdFromUrl && { jobId: jobIdFromUrl }),
+        clientName: data.clientName,
+        clientEmail: data.clientEmail || undefined,
+        clientPhone: data.clientPhone || undefined,
+        clientAddress: data.clientAddress,
+        dueDate: data.dueDate || undefined,
+        notes: data.notes || undefined,
+        status: "draft",
+        subtotal: subtotal.toFixed(2),
+        taxRate: String(taxRate),
+        taxAmount: taxAmount.toFixed(2),
+        total: total.toFixed(2),
+        amountPaid: "0",
+        amountDue: total.toFixed(2),
+      });
+      const created = (await res.json()) as { id: string };
+      for (let i = 0; i < createLineItems.length; i++) {
+        const row = createLineItems[i];
+        if (!row.description.trim()) continue;
+        const qty = parseFloat(row.quantity) || 0;
+        const unit = parseFloat(row.unitPrice) || 0;
+        const amt = parseFloat(row.amount) || qty * unit;
+        await apiRequest("POST", `/api/invoices/${created.id}/line-items`, {
+          description: row.description,
+          quantity: String(qty),
+          unitPrice: String(unit),
+          amount: String(amt),
+        });
+      }
+      return created;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      if (jobIdFromUrl) {
+        queryClient.invalidateQueries({ queryKey: ["/api/jobs", jobIdFromUrl] });
+        queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      }
+      toast({ title: "Invoice created" });
+      navigate(`/invoices/${data.id}`);
+    },
+    onError: () => {
+      toast({ title: "Failed to create invoice", variant: "destructive" });
+    },
+  });
+
   const sendMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/invoices/${params.id}/send`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", params.id] });
       toast({ title: "Invoice sent to client" });
+    },
+  });
+
+  const ensurePaymentLinkMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/invoices/${params.id}/payment-link`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices", params.id] });
+    },
+  });
+
+  const sendPaymentLinkMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/invoices/${params.id}/send-payment-link`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices", params.id] });
+      toast({ title: "Payment link sent to client" });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || "Failed to send payment link", variant: "destructive" });
     },
   });
 
@@ -143,7 +356,7 @@ export default function InvoiceDetail() {
     paymentMutation.mutate(data);
   };
 
-  if (isLoading) {
+  if (!isCreateMode && isLoading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
@@ -157,6 +370,225 @@ export default function InvoiceDetail() {
             <Skeleton className="h-32 w-full" />
           </CardContent>
         </Card>
+      </div>
+    );
+  }
+
+  if (isCreateMode) {
+    const taxAmount = (createSubtotal * DEFAULT_TAX_RATE) / 100;
+    const total = createSubtotal + taxAmount;
+
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => navigate("/invoices")} data-testid="button-back">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="text-2xl font-semibold tracking-tight">Create Invoice</h1>
+        </div>
+
+        <Form {...createForm}>
+          <form
+            onSubmit={createForm.handleSubmit((data) => createInvoiceMutation.mutate(data))}
+            className="space-y-6"
+          >
+            <Card>
+              <CardHeader>
+                <CardTitle>Client</CardTitle>
+                <CardDescription>Bill-to details</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <FormField
+                  control={createForm.control}
+                  name="clientName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Client name *</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="Acme Pty Ltd" data-testid="input-create-client-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={createForm.control}
+                  name="clientEmail"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input {...field} type="email" placeholder="billing@acme.com" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={createForm.control}
+                  name="clientPhone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Phone</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="+61 2 0000 0000" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={createForm.control}
+                  name="clientAddress"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Address *</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="123 Main St, Sydney NSW 2000" data-testid="input-create-client-address" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={createForm.control}
+                    name="dueDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Due date</FormLabel>
+                        <FormControl>
+                          <Input {...field} type="date" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={createForm.control}
+                  name="notes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Notes</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="Optional notes" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Line items</CardTitle>
+                    <CardDescription>Add description, quantity, unit price and amount</CardDescription>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={addLineItem} data-testid="button-add-line-item">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add line
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="w-24 text-right">Qty</TableHead>
+                      <TableHead className="w-32 text-right">Unit price</TableHead>
+                      <TableHead className="w-32 text-right">Amount</TableHead>
+                      <TableHead className="w-10" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {createLineItems.map((row) => (
+                      <TableRow key={row.id} data-testid={`row-create-line-${row.id}`}>
+                        <TableCell>
+                          <Input
+                            placeholder="Description"
+                            value={row.description}
+                            onChange={(e) => updateLineItem(row.id, { description: e.target.value })}
+                            className="h-9"
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            className="h-9 text-right"
+                            value={row.quantity}
+                            onChange={(e) => updateLineItem(row.id, { quantity: e.target.value })}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            className="h-9 text-right"
+                            value={row.unitPrice}
+                            onChange={(e) => updateLineItem(row.id, { unitPrice: e.target.value })}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            className="h-9 text-right"
+                            value={row.amount}
+                            onChange={(e) => updateLineItem(row.id, { amount: e.target.value })}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9"
+                            onClick={() => removeLineItem(row.id)}
+                            data-testid={`button-remove-line-${row.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <div className="mt-4 border-t pt-4 space-y-1 text-sm">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Subtotal</span>
+                    <span>${createSubtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Tax ({DEFAULT_TAX_RATE}%)</span>
+                    <span>${taxAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-medium text-base">
+                    <span>Total</span>
+                    <span>${total.toFixed(2)}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => navigate("/invoices")}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createInvoiceMutation.isPending} data-testid="button-submit-create-invoice">
+                {createInvoiceMutation.isPending ? "Creating…" : "Create invoice"}
+              </Button>
+            </div>
+          </form>
+        </Form>
       </div>
     );
   }
@@ -205,15 +637,87 @@ export default function InvoiceDetail() {
             </Button>
           )}
           {(invoice.status === "sent" || invoice.status === "partially_paid") && (
-            <Button
-              onClick={() => {
-                form.setValue("amount", parseFloat(invoice.amountDue || "0"));
-                setPaymentDialogOpen(true);
-              }}
-              data-testid="button-record-payment"
-            >
-              <DollarSign className="mr-2 h-4 w-4" />
-              Record Payment
+            <>
+              {parseFloat(invoice.amountDue ?? "0") > 0 && (
+                <Button
+                  disabled={ensurePaymentLinkMutation.isPending}
+                  onClick={async () => {
+                    try {
+                      const updated = await ensurePaymentLinkMutation.mutateAsync();
+                      const url = updated?.stripePaymentLinkUrl ?? (updated?.paymentLinkToken && typeof window !== "undefined" ? `${window.location.origin}/pay/${updated.paymentLinkToken}` : null);
+                      if (url) {
+                        window.open(url, "_blank", "noopener,noreferrer");
+                      } else {
+                        toast({ title: "No payment link available", variant: "destructive" });
+                      }
+                    } catch {
+                      toast({ title: "Failed to create payment link", variant: "destructive" });
+                    }
+                  }}
+                  data-testid="button-pay-stripe"
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  {ensurePaymentLinkMutation.isPending ? "Creating link…" : "Pay with Stripe"}
+                </Button>
+              )}
+              {(invoice.stripePaymentLinkUrl || invoice.paymentLinkToken || parseFloat(invoice.amountDue ?? "0") > 0) && (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      const amountDue = parseFloat(invoice.amountDue ?? "0");
+                      if (amountDue > 0) {
+                        try {
+                          const updated = await ensurePaymentLinkMutation.mutateAsync();
+                          const url = (updated?.stripePaymentLinkUrl || (updated?.paymentLinkToken && typeof window !== "undefined" ? `${window.location.origin}/pay/${updated.paymentLinkToken}` : null)) ?? null;
+                          if (url) {
+                            navigator.clipboard.writeText(url);
+                            toast({ title: "Payment link copied" });
+                          }
+                        } catch {
+                          toast({ title: "Failed to create payment link", variant: "destructive" });
+                        }
+                      } else {
+                        const url = invoice.stripePaymentLinkUrl || (invoice.paymentLinkToken && typeof window !== "undefined" ? `${window.location.origin}/pay/${invoice.paymentLinkToken}` : null);
+                        if (url) {
+                          navigator.clipboard.writeText(url);
+                          toast({ title: "Payment link copied" });
+                        }
+                      }
+                    }}
+                    disabled={ensurePaymentLinkMutation.isPending}
+                    data-testid="button-copy-payment-link"
+                  >
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copy payment link
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => sendPaymentLinkMutation.mutate()}
+                    disabled={sendPaymentLinkMutation.isPending || !invoice.clientEmail}
+                    data-testid="button-send-payment-link"
+                  >
+                    <Mail className="mr-2 h-4 w-4" />
+                    Send payment link to client
+                  </Button>
+                </>
+              )}
+              <Button
+                onClick={() => {
+                  form.setValue("amount", parseFloat(invoice.amountDue || "0"));
+                  setPaymentDialogOpen(true);
+                }}
+                data-testid="button-record-payment"
+              >
+                <DollarSign className="mr-2 h-4 w-4" />
+                Record Payment
+              </Button>
+            </>
+          )}
+          {invoice.jobId && (
+            <Button variant="outline" onClick={() => navigate(`/jobs/${invoice.jobId}`)}>
+              <Briefcase className="mr-2 h-4 w-4" />
+              View Job
             </Button>
           )}
         </div>
@@ -315,54 +819,71 @@ export default function InvoiceDetail() {
         </CardContent>
       </Card>
 
-      {invoice.payments && invoice.payments.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Payment History</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Method</TableHead>
-                  <TableHead>Reference</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {invoice.payments.map((payment) => (
-                  <TableRow key={payment.id} data-testid={`row-payment-${payment.id}`}>
-                    <TableCell>
-                      {payment.paidAt
-                        ? format(new Date(payment.paidAt), "dd MMM yyyy")
-                        : payment.createdAt
-                          ? format(new Date(payment.createdAt), "dd MMM yyyy")
-                          : "-"}
-                    </TableCell>
-                    <TableCell className="capitalize">
-                      {payment.paymentMethod.replace("_", " ")}
-                    </TableCell>
-                    <TableCell>{payment.transactionReference || "-"}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={payment.status === "completed" ? "default" : "secondary"}
-                        className={payment.status === "completed" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : ""}
-                      >
-                        {payment.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right font-medium">
-                      ${parseFloat(payment.amount).toFixed(2)}
-                    </TableCell>
+      <Card>
+        <CardHeader>
+          <CardTitle>Transaction history</CardTitle>
+          <CardDescription>
+            All payments for this invoice (manual and Stripe)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {(() => {
+            const transactions = buildTransactionRows(invoice);
+            if (transactions.length === 0) {
+              return (
+                <p className="text-sm text-muted-foreground py-4">No transactions yet.</p>
+              );
+            }
+            return (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Method</TableHead>
+                    <TableHead>Reference</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+                </TableHeader>
+                <TableBody>
+                  {transactions.map((tx) => (
+                    <TableRow key={tx.id} data-testid={`row-transaction-${tx.id}`}>
+                      <TableCell>
+                        {tx.date ? format(new Date(tx.date), "dd MMM yyyy") : "—"}
+                      </TableCell>
+                      <TableCell className="capitalize">{tx.method || "—"}</TableCell>
+                      <TableCell className="max-w-[200px] truncate" title={tx.reference}>
+                        {tx.reference || "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={tx.status === "completed" ? "default" : "secondary"}
+                          className={
+                            tx.status === "completed"
+                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                              : ""
+                          }
+                        >
+                          {tx.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="font-normal">
+                          {tx.source === "stripe" ? "Stripe" : "Manual"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        ${parseFloat(tx.amount).toFixed(2)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            );
+          })()}
+        </CardContent>
+      </Card>
 
       {invoice.notes && (
         <Card>

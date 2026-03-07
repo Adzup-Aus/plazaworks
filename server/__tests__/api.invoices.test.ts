@@ -123,4 +123,20 @@ describe.runIf(hasDb)("API invoices", () => {
     expect(res.body.payment).toHaveProperty("id");
     expect(res.body.payment.amount).toBe("150.00");
   });
+
+  it("POST /api/invoices/:id/payment-link with auth returns invoice", async () => {
+    if (!invoiceId) return;
+    const res = await request(app)
+      .post(`/api/invoices/${invoiceId}/payment-link`)
+      .set("Cookie", authCookie);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("id", invoiceId);
+    expect(res.body).toHaveProperty("invoiceNumber");
+  });
+
+  it("POST /api/invoices/:id/payment-link returns 401 when unauthenticated", async () => {
+    if (!invoiceId) return;
+    const res = await request(app).post(`/api/invoices/${invoiceId}/payment-link`);
+    expect(res.status).toBe(401);
+  });
 });

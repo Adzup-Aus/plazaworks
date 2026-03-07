@@ -1,6 +1,8 @@
 import type { Express } from "express";
+import { randomBytes } from "crypto";
 import { storage, isAuthenticated, requireUserId, getUserId, requirePermission } from "../../routes/shared";
 import { insertQuoteSchema, insertTermsTemplateSchema } from "@shared/schema";
+import { sendQuoteNotification } from "../../email";
 
 export function registerQuotesRoutes(app: Express): void {
   app.get("/api/quotes", isAuthenticated, requirePermission("view_quotes"), async (req, res) => {
@@ -76,10 +78,67 @@ export function registerQuotesRoutes(app: Express): void {
       if (!quote) {
         return res.status(404).json({ message: "Quote not found" });
       }
-      res.json(quote);
+      const clientEmail = (quote.clientEmail ?? "").trim();
+      if (!clientEmail) {
+        return res.status(400).json({ message: "Quote has no client email; add one before sending" });
+      }
+      const appUrl = (process.env.APP_URL ?? "").replace(/\/$/, "");
+      if (!appUrl) {
+        return res.status(500).json({ message: "APP_URL is not set; cannot build respond link" });
+      }
+      const token = randomBytes(24).toString("hex");
+      await storage.updateQuote(req.params.id, { clientResponseToken: token } as Record<string, unknown>);
+      const quoteWithItems = await storage.getQuoteWithLineItems(req.params.id);
+      if (!quoteWithItems) {
+        return res.status(404).json({ message: "Quote not found" });
+      }
+      const respondUrl = `${appUrl}/quote/respond/${token}`;
+      const subtotal = String(quoteWithItems.subtotal ?? "0");
+      const taxRate = String(quoteWithItems.taxRate ?? "0");
+      const taxAmount = String(quoteWithItems.taxAmount ?? "0");
+      const total = String(quoteWithItems.total ?? "0");
+      const validUntil = quoteWithItems.validUntil
+        ? new Date(quoteWithItems.validUntil).toLocaleDateString(undefined, { dateStyle: "medium" })
+        : undefined;
+      const lineItems = (quoteWithItems.lineItems ?? []).map((item: { description?: string; quantity?: string | number; unitPrice?: string; amount?: string }) => ({
+        description: item.description ?? "",
+        quantity: item.quantity,
+        unitPrice: item.unitPrice != null ? String(item.unitPrice) : "",
+        amount: item.amount != null ? String(item.amount) : "",
+      }));
+      const schedules = await storage.getQuotePaymentSchedules(req.params.id);
+      const paymentSchedules = schedules.map((s) => {
+        const amount = s.calculatedAmount != null ? String(s.calculatedAmount) : s.fixedAmount != null ? String(s.fixedAmount) : "0";
+        const days = s.dueDaysFromAcceptance ?? 0;
+        let dueWhen: string;
+        if (days > 0) {
+          dueWhen = days === 1 ? "1 day after acceptance" : `${days} days after acceptance`;
+        } else {
+          if (s.type === "deposit") dueWhen = "On acceptance";
+          else if (s.type === "final") dueWhen = "On completion";
+          else if (s.type === "progress") dueWhen = "As scheduled";
+          else dueWhen = "On acceptance";
+        }
+        return { name: s.name, type: s.type, amount, dueWhen };
+      });
+      await sendQuoteNotification({
+        clientEmail,
+        clientName: quoteWithItems.clientName ?? "Client",
+        quoteNumber: quoteWithItems.quoteNumber ?? quoteWithItems.id,
+        subtotal,
+        taxRate,
+        taxAmount,
+        total,
+        validUntil,
+        lineItems,
+        paymentSchedules,
+        respondUrl,
+      });
+      const updated = await storage.getQuote(req.params.id);
+      res.json(updated ?? quote);
     } catch (err: any) {
       console.error("Error sending quote:", err);
-      res.status(500).json({ message: "Failed to send quote" });
+      res.status(500).json({ message: err?.message ?? "Failed to send quote" });
     }
   });
 
@@ -89,7 +148,14 @@ export function registerQuotesRoutes(app: Express): void {
       if (!quote) {
         return res.status(404).json({ message: "Quote not found" });
       }
-      res.json(quote);
+      let createdInvoiceId: string | undefined;
+      if (!quote.convertedToInvoiceId) {
+        const invoice = await storage.createInvoiceFromAcceptedQuote(req.params.id, requireUserId(req));
+        createdInvoiceId = invoice?.id;
+      }
+      const updated = await storage.getQuote(req.params.id);
+      const payload = updated ?? quote;
+      res.json(createdInvoiceId != null ? { ...payload, createdInvoiceId } : payload);
     } catch (err: any) {
       console.error("Error accepting quote:", err);
       res.status(500).json({ message: "Failed to accept quote" });

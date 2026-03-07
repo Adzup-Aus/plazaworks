@@ -173,7 +173,7 @@ export default function Admin() {
                 id="jobNumberPrefix"
                 value={current.jobNumberPrefix ?? ""}
                 onChange={(e) => setForm((f) => ({ ...f, jobNumberPrefix: e.target.value }))}
-                placeholder="J-"
+                placeholder=""
               />
             </div>
             <div className="space-y-2">
@@ -182,7 +182,6 @@ export default function Admin() {
                 id="quoteNumberPrefix"
                 value={current.quoteNumberPrefix ?? ""}
                 onChange={(e) => setForm((f) => ({ ...f, quoteNumberPrefix: e.target.value }))}
-                placeholder="Q-"
               />
             </div>
             <div className="space-y-2">
@@ -191,7 +190,7 @@ export default function Admin() {
                 id="invoiceNumberPrefix"
                 value={current.invoiceNumberPrefix ?? ""}
                 onChange={(e) => setForm((f) => ({ ...f, invoiceNumberPrefix: e.target.value }))}
-                placeholder="INV-"
+                placeholder=""
               />
             </div>
           </div>

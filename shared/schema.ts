@@ -295,6 +295,8 @@ export const quotes = pgTable("quotes", {
   rejectedAt: timestamp("rejected_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  // Token for client to respond (accept/reject) via email link without logging in
+  clientResponseToken: varchar("client_response_token", { length: 64 }),
 }, (table) => [
   index("idx_quotes_status").on(table.status),
   index("idx_quotes_number").on(table.quoteNumber),
@@ -303,6 +305,7 @@ export const quotes = pgTable("quotes", {
   index("idx_quotes_client_status").on(table.clientStatus),
   index("idx_quotes_ref").on(table.referenceNumber),
   index("idx_quotes_parent").on(table.parentQuoteId),
+  index("idx_quotes_client_response_token").on(table.clientResponseToken),
 ]);
 
 // Invoices table
@@ -331,6 +334,8 @@ export const invoices = pgTable("invoices", {
   // Payment link token for client portal access
   paymentLinkToken: varchar("payment_link_token", { length: 100 }),
   stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
+  stripePaymentLinkId: varchar("stripe_payment_link_id", { length: 255 }),
+  stripePaymentLinkUrl: varchar("stripe_payment_link_url", { length: 512 }),
   createdById: varchar("created_by_id"),
   sentAt: timestamp("sent_at"),
   paidAt: timestamp("paid_at"),
@@ -625,9 +630,9 @@ export const insertLineItemSchema = createInsertSchema(lineItems).omit({
   id: true,
   createdAt: true,
 }).extend({
-  heading: z.string().optional(),
+  heading: z.string().nullish(),
   description: z.string().min(1, "Description is required"),
-  richDescription: z.string().optional(),
+  richDescription: z.string().nullish(),
   quantity: z.string().optional(),
   unitPrice: z.string(),
   amount: z.string(),

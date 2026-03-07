@@ -140,10 +140,20 @@ export class AuthTenantRepository {
     await this.db.update(userInvites).set({ usedAt: new Date() }).where(eq(userInvites.id, id));
   }
 
-  async updateUserInvite(id: string, data: { token: string; expiresAt: Date }): Promise<UserInvite | undefined> {
+  async updateUserInvite(
+    id: string,
+    data: { token: string; expiresAt: Date; roleId?: string | null }
+  ): Promise<UserInvite | undefined> {
+    const updateData: Record<string, unknown> = {
+      token: data.token,
+      expiresAt: data.expiresAt,
+    };
+    if (data.roleId !== undefined) {
+      updateData.roleId = data.roleId;
+    }
     const [updated] = await this.db
       .update(userInvites)
-      .set({ token: data.token, expiresAt: data.expiresAt })
+      .set(updateData as any)
       .where(eq(userInvites.id, id))
       .returning();
     return updated;

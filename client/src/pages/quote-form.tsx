@@ -132,13 +132,13 @@ export default function QuoteForm() {
         taxRate: parseFloat(quote.taxRate || "10"),
         lineItems: quote.lineItems?.length
           ? quote.lineItems.map((item) => ({
-              id: item.id,
-              heading: item.heading || "",
-              description: item.description,
-              richDescription: item.richDescription || "",
-              quantity: parseFloat(item.quantity),
-              unitPrice: parseFloat(item.unitPrice),
-            }))
+            id: item.id,
+            heading: item.heading || "",
+            description: item.description,
+            richDescription: item.richDescription || "",
+            quantity: parseFloat(item.quantity),
+            unitPrice: parseFloat(item.unitPrice),
+          }))
           : [{ heading: "", description: "", richDescription: "", quantity: 1, unitPrice: 0 }],
       });
     }
@@ -388,11 +388,11 @@ export default function QuoteForm() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Select Client</FormLabel>
-                    <Select 
+                    <Select
                       onValueChange={(value) => {
                         field.onChange(value);
                         handleClientSelect(value);
-                      }} 
+                      }}
                       value={field.value}
                     >
                       <FormControl>
@@ -419,7 +419,7 @@ export default function QuoteForm() {
                   </FormItem>
                 )}
               />
-              
+
               {form.watch("clientId") && (
                 <div className="grid gap-4 md:grid-cols-2 pt-4 border-t">
                   <div>

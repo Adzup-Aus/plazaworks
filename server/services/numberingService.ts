@@ -14,12 +14,12 @@ export interface NumberReservation {
 /** Reserve the next global job/invoice number (single-tenant). */
 export async function reserveNextNumber(): Promise<NumberReservation> {
   const settings = await db.query.appSettings.findFirst();
-  const jobPrefix = settings?.jobNumberPrefix ?? "J-";
-  const invoicePrefix = settings?.invoiceNumberPrefix ?? "INV-";
+  const jobPrefix = settings?.jobNumberPrefix ?? "";
+  const invoicePrefix = settings?.invoiceNumberPrefix ?? "";
 
   const result = await db.execute(sql`
     INSERT INTO app_counters (counter_key, next_value, pad_length, updated_at)
-    VALUES (${COUNTER_KEY}, 2, 4, NOW())
+    VALUES (${COUNTER_KEY}, 2, 6, NOW())
     ON CONFLICT (counter_key)
     DO UPDATE SET next_value = app_counters.next_value + 1, updated_at = NOW()
     RETURNING next_value - 1 AS reserved_value, pad_length
@@ -27,7 +27,7 @@ export async function reserveNextNumber(): Promise<NumberReservation> {
 
   const row = result.rows[0] as { reserved_value: number; pad_length: number };
   const reservedValue = row?.reserved_value ?? 1;
-  const padLength = row?.pad_length ?? 4;
+  const padLength = row?.pad_length ?? 6;
   const paddedNumber = String(reservedValue).padStart(padLength, "0");
 
   return {

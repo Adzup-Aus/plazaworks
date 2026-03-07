@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FileText } from "lucide-react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import {
   Select,
   SelectContent,
@@ -57,6 +60,7 @@ function formatStatus(status: string): string {
 
 export default function Jobs() {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
@@ -64,6 +68,10 @@ export default function Jobs() {
   const { data: jobs, isLoading } = useQuery<Job[]>({
     queryKey: ["/api/jobs"],
   });
+
+  const handleCreateInvoiceForJob = (jobId: string) => {
+    setLocation(`/invoices/new?jobId=${jobId}`);
+  };
 
   const filteredJobs = (jobs || []).filter((job) => {
     const matchesSearch =
@@ -223,6 +231,21 @@ export default function Jobs() {
                           <span>{job.clientPhone}</span>
                         </div>
                       )}
+                      <PermissionGate permission="create_invoices">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full mt-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCreateInvoiceForJob(job.id);
+                          }}
+                          data-testid={`button-create-invoice-${job.id}`}
+                        >
+                          <FileText className="mr-2 h-4 w-4" />
+                          Create Invoice
+                        </Button>
+                      </PermissionGate>
                     </div>
                   </CardContent>
                 </Card>
@@ -237,6 +260,7 @@ export default function Jobs() {
                     <TableHead>Address</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Created</TableHead>
+                    <TableHead className="w-[120px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -268,6 +292,19 @@ export default function Jobs() {
                         {job.createdAt
                           ? new Date(job.createdAt).toLocaleDateString()
                           : "-"}
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <PermissionGate permission="create_invoices">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleCreateInvoiceForJob(job.id)}
+                            data-testid={`button-create-invoice-${job.id}`}
+                          >
+                            <FileText className="mr-2 h-4 w-4" />
+                            Create Invoice
+                          </Button>
+                        </PermissionGate>
                       </TableCell>
                     </TableRow>
                   ))}
