@@ -78,22 +78,11 @@ export default function Invoices() {
     enabled: newInvoiceDialogOpen,
   });
 
-  const createFromJobMutation = useMutation({
-    mutationFn: async (jobId: string) => {
-      const res = await apiRequest("POST", `/api/invoices/generate/job/${jobId}`);
-      return res.json() as Promise<Invoice>;
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      setNewInvoiceDialogOpen(false);
-      setSelectedJobId("");
-      if (data?.id) setLocation(`/invoices/${data.id}`);
-      toast({ title: "Invoice created from job" });
-    },
-    onError: () => {
-      toast({ title: "Failed to create invoice", variant: "destructive" });
-    },
-  });
+  const openCreateInvoiceForm = (jobId?: string) => {
+    setNewInvoiceDialogOpen(false);
+    setSelectedJobId("");
+    setLocation(jobId ? `/invoices/new?jobId=${jobId}` : "/invoices/new");
+  };
 
   const sendMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/invoices/${id}/send`),
@@ -373,27 +362,16 @@ export default function Invoices() {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => {
-                setNewInvoiceDialogOpen(false);
-                setLocation("/invoices/new");
-              }}
+              onClick={() => openCreateInvoiceForm()}
               data-testid="button-new-invoice-blank"
             >
               Create blank invoice
             </Button>
             <Button
-              onClick={() => {
-                if (selectedJobId) {
-                  createFromJobMutation.mutate(selectedJobId);
-                } else {
-                  setNewInvoiceDialogOpen(false);
-                  setLocation("/invoices/new");
-                }
-              }}
-              disabled={createFromJobMutation.isPending}
+              onClick={() => openCreateInvoiceForm(selectedJobId || undefined)}
               data-testid="button-new-invoice-confirm"
             >
-              {createFromJobMutation.isPending ? "Creating…" : selectedJobId ? "Create from job" : "Create blank"}
+              {selectedJobId ? "Create from job" : "Create blank"}
             </Button>
           </DialogFooter>
         </DialogContent>

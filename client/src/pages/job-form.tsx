@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useLocation, useParams } from "wouter";
+import { Link, useLocation, useParams } from "wouter";
 import { z } from "zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -75,12 +76,13 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
-import { jobStatuses, pcItemStatuses, type Job, type PCItem, type ClientAccessToken, type JobPhoto, type JobReceipt, type ScheduleEntry, type StaffProfile, type Quote, type QuoteWithDetails, type LineItem, type QuoteMilestone, type QuotePaymentSchedule, type Invoice, type JobMilestone } from "@shared/schema";
+import { jobStatuses, pcItemStatuses, type Job, type PCItem, type Client, type ClientAccessToken, type JobPhoto, type JobReceipt, type ScheduleEntry, type StaffProfile, type Quote, type QuoteWithDetails, type LineItem, type QuoteMilestone, type QuotePaymentSchedule, type Invoice, type JobMilestone } from "@shared/schema";
 import type { User as AuthUser } from "@shared/models/auth";
 
 type StaffProfileWithUser = StaffProfile & { user?: AuthUser };
 
 const formSchema = z.object({
+  clientId: z.string().optional(),
   clientName: z.string().min(1, "Client name is required"),
   clientEmail: z.string().email("Invalid email").optional().or(z.literal("")),
   clientPhone: z.string().optional(),
@@ -1621,13 +1623,20 @@ function ShareLinkSection({ jobId }: { jobId: string }) {
 
 function InvoicePreviewSection({ job }: { job: Job }) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  
+
+  const { data: invoicesByJob } = useQuery<Invoice[]>({
+    queryKey: [`/api/invoices?jobId=${job.id}`],
+    enabled: !!job?.id,
+  });
+
   const { data: quoteDetails, isLoading } = useQuery<QuoteWithDetails>({
     queryKey: [`/api/quotes/${job.quoteId}`],
     enabled: !!job.quoteId && isPreviewOpen,
   });
 
-  if (!job.quoteId && !job.invoiceId) {
+  const hasQuote = !!job.quoteId;
+  const hasInvoices = !!job.invoiceId || (invoicesByJob && invoicesByJob.length > 0);
+  if (!hasQuote && !hasInvoices) {
     return null;
   }
 
@@ -1780,17 +1789,52 @@ function InvoicePreviewSection({ job }: { job: Job }) {
         </Dialog>
       </CardHeader>
       <CardContent>
-        <div className="flex items-center gap-4 text-sm">
+        <div className="flex flex-wrap items-center gap-4 text-sm">
           {job.quoteId && (
             <div className="flex items-center gap-2">
-              <Badge variant="outline">Quote #{job.referenceNumber || job.quoteId.slice(0, 8)}</Badge>
+              <Link href={`/quotes/${job.quoteId}`}>
+                <Badge variant="outline" className="cursor-pointer hover:bg-muted">
+                  Quote #{job.referenceNumber || job.quoteId.slice(0, 8)}
+                </Badge>
+              </Link>
+              <Link href={`/quotes/${job.quoteId}`}>
+                <Button variant="ghost" size="sm" className="h-7 text-xs">
+                  View quote
+                </Button>
+              </Link>
             </div>
           )}
-          {job.invoiceId && (
+          {(invoicesByJob && invoicesByJob.length > 0) ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {invoicesByJob.map((inv) => (
+                <div key={inv.id} className="flex items-center gap-2">
+                  <Link href={`/invoices/${inv.id}`}>
+                    <Badge variant="secondary" className="cursor-pointer hover:bg-secondary/80">
+                      {inv.invoiceNumber}
+                    </Badge>
+                  </Link>
+                  <Link href={`/invoices/${inv.id}`}>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs">
+                      View invoice
+                    </Button>
+                  </Link>
+                </div>
+              ))}
+            </div>
+          ) : job.invoiceId ? (
             <div className="flex items-center gap-2">
-              <Badge variant="secondary">Invoice Linked</Badge>
+              <Link href={`/invoices/${job.invoiceId}`}>
+                <Badge variant="secondary" className="cursor-pointer hover:bg-secondary/80">
+                  Invoice Linked
+                </Badge>
+              </Link>
+              <Link href={`/invoices/${job.invoiceId}`}>
+                <Button variant="ghost" size="sm" className="h-7 text-xs">
+                  View invoice
+                </Button>
+              </Link>
             </div>
-          )}
+          ) : null}
         </div>
       </CardContent>
     </Card>
@@ -2402,9 +2446,25 @@ export default function JobForm() {
     enabled: isEditing,
   });
 
+  const { hasPermission } = usePermissions();
+  const canViewClients = hasPermission("view_clients");
+  const canCreateClients = hasPermission("create_clients");
+  const [createClientDialogOpen, setCreateClientDialogOpen] = useState(false);
+  const [newClientFirstName, setNewClientFirstName] = useState("");
+  const [newClientLastName, setNewClientLastName] = useState("");
+  const [newClientEmail, setNewClientEmail] = useState("");
+  const [newClientPhone, setNewClientPhone] = useState("");
+  const [newClientAddress, setNewClientAddress] = useState("");
+
+  const { data: clientsList } = useQuery<Client[]>({
+    queryKey: ["/api/clients"],
+    enabled: canViewClients,
+  });
+
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      clientId: "",
       clientName: "",
       clientEmail: "",
       clientPhone: "",
@@ -2425,6 +2485,7 @@ export default function JobForm() {
       const hours = Math.round((totalHours % 8) * 10) / 10;
       
       form.reset({
+        clientId: job.clientId || "",
         clientName: job.clientName,
         clientEmail: job.clientEmail || "",
         clientPhone: job.clientPhone || "",
@@ -2438,6 +2499,44 @@ export default function JobForm() {
       });
     }
   }, [job, isEditing, form]);
+
+  function buildAddressFromClient(c: Client): string {
+    const parts = [
+      c.streetAddress,
+      c.streetAddress2,
+      c.city,
+      c.state,
+      c.postalCode,
+      c.country,
+    ].filter(Boolean);
+    return parts.join(", ") || "";
+  }
+
+  const createClientMutation = useMutation({
+    mutationFn: async (data: { firstName: string; lastName: string; email?: string; phone?: string; streetAddress?: string }) => {
+      const res = await apiRequest("POST", "/api/clients", {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email || undefined,
+        phone: data.phone || undefined,
+        streetAddress: data.streetAddress || undefined,
+      });
+      return res.json() as Promise<Client>;
+    },
+    onSuccess: (newClient) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      form.setValue("clientId", newClient.id);
+      form.setValue("clientName", `${newClient.firstName} ${newClient.lastName}`);
+      form.setValue("clientEmail", newClient.email || "");
+      form.setValue("clientPhone", newClient.phone || newClient.mobilePhone || "");
+      form.setValue("address", buildAddressFromClient(newClient));
+      setCreateClientDialogOpen(false);
+      toast({ title: "Client created", description: "Client has been added and selected for this job." });
+    },
+    onError: () => {
+      toast({ title: "Failed to create client", variant: "destructive" });
+    },
+  });
 
   const createMutation = useMutation({
     mutationFn: async (data: FormData) => {
@@ -2495,20 +2594,9 @@ export default function JobForm() {
     },
   });
 
-  const createInvoiceFromJobMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/invoices/generate/job/${id}`);
-      return res.json() as Promise<{ id: string }>;
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      if (data?.id) setLocation(`/invoices/${data.id}`);
-      toast({ title: "Invoice created" });
-    },
-    onError: () => {
-      toast({ title: "Failed to create invoice", variant: "destructive" });
-    },
-  });
+  const handleCreateInvoiceFromJob = () => {
+    if (id) setLocation(`/invoices/new?jobId=${id}`);
+  };
 
   const onSubmit = (data: FormData) => {
     if (isEditing) {
@@ -2568,8 +2656,7 @@ export default function JobForm() {
           <PermissionGate permission="create_invoices">
             <Button
               variant="outline"
-              onClick={() => createInvoiceFromJobMutation.mutate()}
-              disabled={createInvoiceFromJobMutation.isPending}
+              onClick={handleCreateInvoiceFromJob}
               data-testid="button-create-invoice-from-job"
             >
               <FileText className="mr-2 h-4 w-4" />
@@ -2589,6 +2676,59 @@ export default function JobForm() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {canViewClients && (
+                <FormField
+                  control={form.control}
+                  name="clientId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Client</FormLabel>
+                      <Select
+                        value={field.value || "_manual"}
+                        onValueChange={(value) => {
+                          if (value === "_manual") {
+                            field.onChange("");
+                            return;
+                          }
+                          if (value === "__create__") {
+                            field.onChange("");
+                            setCreateClientDialogOpen(true);
+                            return;
+                          }
+                          field.onChange(value);
+                          const client = (clientsList || []).find((c) => c.id === value);
+                          if (client) {
+                            form.setValue("clientName", `${client.firstName} ${client.lastName}`);
+                            form.setValue("clientEmail", client.email || "");
+                            form.setValue("clientPhone", client.phone || client.mobilePhone || "");
+                            form.setValue("address", buildAddressFromClient(client));
+                          }
+                        }}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-job-client">
+                            <SelectValue placeholder="Select client or enter manually" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="_manual">Manual entry</SelectItem>
+                          {(clientsList || []).map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.company ? `${c.company} (${c.firstName} ${c.lastName})` : `${c.firstName} ${c.lastName}`}
+                            </SelectItem>
+                          ))}
+                          {canCreateClients && (
+                            <SelectItem value="__create__" data-testid="option-create-new-client">
+                              Create new client…
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <div className="grid gap-4 md:grid-cols-2">
                 <FormField
                   control={form.control}
@@ -2859,6 +2999,103 @@ export default function JobForm() {
           <ShareLinkSection jobId={id} />
         </>
       )}
+
+      <Dialog open={createClientDialogOpen} onOpenChange={(open) => {
+        setCreateClientDialogOpen(open);
+        if (!open) {
+          setNewClientFirstName("");
+          setNewClientLastName("");
+          setNewClientEmail("");
+          setNewClientPhone("");
+          setNewClientAddress("");
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create new client</DialogTitle>
+            <DialogDescription>
+              Add a client and use them for this job. They will appear in the client list for future jobs.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-client-first">First name *</Label>
+                <Input
+                  id="new-client-first"
+                  value={newClientFirstName}
+                  onChange={(e) => setNewClientFirstName(e.target.value)}
+                  placeholder="John"
+                  data-testid="input-new-client-first"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-client-last">Last name *</Label>
+                <Input
+                  id="new-client-last"
+                  value={newClientLastName}
+                  onChange={(e) => setNewClientLastName(e.target.value)}
+                  placeholder="Smith"
+                  data-testid="input-new-client-last"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-client-email">Email</Label>
+              <Input
+                id="new-client-email"
+                type="email"
+                value={newClientEmail}
+                onChange={(e) => setNewClientEmail(e.target.value)}
+                placeholder="john@example.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-client-phone">Phone</Label>
+              <Input
+                id="new-client-phone"
+                value={newClientPhone}
+                onChange={(e) => setNewClientPhone(e.target.value)}
+                placeholder="+61 400 000 000"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-client-address">Address</Label>
+              <Input
+                id="new-client-address"
+                value={newClientAddress}
+                onChange={(e) => setNewClientAddress(e.target.value)}
+                placeholder="123 Main St, Sydney NSW 2000"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCreateClientDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={!newClientFirstName.trim() || !newClientLastName.trim() || createClientMutation.isPending}
+              onClick={() => {
+                createClientMutation.mutate({
+                  firstName: newClientFirstName.trim(),
+                  lastName: newClientLastName.trim(),
+                  email: newClientEmail.trim() || undefined,
+                  phone: newClientPhone.trim() || undefined,
+                  streetAddress: newClientAddress.trim() || undefined,
+                });
+              }}
+              data-testid="button-submit-new-client"
+            >
+              {createClientMutation.isPending ? "Creating…" : "Create client"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

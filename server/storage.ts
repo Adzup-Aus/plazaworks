@@ -1260,6 +1260,9 @@ export class DatabaseStorage implements IStorage {
     const invoiceNumber = await this.generateInvoiceNumber();
     const amountDue = invoice.total || "0";
     const [created] = await db.insert(invoices).values({ ...invoice, invoiceNumber, amountDue }).returning();
+    if (created?.jobId) {
+      await db.update(jobs).set({ invoiceId: created.id, updatedAt: new Date() }).where(eq(jobs.id, created.jobId));
+    }
     return created;
   }
 
@@ -1283,6 +1286,9 @@ export class DatabaseStorage implements IStorage {
       createdById,
     }).returning();
 
+    if (invoice) {
+      await db.update(jobs).set({ invoiceId: invoice.id, updatedAt: new Date() }).where(eq(jobs.id, jobId));
+    }
     return invoice;
   }
 

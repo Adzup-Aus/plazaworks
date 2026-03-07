@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -69,20 +69,9 @@ export default function Jobs() {
     queryKey: ["/api/jobs"],
   });
 
-  const createInvoiceMutation = useMutation({
-    mutationFn: async (jobId: string) => {
-      const res = await apiRequest("POST", `/api/invoices/generate/job/${jobId}`);
-      return res.json() as Promise<{ id: string }>;
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      if (data?.id) setLocation(`/invoices/${data.id}`);
-      toast({ title: "Invoice created" });
-    },
-    onError: () => {
-      toast({ title: "Failed to create invoice", variant: "destructive" });
-    },
-  });
+  const handleCreateInvoiceForJob = (jobId: string) => {
+    setLocation(`/invoices/new?jobId=${jobId}`);
+  };
 
   const filteredJobs = (jobs || []).filter((job) => {
     const matchesSearch =
@@ -249,9 +238,8 @@ export default function Jobs() {
                           className="w-full mt-2"
                           onClick={(e) => {
                             e.stopPropagation();
-                            createInvoiceMutation.mutate(job.id);
+                            handleCreateInvoiceForJob(job.id);
                           }}
-                          disabled={createInvoiceMutation.isPending}
                           data-testid={`button-create-invoice-${job.id}`}
                         >
                           <FileText className="mr-2 h-4 w-4" />
@@ -310,8 +298,7 @@ export default function Jobs() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => createInvoiceMutation.mutate(job.id)}
-                            disabled={createInvoiceMutation.isPending}
+                            onClick={() => handleCreateInvoiceForJob(job.id)}
                             data-testid={`button-create-invoice-${job.id}`}
                           >
                             <FileText className="mr-2 h-4 w-4" />
