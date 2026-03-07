@@ -1095,7 +1095,7 @@ export default function Schedule() {
                                   <div
                                     role={canManageSchedule ? "button" : undefined}
                                     tabIndex={canManageSchedule ? 0 : undefined}
-                                    className={`group absolute inset-y-0 z-10 rounded px-1 py-0.5 text-xs text-white flex flex-col justify-center min-w-0 hover:opacity-95 ${canManageSchedule
+                                    className={`group absolute inset-y-0 z-10 rounded px-1 py-0.5 text-xs text-white flex items-center gap-0.5 min-w-0 hover:opacity-95 ${canManageSchedule
                                       ? "cursor-grab active:cursor-grabbing"
                                       : "cursor-default"
                                       } ${entry.activityId
@@ -1116,14 +1116,16 @@ export default function Schedule() {
                                       handleEntryBlockPointerDown(entry, durationSlots, e)
                                     }
                                   >
-                                    <span className="truncate font-medium">
-                                      {getEntryLabel(entry)}
-                                    </span>
-                                    {getEntryAddress(entry) && (
-                                      <span className="truncate text-[10px] opacity-90">
-                                        {getEntryAddress(entry)}
+                                    <div className="flex flex-col justify-center min-w-0 flex-1 truncate">
+                                      <span className="truncate font-medium">
+                                        {getEntryLabel(entry)}
                                       </span>
-                                    )}
+                                      {getEntryAddress(entry) && (
+                                        <span className="truncate text-[10px] opacity-90">
+                                          {getEntryAddress(entry)}
+                                        </span>
+                                      )}
+                                    </div>
                                     {canManageSchedule && (
                                       <Button
                                         type="button"
