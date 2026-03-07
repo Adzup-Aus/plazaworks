@@ -9,6 +9,7 @@ export default defineConfig({
     environment: "node",
     include: ["server/**/*.test.ts", "shared/**/*.test.ts"],
     globals: false,
+    globalSetup: [path.resolve(__dirname, "server/__tests__/globalSetup.ts")],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],

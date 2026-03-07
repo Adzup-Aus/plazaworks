@@ -5,19 +5,38 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ListTodo, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ListTodo, Plus, Pencil, Trash2, Loader2, Briefcase, TreePalm, CalendarX, BookOpen, Wrench, Ban, CircleSlash } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Activity } from "@shared/schema";
 
 const DEFAULT_COLOR = "#6366f1";
 
+const ACTIVITY_ICON_OPTIONS: { value: string; label: string; Icon: React.ComponentType<{ className?: string }> }[] = [
+  { value: "Briefcase", label: "Job / Briefcase", Icon: Briefcase },
+  { value: "TreePalm", label: "Annual Leave", Icon: TreePalm },
+  { value: "CalendarX", label: "Sick Leave", Icon: CalendarX },
+  { value: "CircleSlash", label: "RDO", Icon: CircleSlash },
+  { value: "BookOpen", label: "Training", Icon: BookOpen },
+  { value: "Wrench", label: "Unavailable", Icon: Wrench },
+  { value: "Ban", label: "Blocked", Icon: Ban },
+];
+
 export default function Activities() {
   const [newActivityName, setNewActivityName] = useState("");
   const [newActivityColor, setNewActivityColor] = useState(DEFAULT_COLOR);
+  const [newActivityIcon, setNewActivityIcon] = useState<string>("");
   const [activityEditId, setActivityEditId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editColor, setEditColor] = useState("");
+  const [editIcon, setEditIcon] = useState<string>("");
   const { toast } = useToast();
 
   const { data: activities, isLoading: activitiesLoading } = useQuery<Activity[]>({
@@ -25,10 +44,11 @@ export default function Activities() {
   });
 
   const createActivityMutation = useMutation({
-    mutationFn: async ({ name, color }: { name: string; color?: string }) => {
+    mutationFn: async ({ name, color, icon }: { name: string; color?: string; icon?: string | null }) => {
       const res = await apiRequest("POST", "/api/activities", {
         name,
         color: color ?? DEFAULT_COLOR,
+        icon: icon && icon.trim() ? icon.trim() : null,
       });
       return res.json();
     },
@@ -36,6 +56,7 @@ export default function Activities() {
       queryClient.invalidateQueries({ queryKey: ["/api/activities"] });
       setNewActivityName("");
       setNewActivityColor(DEFAULT_COLOR);
+      setNewActivityIcon("");
       toast({ title: "Activity created" });
     },
     onError: (e: Error) => {
@@ -48,12 +69,14 @@ export default function Activities() {
       id,
       name,
       color,
+      icon,
     }: {
       id: string;
       name: string;
       color: string;
+      icon?: string | null;
     }) => {
-      const res = await apiRequest("PATCH", `/api/activities/${id}`, { name, color });
+      const res = await apiRequest("PATCH", `/api/activities/${id}`, { name, color, icon: icon ?? null });
       return res.json();
     },
     onSuccess: () => {
@@ -84,6 +107,7 @@ export default function Activities() {
     setActivityEditId(a.id);
     setEditName(a.name);
     setEditColor(a.color ?? DEFAULT_COLOR);
+    setEditIcon(a.icon ?? "");
   };
 
   const saveEdit = () => {
@@ -92,7 +116,14 @@ export default function Activities() {
       id: activityEditId,
       name: editName.trim(),
       color: editColor || DEFAULT_COLOR,
+      icon: editIcon.trim() || null,
     });
+  };
+
+  const renderActivityIcon = (iconName: string | null | undefined) => {
+    const option = ACTIVITY_ICON_OPTIONS.find((o) => o.value === iconName);
+    const Icon = option?.Icon ?? Briefcase;
+    return <Icon className="h-4 w-4 shrink-0" />;
   };
 
   const cancelEdit = () => {
@@ -129,11 +160,31 @@ export default function Activities() {
                     createActivityMutation.mutate({
                       name: newActivityName.trim(),
                       color: newActivityColor,
+                      icon: newActivityIcon.trim() || null,
                     });
                   }
                 }}
                 className="h-9"
               />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm">Icon</Label>
+              <Select value={newActivityIcon || "none"} onValueChange={(v) => setNewActivityIcon(v === "none" ? "" : v)}>
+                <SelectTrigger className="h-9 w-[160px]">
+                  <SelectValue placeholder="Icon" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Default</SelectItem>
+                  {ACTIVITY_ICON_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      <span className="flex items-center gap-2">
+                        <opt.Icon className="h-4 w-4" />
+                        {opt.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label className="text-sm">Color</Label>
@@ -162,6 +213,7 @@ export default function Activities() {
                   createActivityMutation.mutate({
                     name: newActivityName.trim(),
                     color: newActivityColor,
+                    icon: newActivityIcon.trim() || null,
                   });
               }}
             >
@@ -203,6 +255,25 @@ export default function Activities() {
                           }}
                           autoFocus
                         />
+                        <div className="space-y-1">
+                          <Label className="text-xs">Icon</Label>
+                          <Select value={editIcon || "none"} onValueChange={(v) => setEditIcon(v === "none" ? "" : v)}>
+                            <SelectTrigger className="h-9 w-[140px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Default</SelectItem>
+                              {ACTIVITY_ICON_OPTIONS.map((opt) => (
+                                <SelectItem key={opt.value} value={opt.value}>
+                                  <span className="flex items-center gap-2">
+                                    <opt.Icon className="h-4 w-4" />
+                                    {opt.label}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                         <div className="flex items-center gap-2">
                           <input
                             type="color"
@@ -245,12 +316,15 @@ export default function Activities() {
                       <>
                         <div className="flex items-center gap-2 flex-1 min-w-0">
                           <div
-                            className="h-6 w-6 rounded shrink-0 border border-border"
+                            className="h-8 w-8 rounded shrink-0 border border-border flex items-center justify-center"
                             style={{
                               backgroundColor: a.color ?? DEFAULT_COLOR,
+                              color: "#fff",
                             }}
                             title={a.color ?? DEFAULT_COLOR}
-                          />
+                          >
+                            {renderActivityIcon(a.icon)}
+                          </div>
                           <span className="text-sm font-medium truncate">
                             {a.name}
                           </span>
