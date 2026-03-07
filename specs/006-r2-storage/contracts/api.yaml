@@ -1,0 +1,249 @@
+openapi: 3.0.0
+info:
+  title: R2 Storage API
+  version: 1.0.0
+  description: API for uploading and managing files in Cloudflare R2 storage
+
+paths:
+  /api/uploads/request-url:
+    post:
+      summary: Request a presigned URL for file upload
+      description: |
+        Generates a presigned PUT URL for uploading a file directly to R2.
+        The client must then PUT the file to the returned URL.
+      tags:
+        - Storage
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - filename
+                - contentType
+                - size
+                - entityType
+              properties:
+                filename:
+                  type: string
+                  description: Original filename of the file
+                  example: "job-site-photo.jpg"
+                contentType:
+                  type: string
+                  description: MIME type of the file
+                  enum: [image/jpeg, image/png, image/gif, image/webp, image/heic, image/heif, application/pdf]
+                  example: "image/jpeg"
+                size:
+                  type: integer
+                  description: File size in bytes
+                  maximum: 10485760  # 10MB
+                  example: 2048576
+                entityType:
+                  type: string
+                  description: Type of entity being uploaded
+                  enum: [photo, receipt, media]
+                  example: "photo"
+      responses:
+        '200':
+          description: Presigned URL generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadUrl:
+                    type: string
+                    format: uri
+                    description: Presigned PUT URL for R2
+                    example: "https://123456789.r2.cloudflarestorage.com/bucket/org_123/photos/uuid.jpg?X-Amz-Algorithm=..."
+                  objectPath:
+                    type: string
+                    description: The R2 object key to use when creating the database record
+                    example: "org_123/photos/a1b2c3d4-e5f6-7890-abcd-ef1234567890.jpg"
+                  expiresAt:
+                    type: string
+                    format: date-time
+                    description: When the presigned URL expires
+        '400':
+          description: Invalid request (file too large, invalid type, etc.)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "File exceeds 10MB limit"
+        '401':
+          description: Unauthorized - user not authenticated
+        '403':
+          description: Forbidden - user lacks permission
+
+  /api/storage/migrate:
+    post:
+      summary: Run migration for existing Replit files
+      description: |
+        Admin-only endpoint to trigger background migration of existing
+        Replit-hosted files to R2. Returns job ID for tracking progress.
+      tags:
+        - Storage
+        - Admin
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entityType:
+                  type: string
+                  enum: [job_photos, job_receipts, milestone_media, all]
+                  default: all
+                  description: Which entity type to migrate
+                batchSize:
+                  type: integer
+                  default: 100
+                  maximum: 500
+                  description: Number of records to process per batch
+                dryRun:
+                  type: boolean
+                  default: false
+                  description: If true, only reports what would be migrated
+      responses:
+        '200':
+          description: Migration started successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:
+                    type: string
+                    description: Unique job ID for tracking progress
+                  status:
+                    type: string
+                    enum: [started, dry_run]
+                  totalRecords:
+                    type: integer
+                    description: Total records to migrate
+                  message:
+                    type: string
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - admin permission required
+
+  /api/storage/migrate/{jobId}/status:
+    get:
+      summary: Get migration job status
+      description: Returns the current status of a migration job
+      tags:
+        - Storage
+        - Admin
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Migration status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:
+                    type: string
+                  status:
+                    type: string
+                    enum: [pending, running, completed, failed]
+                  totalRecords:
+                    type: integer
+                  processedRecords:
+                    type: integer
+                  failedRecords:
+                    type: integer
+                  startedAt:
+                    type: string
+                    format: date-time
+                  completedAt:
+                    type: string
+                    format: date-time
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        entityId:
+                          type: integer
+                        error:
+                          type: string
+        '404':
+          description: Migration job not found
+
+  /api/storage/signed-url:
+    post:
+      summary: Get a signed URL for accessing a private object
+      description: |
+        Generates a time-limited signed URL for accessing an R2 object.
+        Used when objects are private and need temporary access.
+      tags:
+        - Storage
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - r2Key
+              properties:
+                r2Key:
+                  type: string
+                  description: The R2 object key
+                  example: "org_123/photos/a1b2c3d4-e5f6-7890-abcd-ef1234567890.jpg"
+                expiresIn:
+                  type: integer
+                  default: 3600
+                  maximum: 86400
+                  description: URL expiration time in seconds (max 24 hours)
+      responses:
+        '200':
+          description: Signed URL generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  signedUrl:
+                    type: string
+                    format: uri
+                    description: Time-limited signed URL
+                  expiresAt:
+                    type: string
+                    format: date-time
+        '400':
+          description: Invalid r2Key
+        '401':
+          description: Unauthorized
+        '404':
+          description: Object not found
+
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: connect.sid
+      description: Session-based authentication
