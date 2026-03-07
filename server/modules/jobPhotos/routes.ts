@@ -1,12 +1,15 @@
 import type { Express } from "express";
 import { storage, isAuthenticated, requireUserId } from "../../routes/shared";
 import { insertJobPhotoSchema } from "@shared/schema";
+import { getFileUrl } from "../storage/utils";
+import { resolveDisplayUrl, resolveDisplayUrls } from "../storage/service";
 
 export function registerJobPhotosRoutes(app: Express): void {
   app.get("/api/jobs/:jobId/photos", isAuthenticated, async (req, res) => {
     try {
       const photos = await storage.getJobPhotos(req.params.jobId);
-      res.json(photos);
+      const withUrls = await resolveDisplayUrls(photos);
+      res.json(withUrls);
     } catch (err: any) {
       console.error("Error fetching job photos:", err);
       res.status(500).json({ message: "Failed to fetch job photos" });
@@ -19,7 +22,8 @@ export function registerJobPhotosRoutes(app: Express): void {
       if (!photo) {
         return res.status(404).json({ message: "Photo not found" });
       }
-      res.json(photo);
+      const url = await resolveDisplayUrl(photo.url, photo.objectKey);
+      res.json({ ...photo, url });
     } catch (err: any) {
       console.error("Error fetching job photo:", err);
       res.status(500).json({ message: "Failed to fetch job photo" });
@@ -41,12 +45,14 @@ export function registerJobPhotosRoutes(app: Express): void {
         }
       }
 
-      const validation = insertJobPhotoSchema.safeParse({
-        ...req.body,
-        filename,
-        jobId: req.params.jobId,
-        uploadedById: staffProfile?.id,
-      });
+      const body = { ...req.body, filename, jobId: req.params.jobId, uploadedById: staffProfile?.id };
+      const url = body.url as string | undefined;
+      const isS3Key = url && !url.startsWith("http") && !url.startsWith("/objects/") && url.startsWith("uploads/");
+      if (isS3Key) {
+        body.objectKey = url;
+        body.url = getFileUrl(url, url) || url;
+      }
+      const validation = insertJobPhotoSchema.safeParse(body);
       if (!validation.success) {
         return res.status(400).json({ message: validation.error.errors[0].message });
       }

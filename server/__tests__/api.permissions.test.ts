@@ -23,7 +23,7 @@ describe.runIf(hasDb)("API permissions", () => {
 
   it("GET /api/auth/user returns permissions array when authenticated", async () => {
     const loginRes = await request(app).post("/api/auth/login").send({
-      email: "cliff@gmail.com",
+      email: "cliffcoelho@gmail.com",
       password: "secret1234",
     });
     const cookie = loginRes.headers["set-cookie"];
@@ -37,7 +37,7 @@ describe.runIf(hasDb)("API permissions", () => {
 
   it("GET /api/auth/user returns normalized permissions (admin gets all)", async () => {
     const loginRes = await request(app).post("/api/auth/login").send({
-      email: "cliff@gmail.com",
+      email: "cliffcoelho@gmail.com",
       password: "secret1234",
     });
     const cookie = loginRes.headers["set-cookie"];
@@ -49,7 +49,7 @@ describe.runIf(hasDb)("API permissions", () => {
 
   it("PATCH /api/staff/:id persists permissions and GET /api/auth/user reflects them", async () => {
     const loginRes = await request(app).post("/api/auth/login").send({
-      email: "cliff@gmail.com",
+      email: "cliffcoelho@gmail.com",
       password: "secret1234",
     });
     const cookie = loginRes.headers["set-cookie"];

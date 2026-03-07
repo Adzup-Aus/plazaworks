@@ -1,5 +1,5 @@
 /**
- * Seed the fixed admin user (cliff@gmail.com / secret1234).
+ * Seed the fixed admin user (cliffcoelho@gmail.com / secret1234).
  * Single-tenant: creates auth identity + staff profile with admin role (no organization).
  * Idempotent: skips if admin identity already exists; ensures staff profile has admin role.
  * Run: npm run seed:admin (requires DATABASE_URL in .env)
@@ -11,7 +11,7 @@ import { authStorage } from "../server/replit_integrations/auth";
 import { staffProfiles } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
-const ADMIN_EMAIL = "cliff@gmail.com";
+const ADMIN_EMAIL = "cliffcoelho@gmail.com";
 const ADMIN_PASSWORD = "secret1234";
 
 async function main() {

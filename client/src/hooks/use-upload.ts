@@ -68,6 +68,7 @@ export function useUpload(options: UseUploadOptions = {}) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          filename: file.name,
           name: file.name,
           size: file.size,
           contentType: file.type || "application/octet-stream",
@@ -168,6 +169,7 @@ export function useUpload(options: UseUploadOptions = {}) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          filename: file.name,
           name: file.name,
           size: file.size,
           contentType: file.type || "application/octet-stream",
@@ -181,7 +183,7 @@ export function useUpload(options: UseUploadOptions = {}) {
       const data = await response.json();
       return {
         method: "PUT",
-        url: data.uploadURL,
+        url: data.uploadURL ?? data.uploadUrl,
         headers: { "Content-Type": file.type || "application/octet-stream" },
       };
     },

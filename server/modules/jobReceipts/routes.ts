@@ -1,12 +1,15 @@
 import type { Express } from "express";
 import { storage, isAuthenticated, requireUserId } from "../../routes/shared";
 import { insertJobReceiptSchema } from "@shared/schema";
+import { getFileUrl } from "../storage/utils";
+import { resolveDisplayUrl, resolveDisplayUrls } from "../storage/service";
 
 export function registerJobReceiptsRoutes(app: Express): void {
   app.get("/api/jobs/:jobId/receipts", isAuthenticated, async (req, res) => {
     try {
       const receipts = await storage.getJobReceipts(req.params.jobId);
-      res.json(receipts);
+      const withUrls = await resolveDisplayUrls(receipts);
+      res.json(withUrls);
     } catch (err: any) {
       console.error("Error fetching job receipts:", err);
       res.status(500).json({ message: "Failed to fetch job receipts" });
@@ -19,7 +22,8 @@ export function registerJobReceiptsRoutes(app: Express): void {
       if (!receipt) {
         return res.status(404).json({ message: "Receipt not found" });
       }
-      res.json(receipt);
+      const url = await resolveDisplayUrl(receipt.url, receipt.objectKey);
+      res.json({ ...receipt, url });
     } catch (err: any) {
       console.error("Error fetching job receipt:", err);
       res.status(500).json({ message: "Failed to fetch job receipt" });
@@ -41,12 +45,14 @@ export function registerJobReceiptsRoutes(app: Express): void {
         }
       }
 
-      const validation = insertJobReceiptSchema.safeParse({
-        ...req.body,
-        filename,
-        jobId: req.params.jobId,
-        uploadedById: staffProfile?.id,
-      });
+      const body = { ...req.body, filename, jobId: req.params.jobId, uploadedById: staffProfile?.id };
+      const url = body.url as string | undefined;
+      const isS3Key = url && !url.startsWith("http") && !url.startsWith("/objects/") && url.startsWith("uploads/");
+      if (isS3Key) {
+        body.objectKey = url;
+        body.url = getFileUrl(url, url) || url;
+      }
+      const validation = insertJobReceiptSchema.safeParse(body);
       if (!validation.success) {
         return res.status(400).json({ message: validation.error.errors[0].message });
       }

@@ -29,6 +29,7 @@ import { registerPayRoutes } from "../modules/pay/routes";
 import { registerRolesRoutes } from "../modules/roles/routes";
 import { registerStripeRoutes } from "../modules/stripe/routes";
 import { registerQuoteRespondRoutes } from "../modules/quoteRespond/routes";
+import { registerStorageRoutes } from "../modules/storage/routes";
 
 /**
  * Register all API routes. Order matters for middleware and feature gating.
@@ -39,6 +40,8 @@ export async function registerRoutes(
 ): Promise<Server> {
   await setupAuth(app);
   registerReplitAuthRoutes(app);
+
+  registerStorageRoutes(app);
 
   const { registerObjectStorageRoutes } = await import(
     "../replit_integrations/object_storage"
