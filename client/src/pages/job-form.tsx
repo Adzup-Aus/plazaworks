@@ -1878,6 +1878,13 @@ function calculateHoursFromTimeRange(startTime: string | null, endTime: string |
   return Math.max(0, (endMinutes - startMinutes) / 60);
 }
 
+function getEntryDurationHours(entry: ScheduleEntry): number {
+  if (entry.startTime && entry.endTime) {
+    return calculateHoursFromTimeRange(entry.startTime, entry.endTime);
+  }
+  return parseFloat(entry.durationHours || "7.5");
+}
+
 function JobScheduleSection({ jobId }: { jobId: string }) {
   const { toast } = useToast();
   const { hasPermission } = usePermissions();
@@ -2122,12 +2129,11 @@ function JobScheduleSection({ jobId }: { jobId: string }) {
     return staff.userId?.split("@")[0] || staff.id.slice(0, 8);
   };
 
-  const totalHours = jobSchedules
-    .filter((s) => s.status !== "cancelled")
-    .reduce((sum, s) => sum + parseFloat(s.durationHours || "0"), 0);
-
   const completedDays = jobSchedules.filter((s) => s.status === "completed").length;
   const scheduledDays = jobSchedules.filter((s) => s.status === "scheduled").length;
+  const totalHours = jobSchedules
+    .filter((s) => s.status === "scheduled")
+    .reduce((sum, s) => sum + getEntryDurationHours(s), 0);
 
   return (
     <Card className="overflow-visible">
@@ -2139,7 +2145,7 @@ function JobScheduleSection({ jobId }: { jobId: string }) {
           </CardTitle>
           <CardDescription>
             {jobSchedules.length > 0
-              ? `${completedDays} completed, ${scheduledDays} scheduled | ${totalHours.toFixed(1)} total hours`
+              ? `${completedDays} completed, ${scheduledDays} scheduled | ${totalHours.toFixed(1)} scheduled hours`
               : "Schedule work days for this job"}
           </CardDescription>
         </div>
@@ -2342,7 +2348,7 @@ function JobScheduleSection({ jobId }: { jobId: string }) {
                           <User className="h-3 w-3" />
                           <span>{getStaffName(entry.staffId)}</span>
                           <Clock className="h-3 w-3 ml-2" />
-                          <span>{entry.durationHours || "7.5"}h</span>
+                          <span>{getEntryDurationHours(entry).toFixed(2)}h</span>
                         </div>
                       </div>
                     </div>
