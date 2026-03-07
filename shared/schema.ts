@@ -882,6 +882,7 @@ export const jobPhotos = pgTable("job_photos", {
   fileSize: integer("file_size"),
   url: varchar("url", { length: 1000 }).notNull(),
   thumbnailUrl: varchar("thumbnail_url", { length: 1000 }),
+  objectKey: varchar("object_key", { length: 512 }),
   caption: varchar("caption", { length: 500 }),
   category: varchar("category", { length: 50 }),
   createdAt: timestamp("created_at").defaultNow(),
@@ -902,6 +903,7 @@ export const jobReceipts = pgTable("job_receipts", {
   fileSize: integer("file_size"),
   url: varchar("url", { length: 1000 }).notNull(),
   thumbnailUrl: varchar("thumbnail_url", { length: 1000 }),
+  objectKey: varchar("object_key", { length: 512 }),
   description: varchar("description", { length: 500 }),
   vendor: varchar("vendor", { length: 255 }),
   amount: decimal("amount", { precision: 10, scale: 2 }),
@@ -1908,6 +1910,7 @@ export const milestoneMedia = pgTable("milestone_media", {
   filename: varchar("filename", { length: 255 }),
   url: varchar("url", { length: 1000 }),
   thumbnailUrl: varchar("thumbnail_url", { length: 1000 }),
+  objectKey: varchar("object_key", { length: 512 }),
   caption: varchar("caption", { length: 500 }),
   // Note fields
   noteContent: text("note_content"),

@@ -12,7 +12,7 @@ describe.runIf(hasDb)("API roles", () => {
     const out = await createApp();
     app = out.app;
     const loginRes = await request(app).post("/api/auth/login").send({
-      email: "cliff@gmail.com",
+      email: "cliffcoelho@gmail.com",
       password: "secret1234",
     });
     authCookie = loginRes.headers["set-cookie"]?.[0] ?? "";

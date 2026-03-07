@@ -37,7 +37,7 @@ describe.runIf(hasDb)("API auth", () => {
 
   it("POST /api/auth/login with seeded admin credentials returns 200 and session", async () => {
     const res = await request(app).post("/api/auth/login").send({
-      email: "cliff@gmail.com",
+      email: "cliffcoelho@gmail.com",
       password: "secret1234",
     });
     expect(res.status).toBe(200);
@@ -57,7 +57,7 @@ describe.runIf(hasDb)("API auth", () => {
 
   it("POST /api/invites as admin with valid email returns 201", async () => {
     const loginRes = await request(app).post("/api/auth/login").send({
-      email: "cliff@gmail.com",
+      email: "cliffcoelho@gmail.com",
       password: "secret1234",
     });
     const cookie = loginRes.headers["set-cookie"];
@@ -72,18 +72,18 @@ describe.runIf(hasDb)("API auth", () => {
 
   it("POST /api/invites with already registered email returns 400", async () => {
     const loginRes = await request(app).post("/api/auth/login").send({
-      email: "cliff@gmail.com",
+      email: "cliffcoelho@gmail.com",
       password: "secret1234",
     });
     const cookie = loginRes.headers["set-cookie"];
-    const res = await request(app).post("/api/invites").set("Cookie", cookie).send({ email: "cliff@gmail.com" });
+    const res = await request(app).post("/api/invites").set("Cookie", cookie).send({ email: "cliffcoelho@gmail.com" });
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/already registered/i);
   });
 
   it("GET /api/invites as admin returns 200 with array", async () => {
     const loginRes = await request(app).post("/api/auth/login").send({
-      email: "cliff@gmail.com",
+      email: "cliffcoelho@gmail.com",
       password: "secret1234",
     });
     const cookie = loginRes.headers["set-cookie"];
@@ -107,7 +107,7 @@ describe.runIf(hasDb)("API auth", () => {
   it("POST /api/invites/accept with valid token and password creates user and returns 201", async () => {
     const { storage } = await import("../storage");
     const loginRes = await request(app).post("/api/auth/login").send({
-      email: "cliff@gmail.com",
+      email: "cliffcoelho@gmail.com",
       password: "secret1234",
     });
     expect(loginRes.status).toBe(200);
@@ -136,7 +136,7 @@ describe.runIf(hasDb)("API auth", () => {
   it("after accept invite, login with new email and password succeeds", async () => {
     const { storage } = await import("../storage");
     const loginRes = await request(app).post("/api/auth/login").send({
-      email: "cliff@gmail.com",
+      email: "cliffcoelho@gmail.com",
       password: "secret1234",
     });
     expect(loginRes.status).toBe(200);

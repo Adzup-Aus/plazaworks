@@ -1,6 +1,8 @@
 import type { Express } from "express";
 import { storage, isAuthenticated, requireUserId } from "../../routes/shared";
 import { insertMilestonePaymentSchema, insertMilestoneMediaSchema } from "@shared/schema";
+import { getFileUrl } from "../storage/utils";
+import { resolveDisplayUrls } from "../storage/service";
 
 export function registerMilestonesRoutes(app: Express): void {
   app.get("/api/milestones/:id", isAuthenticated, async (req, res) => {
@@ -8,6 +10,10 @@ export function registerMilestonesRoutes(app: Express): void {
       const milestone = await storage.getMilestoneWithDetails(req.params.id);
       if (!milestone) {
         return res.status(404).json({ message: "Milestone not found" });
+      }
+      const media = (milestone as { media?: { url?: string | null; objectKey?: string | null }[] }).media;
+      if (media?.length) {
+        (milestone as { media: unknown[] }).media = await resolveDisplayUrls(media);
       }
       res.json(milestone);
     } catch (err: any) {
@@ -138,7 +144,8 @@ export function registerMilestonesRoutes(app: Express): void {
   app.get("/api/milestones/:milestoneId/media", isAuthenticated, async (req, res) => {
     try {
       const media = await storage.getMilestoneMedia(req.params.milestoneId);
-      res.json(media);
+      const withUrls = await resolveDisplayUrls(media);
+      res.json(withUrls);
     } catch (err: any) {
       console.error("Error fetching media:", err);
       res.status(500).json({ message: "Failed to fetch media" });
@@ -148,7 +155,8 @@ export function registerMilestonesRoutes(app: Express): void {
   app.get("/api/jobs/:jobId/media", isAuthenticated, async (req, res) => {
     try {
       const media = await storage.getJobMedia(req.params.jobId);
-      res.json(media);
+      const withUrls = await resolveDisplayUrls(media);
+      res.json(withUrls);
     } catch (err: any) {
       console.error("Error fetching job media:", err);
       res.status(500).json({ message: "Failed to fetch job media" });
@@ -165,13 +173,20 @@ export function registerMilestonesRoutes(app: Express): void {
         return res.status(404).json({ message: "Milestone not found" });
       }
 
-      const parsed = insertMilestoneMediaSchema.safeParse({
+      const body = {
         ...req.body,
         milestoneId: req.params.milestoneId,
         jobId: milestone.jobId,
         uploadedById: staffProfile?.id,
         workDate: req.body.workDate || new Date().toISOString().split("T")[0],
-      });
+      };
+      const url = body.url as string | undefined;
+      const isS3Key = url && !url.startsWith("http") && !url.startsWith("/objects/") && url.startsWith("uploads/");
+      if (isS3Key) {
+        body.objectKey = url;
+        body.url = getFileUrl(url, url) || url;
+      }
+      const parsed = insertMilestoneMediaSchema.safeParse(body);
 
       if (!parsed.success) {
         return res

@@ -9,6 +9,7 @@ export const activities = pgTable(
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
     name: varchar("name", { length: 255 }).notNull(),
     color: varchar("color", { length: 20 }).default("#6366f1"),
+    icon: varchar("icon", { length: 50 }),
     sortOrder: integer("sort_order").default(0),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),

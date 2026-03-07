@@ -38,6 +38,13 @@ import {
   CheckCircle,
   XCircle,
   Check,
+  TreePalm,
+  CalendarX,
+  BookOpen,
+  Wrench,
+  Ban,
+  CircleSlash,
+  type LucideIcon,
 } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -63,6 +70,29 @@ import {
 } from "@/components/ui/command";
 import { Loader2, ChevronDown, X } from "lucide-react";
 import type { Activity, Job, ScheduleEntry, StaffProfile } from "@shared/schema";
+
+const ACTIVITY_ICON_MAP: Record<string, LucideIcon> = {
+  briefcase: Briefcase,
+  palmtree: TreePalm,
+  palm_tree: TreePalm,
+  treepalm: TreePalm,
+  tree_palm: TreePalm,
+  calendarx: CalendarX,
+  calendar_x: CalendarX,
+  bookopen: BookOpen,
+  book_open: BookOpen,
+  wrench: Wrench,
+  ban: Ban,
+  circleslash: CircleSlash,
+  circle_slash: CircleSlash,
+  default: Briefcase,
+};
+
+function getActivityIcon(iconName: string | null | undefined): LucideIcon {
+  if (!iconName || !iconName.trim()) return ACTIVITY_ICON_MAP.default;
+  const key = iconName.trim().toLowerCase().replace(/-/g, "_");
+  return ACTIVITY_ICON_MAP[key] ?? ACTIVITY_ICON_MAP.default;
+}
 
 type ScheduleDayEntry = {
   date: string;
@@ -204,6 +234,8 @@ export default function Schedule() {
   const [selectedSlotJobId, setSelectedSlotJobId] = useState<string | null>(null);
   const [selectedSlotActivityId, setSelectedSlotActivityId] = useState<string | null>(null);
   const [selectedSlotStaffId, setSelectedSlotStaffId] = useState<string | null>(null);
+  const [slotNotes, setSlotNotes] = useState<string>("");
+  const [showJobPicker, setShowJobPicker] = useState(false);
   const [jobComboboxOpen, setJobComboboxOpen] = useState(false);
   const [staffComboboxOpen, setStaffComboboxOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<ScheduleEntry | null>(null);
@@ -232,6 +264,8 @@ export default function Schedule() {
       setSelectedSlotStaffId(editingEntry.staffId);
       setSelectedSlotJobId(editingEntry.jobId ?? null);
       setSelectedSlotActivityId(editingEntry.activityId ?? null);
+      setSlotNotes(editingEntry.notes ?? "");
+      setShowJobPicker(!!editingEntry.jobId);
     }
   }, [rightSheetOpen, editingEntry]);
 
@@ -254,6 +288,8 @@ export default function Schedule() {
       setSelectedSlotStaffId(dragSelection.staffId);
       setSelectedSlotJobId(null);
       setSelectedSlotActivityId(null);
+      setSlotNotes("");
+      setShowJobPicker(false);
     }
   }, [rightSheetOpen, dragSelection]);
 
@@ -406,6 +442,7 @@ export default function Schedule() {
       scheduledDate: string;
       startTime: string;
       endTime: string;
+      notes?: string;
     }) => {
       const res = await apiRequest("POST", "/api/schedule", body);
       return res.json();
@@ -450,6 +487,7 @@ export default function Schedule() {
       endTime,
       jobId,
       activityId,
+      notes,
     }: {
       id: string;
       staffId: string;
@@ -458,6 +496,7 @@ export default function Schedule() {
       endTime: string;
       jobId?: string | null;
       activityId?: string | null;
+      notes?: string | null;
     }) => {
       const body: Record<string, unknown> = {
         staffId,
@@ -466,6 +505,7 @@ export default function Schedule() {
         endTime,
         jobId: jobId ?? null,
         activityId: activityId ?? null,
+        notes: notes ?? null,
       };
       const res = await apiRequest("PATCH", `/api/schedule/${id}`, body);
       return res.json();
@@ -670,6 +710,7 @@ export default function Schedule() {
       endTime: slotEndTime.trim(),
       jobId: jobId || null,
       activityId: activityId || null,
+      notes: slotNotes.trim() || null,
     });
   };
 
@@ -686,6 +727,7 @@ export default function Schedule() {
       scheduledDate: dragSelection.scheduledDate,
       startTime,
       endTime,
+      ...(slotNotes.trim() ? { notes: slotNotes.trim() } : {}),
       ...(jobId ?? selectedSlotJobId ? { jobId: jobId ?? selectedSlotJobId! } : {}),
       ...(activityId ?? selectedSlotActivityId ? { activityId: activityId ?? selectedSlotActivityId! } : {}),
     });
@@ -701,6 +743,12 @@ export default function Schedule() {
       return act?.name ?? "Activity";
     }
     return "";
+  };
+
+  const getEntryAddress = (entry: ScheduleEntry) => {
+    if (!entry.jobId) return "";
+    const job = jobs?.find((j) => j.id === entry.jobId);
+    return job?.address ?? "";
   };
 
   const getActivityColor = (entry: ScheduleEntry) => {
@@ -1047,7 +1095,7 @@ export default function Schedule() {
                                   <div
                                     role={canManageSchedule ? "button" : undefined}
                                     tabIndex={canManageSchedule ? 0 : undefined}
-                                    className={`group absolute inset-y-0 z-10 rounded px-1 py-0.5 text-xs text-white truncate flex items-center hover:opacity-95 ${canManageSchedule
+                                    className={`group absolute inset-y-0 z-10 rounded px-1 py-0.5 text-xs text-white flex items-center gap-0.5 min-w-0 hover:opacity-95 ${canManageSchedule
                                       ? "cursor-grab active:cursor-grabbing"
                                       : "cursor-default"
                                       } ${entry.activityId
@@ -1063,14 +1111,21 @@ export default function Schedule() {
                                         ? { backgroundColor: getActivityColor(entry)! }
                                         : {}),
                                     }}
-                                    title={getEntryLabel(entry)}
+                                    title={[getEntryLabel(entry), getEntryAddress(entry)].filter(Boolean).join(" · ")}
                                     onPointerDown={(e) =>
                                       handleEntryBlockPointerDown(entry, durationSlots, e)
                                     }
                                   >
-                                    <span className="truncate flex-1 min-w-0">
-                                      {getEntryLabel(entry)}
-                                    </span>
+                                    <div className="flex flex-col justify-center min-w-0 flex-1 truncate">
+                                      <span className="truncate font-medium">
+                                        {getEntryLabel(entry)}
+                                      </span>
+                                      {getEntryAddress(entry) && (
+                                        <span className="truncate text-[10px] opacity-90">
+                                          {getEntryAddress(entry)}
+                                        </span>
+                                      )}
+                                    </div>
                                     {canManageSchedule && (
                                       <Button
                                         type="button"
@@ -1193,13 +1248,18 @@ export default function Schedule() {
                                             minHeight: `${minHeightPx}px`,
                                             ...(bgColor ? { backgroundColor: bgColor } : {}),
                                           }}
-                                          title={`${getEntryLabel(entry)} ${entry.startTime || ""}–${entry.endTime || ""}`}
+                                          title={[getEntryLabel(entry), getEntryAddress(entry), entry.startTime || "", entry.endTime || ""].filter(Boolean).join(" · ")}
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             handleOpenEdit(entry, e as unknown as React.MouseEvent);
                                           }}
                                         >
-                                          <span className="truncate flex-1 min-w-0 font-medium">{getEntryLabel(entry)}</span>
+                                          <div className="flex flex-col min-w-0 flex-1 truncate">
+                                            <span className="truncate font-medium">{getEntryLabel(entry)}</span>
+                                            {getEntryAddress(entry) && (
+                                              <span className="truncate text-[10px] opacity-90">{getEntryAddress(entry)}</span>
+                                            )}
+                                          </div>
                                           {(entry.startTime || entry.endTime) && (
                                             <span className="text-[10px] opacity-90 shrink-0 ml-0.5">
                                               {entry.startTime || "?"}–{entry.endTime || "?"}
@@ -1397,6 +1457,8 @@ export default function Schedule() {
           setEditingEntry(null);
           setDragCurrentTime(null);
           setDragTooltipPos(null);
+          setSlotNotes("");
+          setShowJobPicker(false);
         }
       }}>
         <SheetContent side="right" className="w-full sm:max-w-md">
@@ -1474,75 +1536,137 @@ export default function Schedule() {
                 </div>
               </div>
               <div>
-                <Label className="text-sm font-medium mb-2 block">Job</Label>
-                <Popover open={jobComboboxOpen} onOpenChange={setJobComboboxOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={jobComboboxOpen}
-                      className="w-full justify-between font-normal"
-                    >
-                      {selectedSlotJobId
-                        ? (() => {
-                          const j = jobs?.find((x) => x.id === selectedSlotJobId);
-                          return j ? `${j.clientName} – ${j.jobType}` : "Select job...";
-                        })()
-                        : "Select job..."}
-                      <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                    <Command>
-                      <CommandInput placeholder="Search jobs..." />
-                      <CommandList>
-                        <CommandEmpty>No job found.</CommandEmpty>
-                        <CommandGroup>
-                          {jobs?.filter((j) => j.status !== "completed" && j.status !== "cancelled").map((job) => (
-                            <CommandItem
-                              key={job.id}
-                              value={`${job.clientName} ${job.jobType}`}
-                              onSelect={() => {
-                                setSelectedSlotJobId(job.id);
-                                setSelectedSlotActivityId(null);
-                                setJobComboboxOpen(false);
-                              }}
-                            >
-                              {job.clientName} – {job.jobType}
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
+                <Label className="text-sm font-medium mb-2 block">Booking type</Label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowJobPicker(true);
+                      setSelectedSlotActivityId(null);
+                      setSelectedSlotJobId(null);
+                    }}
+                    className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 p-3 text-sm font-medium transition-colors ${
+                      showJobPicker || selectedSlotJobId
+                        ? "border-primary bg-primary/15 text-primary"
+                        : "border-border bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground"
+                    }`}
+                    disabled={createScheduleEntryMutation.isPending || updateScheduleEntryMutation.isPending}
+                  >
+                    <Briefcase className="h-6 w-6" />
+                    <span>Job</span>
+                  </button>
+                  {(activities ?? []).map((a) => {
+                    const IconComponent = getActivityIcon(a.icon);
+                    const isSelected = selectedSlotActivityId === a.id;
+                    const bgColor = a.color ?? "#6366f1";
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedSlotActivityId(a.id);
+                          setSelectedSlotJobId(null);
+                          setShowJobPicker(false);
+                        }}
+                        className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 p-3 text-sm font-medium transition-colors ${
+                          isSelected ? "ring-2 ring-offset-2 ring-offset-background" : "border-border hover:opacity-90"
+                        }`}
+                        style={{
+                          backgroundColor: isSelected ? bgColor : `${bgColor}20`,
+                          borderColor: isSelected ? bgColor : "hsl(var(--border))",
+                          color: isSelected ? "#fff" : "hsl(var(--foreground))",
+                        }}
+                        disabled={createScheduleEntryMutation.isPending || updateScheduleEntryMutation.isPending}
+                      >
+                        <IconComponent className="h-6 w-6" />
+                        <span className="text-center leading-tight line-clamp-2">{a.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-medium mb-2">Activities</h3>
-                <ScrollArea className="h-32 rounded border p-2">
-                  {(activities ?? []).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No activities</p>
-                  ) : (
-                    <ul className="space-y-1">
-                      {(activities ?? []).map((a) => (
-                        <li key={a.id}>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className={`w-full justify-start ${selectedSlotActivityId === a.id ? "bg-violet-500/20 border-violet-500" : "bg-violet-500/10 border-violet-500/30"}`}
-                            onClick={() => {
-                              setSelectedSlotActivityId(a.id);
-                              setSelectedSlotJobId(null);
-                            }}
-                            disabled={createScheduleEntryMutation.isPending || updateScheduleEntryMutation.isPending}
-                          >
-                            {a.name}
-                          </Button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </ScrollArea>
+              {(showJobPicker || selectedSlotJobId) && (
+                <div>
+                  <Label className="text-sm font-medium mb-2 block">Job</Label>
+                  <Popover open={jobComboboxOpen} onOpenChange={setJobComboboxOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={jobComboboxOpen}
+                        className="w-full justify-between font-normal"
+                      >
+                        {selectedSlotJobId
+                          ? (() => {
+                            const j = jobs?.find((x) => x.id === selectedSlotJobId);
+                            return j ? `${j.clientName} – ${j.jobType}` : "Search or select a job...";
+                          })()
+                          : "Search or select a job..."}
+                        <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search jobs..." />
+                        <CommandList>
+                          <CommandEmpty>No job found.</CommandEmpty>
+                          <CommandGroup>
+                            {jobs?.filter((j) => j.status !== "completed" && j.status !== "cancelled").map((job) => (
+                              <CommandItem
+                                key={job.id}
+                                value={`${job.clientName} ${job.jobType}`}
+                                onSelect={() => {
+                                  setSelectedSlotJobId(job.id);
+                                  setSelectedSlotActivityId(null);
+                                  setJobComboboxOpen(false);
+                                }}
+                              >
+                                {job.clientName} – {job.jobType}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <div className="mt-2 grid grid-cols-1 gap-1.5 max-h-40 overflow-y-auto">
+                    {jobs?.filter((j) => j.status !== "completed" && j.status !== "cancelled").map((job) => {
+                      const isSelected = selectedSlotJobId === job.id;
+                      const statusColor = getStatusColor(job.status);
+                      return (
+                        <button
+                          key={job.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedSlotJobId(job.id);
+                            setSelectedSlotActivityId(null);
+                          }}
+                          className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                            isSelected ? "ring-2 ring-primary ring-offset-2" : "border-border bg-card hover:bg-muted/50"
+                          }`}
+                        >
+                          <div className={`h-8 w-8 shrink-0 rounded-md flex items-center justify-center ${statusColor}`}>
+                            <Briefcase className="h-4 w-4 text-white" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium truncate">{job.clientName}</p>
+                            <p className="text-xs text-muted-foreground truncate">{job.jobType}</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Notes</Label>
+                <Textarea
+                  placeholder="Add notes for this scheduled entry..."
+                  value={slotNotes}
+                  onChange={(e) => setSlotNotes(e.target.value)}
+                  className="min-h-[80px] resize-y"
+                  rows={3}
+                />
               </div>
               <div className="flex gap-2">
                 {editingEntry ? (
