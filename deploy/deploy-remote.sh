@@ -21,7 +21,6 @@ rsync -avz --delete \
   --exclude node_modules \
   --exclude .git \
   --exclude dist \
-  --exclude .env \
   --exclude "*.log" \
   ./ "${REMOTE_USER}@${SERVER}:${APP_DIR}/"
 
