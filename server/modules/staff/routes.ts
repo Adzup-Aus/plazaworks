@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { storage, isAuthenticated, ensureStaffProfile, requirePermission, requireAnyPermission, getUserId, getUserPermissions } from "../../routes/shared";
 import { updateStaffSchema } from "../../routes/schemas";
+import { resolveDisplayUrl } from "../storage/service";
 
 export function registerStaffRoutes(app: Express): void {
   // Check permission first so we don't create an empty profile (ensureStaffProfile) then 403.
@@ -14,7 +15,19 @@ export function registerStaffRoutes(app: Express): void {
       const permissions = await getUserPermissions(userId);
       if (permissions.includes("view_users")) {
         const profiles = await storage.getStaffProfiles();
-        return res.json(profiles);
+        const withResolvedUrls = await Promise.all(
+          profiles.map(async (p) => {
+            if (!p.user?.profileImageUrl) return p;
+            const raw = p.user.profileImageUrl;
+            const isFullUrl = raw.startsWith("http://") || raw.startsWith("https://");
+            const displayUrl = isFullUrl ? raw : (await resolveDisplayUrl(null, raw)) || raw;
+            return {
+              ...p,
+              user: { ...p.user, profileImageUrl: displayUrl },
+            };
+          })
+        );
+        return res.json(withResolvedUrls);
       }
       const profile = await storage.getStaffProfileByUserId(userId);
       res.json(profile ? [profile] : []);

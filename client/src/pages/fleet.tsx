@@ -52,6 +52,7 @@ import {
   UserPlus,
   UserMinus,
 } from "lucide-react";
+import { UserAvatar } from "@/components/user-avatar";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -768,7 +769,10 @@ export default function Fleet() {
                 <SelectContent>
                   {staffList?.map((staff) => (
                     <SelectItem key={staff.id} value={staff.id}>
-                      {staff.user?.firstName} {staff.user?.lastName} ({staff.user?.email})
+                      <span className="flex items-center gap-2">
+                        <UserAvatar user={staff.user} size="sm" />
+                        {staff.user?.firstName} {staff.user?.lastName} ({staff.user?.email})
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
