@@ -20,7 +20,6 @@ echo "[2/6] Building..."
 npm run build
 
 echo "[3/6] Pushing database schema (if needed)..."
-npm run db:reset
 npm run db:push || true
 
 echo "[4/6] Pruning dev dependencies..."

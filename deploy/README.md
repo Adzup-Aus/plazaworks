@@ -37,7 +37,7 @@ This installs:
 
 **Firewall:** The script does **not** configure UFW (so it won’t conflict with Hetzner Cloud Firewall). In the Hetzner Cloud Console, ensure your firewall allows **SSH (22)**, **HTTP (80)**, and **HTTPS (443)** as needed.
 
-**Save the `DATABASE_URL`** printed at the end (it uses **port 5432**; local dev often uses 5433).
+**Save the `DATABASE_URL`** printed at the end (it uses **port 5432** and user **plazaworks** with a random password; local dev often uses `postgres:postgres` on 5433—do **not** use that on the server). If you see *password authentication failed for user "postgres"*, your server `.env` or `.env.production` has the wrong URL; use the one from the install script (user `plazaworks`, correct password).
 
 ---
 
@@ -136,6 +136,37 @@ pm2 reload plazaworks
 systemctl status nginx
 nginx -t && systemctl reload nginx
 ```
+
+---
+
+## 502 Bad Gateway
+
+A **502** means nginx is up but the Node app on port 5000 is not responding—usually the app is not running or it crashes on startup.
+
+1. **Check PM2 and logs**
+   ```bash
+   ssh root@YOUR_SERVER
+   cd /var/www/plazaworks
+   pm2 status
+   pm2 logs plazaworks --lines 100
+   ```
+   If the app is **stopped** or **errored**, the logs will show the reason (e.g. missing env, DB error).
+
+2. **Common causes**
+   - **Wrong or missing `DATABASE_URL`**  
+     Use the URL from `install-server.sh` (user `plazaworks`, correct password, port `5432`). If you see *password authentication failed*, fix `.env` or `.env.production` and redeploy.
+   - **Missing `SESSION_SECRET`**  
+     In production the app requires `SESSION_SECRET`. Add it to `/var/www/plazaworks/.env` or to `.env.production` and redeploy.
+   - **Build or script missing**  
+     Ensure deploy completed: `ls -la /var/www/plazaworks/dist/index.cjs` should exist. If not, run `npm run build` in the app dir and `pm2 restart plazaworks`.
+
+3. **Restart and test**
+   ```bash
+   pm2 restart plazaworks
+   pm2 logs plazaworks
+   curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5000/
+   ```
+   You should get `200` or `304` from curl. If not, the logs will show the error.
 
 ---
 
