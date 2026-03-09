@@ -201,7 +201,7 @@ export default function QuoteView() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {quote.revisionNumber && quote.revisionNumber > 1 && (
+          {(quote.version ?? quote.revisionNumber) && (quote.version ?? quote.revisionNumber)! > 1 && (
             <Button
               variant="ghost"
               size="sm"
@@ -209,27 +209,29 @@ export default function QuoteView() {
               data-testid="button-revision-history"
             >
               <History className="mr-2 h-4 w-4" />
-              Rev {quote.revisionNumber}
+              Rev {quote.version ?? quote.revisionNumber}
             </Button>
           )}
           
-          <Button
-            variant="outline"
-            onClick={handleEditClick}
-            data-testid="button-edit-quote"
-          >
-            {quote.status === "draft" ? (
-              <>
-                <Edit className="mr-2 h-4 w-4" />
-                Edit Quote
-              </>
-            ) : (
-              <>
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Revise Quote
-              </>
-            )}
-          </Button>
+          {quote.status !== "accepted" && (
+            <Button
+              variant="outline"
+              onClick={handleEditClick}
+              data-testid="button-edit-quote"
+            >
+              {quote.status === "draft" ? (
+                <>
+                  <Edit className="mr-2 h-4 w-4" />
+                  Edit Quote
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Revise Quote
+                </>
+              )}
+            </Button>
+          )}
           
           {quote.status === "draft" && (
             <Button
@@ -545,7 +547,7 @@ export default function QuoteView() {
               Revision History
             </DialogTitle>
             <DialogDescription>
-              All versions of this quote, from earliest to latest.
+              All revisions of this quote, from earliest to latest.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-4 max-h-96 overflow-y-auto">
@@ -563,7 +565,7 @@ export default function QuoteView() {
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
                     <Badge variant={rev.id === quote.id ? "default" : "outline"}>
-                      Rev {rev.revisionNumber || 1}
+                      Rev {rev.version ?? rev.revisionNumber ?? 1}
                     </Badge>
                     <span className="font-medium">{rev.quoteNumber}</span>
                     <Badge className={statusColors[rev.status] || ""}>

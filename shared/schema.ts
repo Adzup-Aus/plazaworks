@@ -249,7 +249,7 @@ export type PaymentMethod = typeof paymentMethods[number];
 // Quotes table
 export const quotes = pgTable("quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  quoteNumber: varchar("quote_number", { length: 50 }).notNull().unique(),
+  quoteNumber: varchar("quote_number", { length: 50 }).notNull(),
   // Shared reference number linking quote/job/invoice (sequential per org)
   referenceNumber: integer("reference_number"),
   // Client reference - required, no manual entry allowed
@@ -283,7 +283,8 @@ export const quotes = pgTable("quotes", {
   // Conversion tracking
   convertedToJobId: varchar("converted_to_job_id"),
   convertedToInvoiceId: varchar("converted_to_invoice_id"),
-  // Revision tracking
+  // Revision tracking (version holds the revision number; same quote number across revisions)
+  version: integer("version").notNull().default(1),
   revisionNumber: integer("revision_number").notNull().default(1),
   parentQuoteId: varchar("parent_quote_id"),
   revisionReason: text("revision_reason"),
@@ -300,6 +301,7 @@ export const quotes = pgTable("quotes", {
 }, (table) => [
   index("idx_quotes_status").on(table.status),
   index("idx_quotes_number").on(table.quoteNumber),
+  unique("quotes_quote_number_version_key").on(table.quoteNumber, table.version),
   index("idx_quotes_created").on(table.createdAt),
   index("idx_quotes_client").on(table.clientId),
   index("idx_quotes_client_status").on(table.clientStatus),

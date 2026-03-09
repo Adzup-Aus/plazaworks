@@ -17,6 +17,14 @@ export function registerQuotesRoutes(app: Express): void {
       res.json(quotesList);
     } catch (err: any) {
       console.error("Error fetching quotes:", err);
+      const isMissingVersionColumn = err?.code === "42703" && err?.message?.includes("version");
+      if (isMissingVersionColumn) {
+        res.status(503).json({
+          message: "Database schema is out of date. Run: npm run db:migrate:quotes-version",
+          code: "SCHEMA_MIGRATION_REQUIRED",
+        });
+        return;
+      }
       res.status(500).json({ message: "Failed to fetch quotes" });
     }
   });
@@ -193,6 +201,14 @@ export function registerQuotesRoutes(app: Express): void {
       const { revisionReason } = req.body;
       if (!revisionReason || typeof revisionReason !== "string") {
         return res.status(400).json({ message: "Revision reason is required" });
+      }
+
+      const existing = await storage.getQuote(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ message: "Quote not found" });
+      }
+      if (existing.status === "accepted") {
+        return res.status(400).json({ message: "Revisions are not allowed once a quote is accepted" });
       }
 
       const userId = getUserId(req);
