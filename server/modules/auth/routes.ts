@@ -489,6 +489,94 @@ export function registerAuthRoutes(app: Express): void {
     }
   });
 
+  // Request presigned URL for profile image upload (authenticated user)
+  app.post("/api/auth/user/request-upload", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      const body = req.body as Record<string, unknown>;
+      const filename = (body.filename ?? body.name) as string | undefined;
+      const contentType = (body.contentType ?? body.content_type) as string | undefined;
+      const size = typeof body.size === "number" ? body.size : Number(body.size);
+      if (!filename || typeof filename !== "string" || filename.length > 255) {
+        return res.status(400).json({ error: "Missing or invalid filename" });
+      }
+      if (!contentType || !PROFILE_IMAGE_TYPES.includes(contentType as (typeof PROFILE_IMAGE_TYPES)[number])) {
+        return res.status(400).json({ error: "Invalid file type. Use JPEG, PNG, or WebP." });
+      }
+      const sz = Number.isNaN(size) ? 0 : size;
+      if (sz <= 0 || sz > PROFILE_IMAGE_MAX_BYTES) {
+        return res.status(400).json({ error: "File size must be between 1 byte and 5MB" });
+      }
+      if (isR2Configured()) {
+        const result = await generatePresignedUploadUrl({ filename, contentType, size: sz });
+        if (!result) {
+          return res.status(503).json({ error: "Failed to generate upload URL" });
+        }
+        return res.json({
+          uploadURL: result.uploadUrl,
+          uploadUrl: result.uploadUrl,
+          objectPath: result.objectPath,
+        });
+      }
+      const fallback = await getReplitFallbackUploadUrl();
+      if (!fallback) {
+        return res.status(503).json({
+          error: "Storage not configured. Set R2_* env vars or use Replit object storage.",
+        });
+      }
+      return res.json({
+        uploadURL: fallback.uploadURL,
+        uploadUrl: fallback.uploadURL,
+        objectPath: fallback.objectPath,
+      });
+    } catch (err: any) {
+      console.error("Error requesting profile upload URL:", err);
+      res.status(500).json({ error: "Failed to generate upload URL" });
+    }
+  });
+
+  // Update current user profile (firstName, lastName, profileImageUrl)
+  app.patch("/api/auth/user", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      const { firstName, lastName, profileImageUrl } = req.body;
+      const rawFirst = typeof firstName === "string" ? firstName.trim() : "";
+      const rawLast = typeof lastName === "string" ? lastName.trim() : "";
+      if (!rawFirst || !rawLast) {
+        return res.status(400).json({ message: "First name and last name are required" });
+      }
+      const maxLen = 100;
+      const first = rawFirst.length > maxLen ? rawFirst.slice(0, maxLen) : rawFirst;
+      const last = rawLast.length > maxLen ? rawLast.slice(0, maxLen) : rawLast;
+      const profileUrl =
+        profileImageUrl === undefined
+          ? undefined
+          : typeof profileImageUrl === "string"
+            ? profileImageUrl.trim() || null
+            : null;
+
+      const update: { id: string; firstName: string; lastName: string; profileImageUrl?: string | null } = {
+        id: userId,
+        firstName: first,
+        lastName: last,
+      };
+      if (profileImageUrl !== undefined) {
+        update.profileImageUrl = profileUrl;
+      }
+      await authStorage.upsertUser(update);
+      return res.json({ message: "Profile updated" });
+    } catch (err: any) {
+      console.error("Error updating profile:", err);
+      res.status(500).json({ message: "Failed to update profile" });
+    }
+  });
+
   app.get("/api/auth/is-super-admin", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req);

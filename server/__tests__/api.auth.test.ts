@@ -156,4 +156,75 @@ describe.runIf(hasDb)("API auth", () => {
     expect(signInRes.status).toBe(200);
     expect(signInRes.body).toHaveProperty("userId");
   });
+
+  it("PATCH /api/auth/user unauthenticated returns 401", async () => {
+    const res = await request(app)
+      .patch("/api/auth/user")
+      .send({ firstName: "Test", lastName: "User" });
+    expect(res.status).toBe(401);
+  });
+
+  it("PATCH /api/auth/user with valid auth and firstName, lastName returns 200", async () => {
+    const loginRes = await request(app).post("/api/auth/login").send({
+      email: "cliffcoelho@gmail.com",
+      password: "secret1234",
+    });
+    const cookie = loginRes.headers["set-cookie"];
+    expect(loginRes.status).toBe(200);
+    const res = await request(app)
+      .patch("/api/auth/user")
+      .set("Cookie", cookie)
+      .send({ firstName: "Cliff", lastName: "Coelho" });
+    expect(res.status).toBe(200);
+    expect(res.body.message).toMatch(/updated/i);
+    const userRes = await request(app).get("/api/auth/user").set("Cookie", cookie);
+    expect(userRes.status).toBe(200);
+    expect(userRes.body.firstName).toBe("Cliff");
+    expect(userRes.body.lastName).toBe("Coelho");
+  });
+
+  it("PATCH /api/auth/user with missing firstName returns 400", async () => {
+    const loginRes = await request(app).post("/api/auth/login").send({
+      email: "cliffcoelho@gmail.com",
+      password: "secret1234",
+    });
+    const cookie = loginRes.headers["set-cookie"];
+    const res = await request(app)
+      .patch("/api/auth/user")
+      .set("Cookie", cookie)
+      .send({ lastName: "Only" });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/first name/i);
+  });
+
+  it("POST /api/auth/user/request-upload unauthenticated returns 401", async () => {
+    const res = await request(app).post("/api/auth/user/request-upload").send({
+      filename: "photo.jpg",
+      contentType: "image/jpeg",
+      size: 1024,
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("POST /api/auth/user/request-upload with valid auth returns 200 or 503", async () => {
+    const loginRes = await request(app).post("/api/auth/login").send({
+      email: "cliffcoelho@gmail.com",
+      password: "secret1234",
+    });
+    const cookie = loginRes.headers["set-cookie"];
+    expect(loginRes.status).toBe(200);
+    const res = await request(app)
+      .post("/api/auth/user/request-upload")
+      .set("Cookie", cookie)
+      .send({
+        filename: "photo.jpg",
+        contentType: "image/jpeg",
+        size: 1024,
+      });
+    expect([200, 503]).toContain(res.status);
+    if (res.status === 200) {
+      expect(res.body).toHaveProperty("uploadURL");
+      expect(res.body).toHaveProperty("objectPath");
+    }
+  });
 });
