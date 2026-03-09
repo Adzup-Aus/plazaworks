@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Clock, Plus, Users, TrendingUp, Calendar as CalendarIcon, Briefcase } from "lucide-react";
+import { UserAvatar } from "@/components/user-avatar";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Job, StaffProfile, JobTimeEntry, StaffProductivityMetrics } from "@shared/schema";
@@ -239,9 +240,12 @@ export default function ProductivityPage() {
                         <TableRow key={entry.id} data-testid={`row-time-entry-${entry.id}`}>
                           <TableCell>{format(new Date(entry.workDate), "MMM d, yyyy")}</TableCell>
                           <TableCell>
-                            {staffMember?.user?.firstName || staffMember?.user?.lastName
-                              ? `${staffMember.user.firstName || ""} ${staffMember.user.lastName || ""}`.trim()
-                              : "Unknown"}
+                            <span className="flex items-center gap-2">
+                              <UserAvatar user={staffMember?.user} size="sm" />
+                              {staffMember?.user?.firstName || staffMember?.user?.lastName
+                                ? `${staffMember.user.firstName || ""} ${staffMember.user.lastName || ""}`.trim()
+                                : "Unknown"}
+                            </span>
                           </TableCell>
                           <TableCell>{job?.clientName || "Unknown Job"}</TableCell>
                           <TableCell className="font-medium">{entry.hoursWorked}h</TableCell>

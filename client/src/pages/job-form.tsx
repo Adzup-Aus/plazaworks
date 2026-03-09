@@ -73,6 +73,7 @@ import {
   Eye,
   ExternalLink
 } from "lucide-react";
+import { UserAvatar } from "@/components/user-avatar";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
@@ -536,9 +537,12 @@ function PCItemsSection({ jobId, quoteId, invoiceId }: { jobId: string; quoteId?
               <SelectItem value="__none__">Unassigned</SelectItem>
               {staffMembers?.map((staff) => (
                 <SelectItem key={staff.id} value={staff.id}>
-                  {staff.user?.firstName 
-                    ? `${staff.user.firstName} ${staff.user.lastName || ""}`.trim()
-                    : staff.user?.email || "Unknown"}
+                  <span className="flex items-center gap-2">
+                    <UserAvatar user={staff.user} size="sm" />
+                    {staff.user?.firstName 
+                      ? `${staff.user.firstName} ${staff.user.lastName || ""}`.trim()
+                      : staff.user?.email || "Unknown"}
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -355,15 +355,7 @@ export default function Team() {
                     <TableRow key={staff.id} data-testid={`staff-row-${staff.id}`}>
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          <Avatar className="h-9 w-9">
-                            <AvatarImage
-                              src={staff.user?.profileImageUrl || undefined}
-                              alt={staff.user?.firstName || "User"}
-                            />
-                            <AvatarFallback className="text-xs">
-                              {getInitials(staff.user?.firstName, staff.user?.lastName)}
-                            </AvatarFallback>
-                          </Avatar>
+                          <UserAvatar user={staff.user} size="md" />
                           <div>
                             <p className="font-medium">
                               {staff.user?.firstName} {staff.user?.lastName}
@@ -440,10 +432,15 @@ export default function Team() {
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit Staff Member</DialogTitle>
-            <DialogDescription>
-              Update profile for {editingStaff?.user?.firstName} {editingStaff?.user?.lastName}
-            </DialogDescription>
+            <div className="flex items-center gap-3">
+              <UserAvatar user={editingStaff?.user} size="lg" />
+              <div>
+                <DialogTitle>Edit Staff Member</DialogTitle>
+                <DialogDescription>
+                  Update profile for {editingStaff?.user?.firstName} {editingStaff?.user?.lastName}
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">

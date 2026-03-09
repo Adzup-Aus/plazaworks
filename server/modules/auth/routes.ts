@@ -8,7 +8,30 @@ import {
   generateOTPCode,
 } from "../../routes/shared";
 import type { Role } from "@shared/schema";
+import { userPermissions, type UserPermission } from "@shared/schema";
 import { sendOtpEmail, sendPasswordResetEmail, sendUserInviteEmail } from "../../email";
+import { generatePresignedUploadUrl } from "../storage/service";
+import { isR2Configured } from "../../env";
+
+async function getReplitFallbackUploadUrl(): Promise<{
+  uploadURL: string;
+  objectPath: string;
+} | null> {
+  try {
+    const { ObjectStorageService } = await import(
+      "../../replit_integrations/object_storage"
+    );
+    const svc = new ObjectStorageService();
+    const uploadURL = await svc.getObjectEntityUploadURL();
+    const objectPath = svc.normalizeObjectEntityPath(uploadURL);
+    return { uploadURL, objectPath };
+  } catch {
+    return null;
+  }
+}
+
+const PROFILE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const PROFILE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
 export function registerAuthRoutes(app: Express): void {
   // Request OTP code (email or phone)
@@ -600,6 +623,58 @@ export function registerAuthRoutes(app: Express): void {
     }
   });
 
+  app.post("/api/invites/accept/request-upload", async (req: any, res) => {
+    try {
+      const token = typeof req.body.token === "string" ? req.body.token.trim() : "";
+      if (!token) {
+        return res.status(400).json({ message: "Invalid or expired invite link" });
+      }
+      const invite = await storage.getUserInviteByToken(token);
+      if (!invite || invite.usedAt || new Date() > invite.expiresAt) {
+        return res.status(400).json({ message: "Invalid or expired invite link" });
+      }
+      const body = req.body as Record<string, unknown>;
+      const filename = (body.filename ?? body.name) as string | undefined;
+      const contentType = (body.contentType ?? body.content_type) as string | undefined;
+      const size = typeof body.size === "number" ? body.size : Number(body.size);
+      if (!filename || typeof filename !== "string" || filename.length > 255) {
+        return res.status(400).json({ error: "Missing or invalid filename" });
+      }
+      if (!contentType || !PROFILE_IMAGE_TYPES.includes(contentType as any)) {
+        return res.status(400).json({ error: "Invalid file type. Use JPEG, PNG, or WebP." });
+      }
+      const sz = Number.isNaN(size) ? 0 : size;
+      if (sz <= 0 || sz > PROFILE_IMAGE_MAX_BYTES) {
+        return res.status(400).json({ error: "File size must be between 1 byte and 5MB" });
+      }
+      if (isR2Configured()) {
+        const result = await generatePresignedUploadUrl({ filename, contentType, size: sz });
+        if (!result) {
+          return res.status(503).json({ error: "Failed to generate upload URL" });
+        }
+        return res.json({
+          uploadURL: result.uploadUrl,
+          uploadUrl: result.uploadUrl,
+          objectPath: result.objectPath,
+        });
+      }
+      const fallback = await getReplitFallbackUploadUrl();
+      if (!fallback) {
+        return res.status(503).json({
+          error: "Storage not configured. Set R2_* env vars or use Replit object storage.",
+        });
+      }
+      return res.json({
+        uploadURL: fallback.uploadURL,
+        uploadUrl: fallback.uploadURL,
+        objectPath: fallback.objectPath,
+      });
+    } catch (err: any) {
+      console.error("Error requesting profile upload URL:", err);
+      res.status(500).json({ error: "Failed to generate upload URL" });
+    }
+  });
+
   app.get("/api/invites/accept", async (req: any, res) => {
     try {
       const token = typeof req.query.token === "string" ? req.query.token.trim() : "";
@@ -625,7 +700,7 @@ export function registerAuthRoutes(app: Express): void {
 
   app.post("/api/invites/accept", async (req: any, res) => {
     try {
-      const { token, password } = req.body;
+      const { token, password, firstName, lastName, profileImageUrl } = req.body;
       const t = typeof token === "string" ? token.trim() : "";
       if (!t) {
         return res.status(400).json({ message: "Invalid or expired invite link" });
@@ -633,6 +708,16 @@ export function registerAuthRoutes(app: Express): void {
       if (!password || typeof password !== "string" || password.length < 8) {
         return res.status(400).json({ message: "Password must be at least 8 characters" });
       }
+      const rawFirst = typeof firstName === "string" ? firstName.trim() : "";
+      const rawLast = typeof lastName === "string" ? lastName.trim() : "";
+      if (!rawFirst || !rawLast) {
+        return res.status(400).json({ message: "First name and last name are required" });
+      }
+      const maxLen = 100;
+      const first = rawFirst.length > maxLen ? rawFirst.slice(0, maxLen) : rawFirst;
+      const last = rawLast.length > maxLen ? rawLast.slice(0, maxLen) : rawLast;
+      const profileUrl = typeof profileImageUrl === "string" ? profileImageUrl.trim() || null : null;
+
       const invite = await storage.getUserInviteByToken(t);
       if (!invite) {
         return res.status(400).json({ message: "Invalid or expired invite link" });
@@ -644,6 +729,11 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(400).json({ message: "Invalid or expired invite link" });
       }
 
+      const existingIdentity = await storage.getAuthIdentityByIdentifier("email", invite.email);
+      if (existingIdentity) {
+        return res.status(400).json({ message: "Email is already registered" });
+      }
+
       const bcrypt = await import("bcrypt");
       const passwordHash = await bcrypt.hash(password, 12);
       const newUserId = `user_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
@@ -651,6 +741,9 @@ export function registerAuthRoutes(app: Express): void {
       await authStorage.upsertUser({
         id: newUserId,
         email: invite.email,
+        firstName: first,
+        lastName: last,
+        profileImageUrl: profileUrl,
       });
       await storage.createAuthIdentity({
         userId: newUserId,
@@ -660,17 +753,23 @@ export function registerAuthRoutes(app: Express): void {
         isVerified: true,
         isPrimary: true,
       });
-      if (invite.roleId) {
-        const role = await storage.getRole(invite.roleId);
-        if (role) {
-          const permissions = await storage.getRolePermissions(role.id);
-          await storage.createStaffProfile({
-            userId: newUserId,
-            roles: [role.name],
-            permissions,
-          });
-        }
+
+      const role = invite.roleId ? await storage.getRole(invite.roleId) : undefined;
+      const rolePerms: UserPermission[] = role ? await storage.getRolePermissions(role.id) : [];
+      const invitePermsRaw = Array.isArray(invite.permissions) ? invite.permissions : [];
+      const invitePerms = invitePermsRaw.filter((p: string) =>
+        userPermissions.includes(p as UserPermission)
+      ) as UserPermission[];
+      const merged: UserPermission[] = Array.from(new Set([...rolePerms, ...invitePerms]));
+
+      if (role || merged.length > 0) {
+        await storage.createStaffProfile({
+          userId: newUserId,
+          roles: role ? [role.name] : [],
+          permissions: merged,
+        });
       }
+
       await storage.markUserInviteUsed(invite.id);
 
       return res.status(201).json({

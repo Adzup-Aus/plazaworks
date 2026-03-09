@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { UserAvatar } from "@/components/user-avatar";
 import { TrendingUp, Target, DollarSign, Clock, Award, AlertTriangle, CheckCircle, Bell, ChevronUp, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -335,9 +336,12 @@ export default function KpiDashboardPage() {
                   <SelectContent>
                     {staff?.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
-                        {s.user?.firstName 
-                          ? `${s.user.firstName} ${s.user.lastName || ""}`.trim() 
-                          : s.user?.email || "Unknown"}
+                        <span className="flex items-center gap-2">
+                          <UserAvatar user={s.user} size="sm" />
+                          {s.user?.firstName 
+                            ? `${s.user.firstName} ${s.user.lastName || ""}`.trim() 
+                            : s.user?.email || "Unknown"}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>

@@ -2604,8 +2604,10 @@ export class DatabaseStorage implements IStorage {
 
       views.push({
         staffId: staff.id,
-        staffName: `${staff.firstName || ""} ${staff.lastName || ""}`.trim() || staff.email || "Unknown",
-        role: staff.role || "plumber",
+        staffName: staff.user?.firstName != null || staff.user?.lastName != null
+          ? `${staff.user?.firstName ?? ""} ${staff.user?.lastName ?? ""}`.trim()
+          : (staff.user?.email ?? "Unknown"),
+        role: (staff as { roles?: string[] }).roles?.[0] ?? "plumber",
         weeklyCapacity: adjustedCapacity,
         scheduledHours,
         loggedHours,

@@ -21,7 +21,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { ChevronRight } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard,
@@ -89,12 +89,6 @@ export function AppSidebar() {
   const { data: adminStatus } = useQuery<{ isSuperAdmin: boolean }>({
     queryKey: ["/api/auth/is-super-admin"],
   });
-
-  const getInitials = (firstName?: string | null, lastName?: string | null) => {
-    const first = firstName?.charAt(0) || "";
-    const last = lastName?.charAt(0) || "";
-    return (first + last).toUpperCase() || "U";
-  };
 
   return (
     <Sidebar>
@@ -198,12 +192,7 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border p-4">
         <div className="flex items-center gap-3">
-          <Avatar className="h-9 w-9">
-            <AvatarImage src={user?.profileImageUrl || undefined} alt={user?.firstName || "User"} />
-            <AvatarFallback className="text-xs">
-              {getInitials(user?.firstName, user?.lastName)}
-            </AvatarFallback>
-          </Avatar>
+          <UserAvatar user={user} size="md" />
           <div className="flex flex-1 flex-col overflow-hidden">
             <span className="truncate text-sm font-medium">
               {user?.firstName} {user?.lastName}
