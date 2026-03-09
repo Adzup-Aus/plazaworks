@@ -36,6 +36,7 @@ import KpiDashboard from "@/pages/kpi-dashboard";
 import Admin from "@/pages/admin";
 import Invite from "@/pages/invite";
 import AcceptUserInvite from "@/pages/accept-user-invite";
+import Account from "@/pages/account";
 import Clients from "@/pages/clients";
 import Settings from "@/pages/settings";
 import Roles from "@/pages/roles";
@@ -89,6 +90,7 @@ function AuthenticatedRouter() {
       <Route path="/capacity" component={Capacity} />
       <Route path="/kpi" component={KpiDashboard} />
       <Route path="/team" component={Team} />
+      <Route path="/account" component={Account} />
       <Route path="/clients" component={Clients} />
       <Route path="/roles" component={Roles} />
       <Route path="/integrations" component={Integrations} />

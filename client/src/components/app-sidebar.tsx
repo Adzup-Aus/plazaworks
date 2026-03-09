@@ -16,13 +16,18 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, ChevronUp } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
-import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard,
   Briefcase,
@@ -37,6 +42,7 @@ import {
   Target,
   Shield,
   ShieldCheck,
+  User,
   UserCircle,
   UserPlus,
   Settings,
@@ -193,27 +199,42 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-4">
-        <div className="flex items-center gap-3">
-          <UserAvatar user={user} size="md" />
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <span className="truncate text-sm font-medium">
-              {user?.firstName} {user?.lastName}
-            </span>
-            <span className="truncate text-xs text-muted-foreground">
-              {user?.email}
-            </span>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => logout()}
-            data-testid="button-logout"
-            className="flex-shrink-0"
-          >
-            <LogOut className="h-4 w-4" />
-            <span className="sr-only">Logout</span>
-          </Button>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="flex w-full items-center gap-3 rounded-md p-1 -m-1 hover:bg-accent hover:text-accent-foreground outline-none focus:bg-accent focus:text-accent-foreground"
+              data-testid="sidebar-user-menu-trigger"
+            >
+              <UserAvatar user={user} size="md" />
+              <div className="flex flex-1 flex-col overflow-hidden text-left">
+                <span className="truncate text-sm font-medium">
+                  {user?.firstName} {user?.lastName}
+                </span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {user?.email}
+                </span>
+              </div>
+              <ChevronUp className="h-4 w-4 flex-shrink-0 text-muted-foreground" aria-hidden />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="start" className="w-56">
+            <DropdownMenuItem asChild>
+              <Link href="/account" className="flex items-center gap-2 cursor-pointer">
+                <User className="h-4 w-4" />
+                Account
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => logout()}
+              data-testid="button-logout"
+              className="cursor-pointer text-destructive focus:text-destructive"
+            >
+              <LogOut className="h-4 w-4" />
+              Log out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </SidebarFooter>
     </Sidebar>
   );
