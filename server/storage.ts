@@ -1085,15 +1085,16 @@ export class DatabaseStorage implements IStorage {
     const originalQuote = await this.getQuoteWithLineItems(id);
     if (!originalQuote) return undefined;
 
-    // Generate new quote number (same base, new version)
-    const newQuoteNumber = await this.generateQuoteNumber();
+    // Revisions are not allowed once a quote is accepted
+    if (originalQuote.status === "accepted") return undefined;
 
-    // Calculate next revision number
-    const revisionNumber = (originalQuote.revisionNumber || 1) + 1;
+    // Keep the same quote number; new revision gets next version number
+    const nextVersion = (originalQuote.version ?? originalQuote.revisionNumber ?? 1) + 1;
 
-    // Create new quote as a revision
+    // Create new quote as a revision (same quote number, new version)
     const [newQuote] = await db.insert(quotes).values({
-      quoteNumber: newQuoteNumber,
+      quoteNumber: originalQuote.quoteNumber,
+      version: nextVersion,
       referenceNumber: originalQuote.referenceNumber,
       clientId: originalQuote.clientId,
       clientName: originalQuote.clientName,
@@ -1113,7 +1114,7 @@ export class DatabaseStorage implements IStorage {
       termsAndConditions: originalQuote.termsAndConditions,
       termsOfTradeTemplateId: originalQuote.termsOfTradeTemplateId,
       termsOfTradeContent: originalQuote.termsOfTradeContent,
-      revisionNumber,
+      revisionNumber: nextVersion,
       parentQuoteId: originalQuote.parentQuoteId || originalQuote.id,
       revisionReason,
       isLatestRevision: true,

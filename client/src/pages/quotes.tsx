@@ -42,7 +42,7 @@ const statusColors: Record<string, string> = {
   expired: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
 };
 
-function QuoteVersionsList({
+function QuoteRevisionsList({
   quoteId,
   currentQuoteId,
   isOpen,
@@ -55,7 +55,7 @@ function QuoteVersionsList({
     queryKey: ["/api/quotes", quoteId, "revisions"],
     queryFn: async () => {
       const res = await fetch(`/api/quotes/${quoteId}/revisions`);
-      if (!res.ok) throw new Error("Failed to load versions");
+      if (!res.ok) throw new Error("Failed to load revisions");
       return res.json();
     },
     enabled: isOpen,
@@ -64,18 +64,18 @@ function QuoteVersionsList({
   if (!isOpen) return null;
   if (isLoading) {
     return (
-      <div className="py-2 text-sm text-muted-foreground">Loading versions…</div>
+      <div className="py-2 text-sm text-muted-foreground">Loading revisions…</div>
     );
   }
   if (!revisions?.length) {
     return (
-      <div className="py-2 text-sm text-muted-foreground">No versions</div>
+      <div className="py-2 text-sm text-muted-foreground">No revisions</div>
     );
   }
 
   return (
     <div className="flex flex-col gap-1">
-      <p className="text-xs font-medium text-muted-foreground mb-1">Versions</p>
+      <p className="text-xs font-medium text-muted-foreground mb-1">Revisions</p>
       {revisions.map((rev) => (
         <Link
           key={rev.id}
@@ -83,7 +83,7 @@ function QuoteVersionsList({
           className="flex items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted"
         >
           <span>
-            Version {rev.revisionNumber ?? 1}
+            Revision {rev.version ?? rev.revisionNumber ?? 1}
             {rev.id === currentQuoteId && (
               <span className="ml-1 text-muted-foreground">(current)</span>
             )}
@@ -98,7 +98,7 @@ function QuoteVersionsList({
 export default function Quotes() {
   const { toast } = useToast();
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [openVersionsQuoteId, setOpenVersionsQuoteId] = useState<string | null>(null);
+  const [openRevisionsQuoteId, setOpenRevisionsQuoteId] = useState<string | null>(null);
 
   const { data: quotes, isLoading } = useQuery<Quote[]>({
     queryKey: ["/api/quotes"],
@@ -226,9 +226,9 @@ export default function Quotes() {
                     <CardTitle className="text-base font-medium">
                       {quote.quoteNumber}
                     </CardTitle>
-                    {(quote.revisionNumber ?? 1) > 1 && (
+                    {(quote.version ?? quote.revisionNumber ?? 1) > 1 && (
                       <Badge variant="secondary" className="text-xs">
-                        Rev {(quote.revisionNumber ?? 1)}
+                        Rev {quote.version ?? quote.revisionNumber ?? 1}
                       </Badge>
                     )}
                   </div>
@@ -261,28 +261,28 @@ export default function Quotes() {
                     </Button>
                   </Link>
                   <Popover
-                    open={openVersionsQuoteId === quote.id}
-                    onOpenChange={(open) => setOpenVersionsQuoteId(open ? quote.id : null)}
+                    open={openRevisionsQuoteId === quote.id}
+                    onOpenChange={(open) => setOpenRevisionsQuoteId(open ? quote.id : null)}
                   >
                     <PopoverTrigger asChild>
                       <Button
                         variant="ghost"
                         size="sm"
                         className="text-muted-foreground"
-                        data-testid={`button-versions-quote-${quote.id}`}
+                        data-testid={`button-revisions-quote-${quote.id}`}
                       >
                         <History className="mr-1 h-4 w-4" />
-                        Versions
-                        {(quote.revisionNumber ?? 1) > 1 && (
-                          <span className="ml-1">({quote.revisionNumber})</span>
+                        Revisions
+                        {(quote.version ?? quote.revisionNumber ?? 1) > 1 && (
+                          <span className="ml-1">({quote.version ?? quote.revisionNumber})</span>
                         )}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent align="start" className="w-64">
-                      <QuoteVersionsList
+                      <QuoteRevisionsList
                         quoteId={quote.id}
                         currentQuoteId={quote.id}
-                        isOpen={openVersionsQuoteId === quote.id}
+                        isOpen={openRevisionsQuoteId === quote.id}
                       />
                     </PopoverContent>
                   </Popover>
