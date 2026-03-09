@@ -14,7 +14,16 @@ import { BarChart3, Users, Calendar as CalendarIcon, AlertTriangle, ChevronLeft,
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { StaffCapacityView, StaffProfile, StaffTimeOff, StaffCapacityRule } from "@shared/schema";
-import { format, startOfWeek, addWeeks, subWeeks } from "date-fns";
+import { format, startOfWeek, addWeeks, subWeeks, addDays } from "date-fns";
+
+type StaffWithUser = StaffProfile & { user?: { firstName?: string; lastName?: string; email?: string } };
+
+function staffDisplayName(s: StaffWithUser): string {
+  const first = s.user?.firstName ?? "";
+  const last = s.user?.lastName ?? "";
+  const name = `${first} ${last}`.trim();
+  return name || (s.user?.email ?? "Unknown");
+}
 
 export default function CapacityPage() {
   const { toast } = useToast();
@@ -45,12 +54,13 @@ export default function CapacityPage() {
     queryKey: [`/api/capacity?weekStart=${weekStart}`],
   });
 
-  const { data: staff } = useQuery<(StaffProfile & { user?: { firstName?: string; lastName?: string } })[]>({
+  const { data: staff } = useQuery<StaffWithUser[]>({
     queryKey: ["/api/staff"],
   });
 
+  const weekEndDate = format(addDays(new Date(weekStart), 6), "yyyy-MM-dd");
   const { data: timeOff } = useQuery<StaffTimeOff[]>({
-    queryKey: ["/api/time-off"],
+    queryKey: [`/api/time-off?dateFrom=${weekStart}&dateTo=${weekEndDate}`],
   });
 
   const { data: capacityRules } = useQuery<StaffCapacityRule[]>({
@@ -62,9 +72,11 @@ export default function CapacityPage() {
       return apiRequest("POST", "/api/time-off", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/time-off"] });
-      queryClient.invalidateQueries({ predicate: (query) => 
-        query.queryKey[0]?.toString().startsWith("/api/capacity")
+      queryClient.invalidateQueries({ predicate: (query) =>
+        (query.queryKey[0]?.toString() ?? "").startsWith("/api/time-off")
+      });
+      queryClient.invalidateQueries({ predicate: (query) =>
+        (query.queryKey[0]?.toString() ?? "").startsWith("/api/capacity")
       });
       toast({ title: "Time off request created" });
       setIsTimeOffOpen(false);
@@ -80,9 +92,11 @@ export default function CapacityPage() {
       return apiRequest("POST", `/api/time-off/${id}/approve`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/time-off"] });
-      queryClient.invalidateQueries({ predicate: (query) => 
-        query.queryKey[0]?.toString().startsWith("/api/capacity")
+      queryClient.invalidateQueries({ predicate: (query) =>
+        (query.queryKey[0]?.toString() ?? "").startsWith("/api/time-off")
+      });
+      queryClient.invalidateQueries({ predicate: (query) =>
+        (query.queryKey[0]?.toString() ?? "").startsWith("/api/capacity")
       });
       toast({ title: "Time off approved" });
     },
@@ -93,9 +107,11 @@ export default function CapacityPage() {
       return apiRequest("POST", `/api/time-off/${id}/reject`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/time-off"] });
-      queryClient.invalidateQueries({ predicate: (query) => 
-        query.queryKey[0]?.toString().startsWith("/api/capacity")
+      queryClient.invalidateQueries({ predicate: (query) =>
+        (query.queryKey[0]?.toString() ?? "").startsWith("/api/time-off")
+      });
+      queryClient.invalidateQueries({ predicate: (query) =>
+        (query.queryKey[0]?.toString() ?? "").startsWith("/api/capacity")
       });
       toast({ title: "Time off rejected" });
     },
@@ -108,7 +124,7 @@ export default function CapacityPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/capacity-rules"] });
       queryClient.invalidateQueries({ predicate: (query) => 
-        query.queryKey[0]?.toString().startsWith("/api/capacity")
+        (query.queryKey[0]?.toString() ?? "").startsWith("/api/capacity")
       });
       toast({ title: "Capacity rule saved" });
       setIsCapacityRuleOpen(false);
@@ -163,8 +179,6 @@ export default function CapacityPage() {
     }
     createCapacityRuleMutation.mutate(newCapacityRule);
   };
-
-  const weekEndDate = format(addWeeks(new Date(weekStart), 1), "yyyy-MM-dd");
 
   return (
     <div className="flex-1 space-y-6 p-6 overflow-auto">
@@ -376,9 +390,7 @@ export default function CapacityPage() {
                       return (
                         <TableRow key={request.id} data-testid={`row-time-off-${request.id}`}>
                           <TableCell className="font-medium">
-                            {staffMember?.firstName || staffMember?.lastName
-                              ? `${staffMember.firstName || ""} ${staffMember.lastName || ""}`.trim()
-                              : "Unknown"}
+                            {staffMember ? staffDisplayName(staffMember) : "Unknown"}
                           </TableCell>
                           <TableCell>{format(new Date(request.startDate), "MMM d, yyyy")}</TableCell>
                           <TableCell>{format(new Date(request.endDate), "MMM d, yyyy")}</TableCell>
@@ -442,7 +454,7 @@ export default function CapacityPage() {
                 <SelectContent>
                   {staff?.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
-                      {s.firstName || s.lastName ? `${s.firstName || ""} ${s.lastName || ""}`.trim() : s.email}
+                      {staffDisplayName(s)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -503,7 +515,7 @@ export default function CapacityPage() {
                 <SelectContent>
                   {staff?.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
-                      {s.firstName || s.lastName ? `${s.firstName || ""} ${s.lastName || ""}`.trim() : s.email}
+                      {staffDisplayName(s)}
                     </SelectItem>
                   ))}
                 </SelectContent>
