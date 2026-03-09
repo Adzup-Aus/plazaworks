@@ -4,6 +4,23 @@ import { insertInvoiceSchema } from "@shared/schema";
 import { sendPaymentLinkEmail } from "../../email";
 
 export function registerInvoicesRoutes(app: Express): void {
+  /**
+   * @openapi
+   * /invoices:
+   *   get:
+   *     summary: List invoices
+   *     tags: [Invoices]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: status
+   *         in: query
+   *         schema: { type: string }
+   *       - name: jobId
+   *         in: query
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: List of invoices }
+   */
   app.get("/api/invoices", isAuthenticated, requirePermission("view_invoices"), async (req, res) => {
     try {
       const { status, jobId } = req.query;
@@ -22,6 +39,22 @@ export function registerInvoicesRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /invoices/{id}:
+   *   get:
+   *     summary: Get invoice by ID
+   *     tags: [Invoices]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: Invoice details }
+   *       404: { description: Invoice not found }
+   */
   app.get("/api/invoices/:id", isAuthenticated, requirePermission("view_invoices"), async (req, res) => {
     try {
       const invoice = await storage.getInvoiceWithDetails(req.params.id);
@@ -35,6 +68,18 @@ export function registerInvoicesRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /invoices:
+   *   post:
+   *     summary: Create an invoice
+   *     tags: [Invoices]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     requestBody: { content: { application/json: { schema: { type: object } } } }
+   *     responses:
+   *       201: { description: Invoice created }
+   *       400: { description: Validation error }
+   */
   app.post("/api/invoices", isAuthenticated, requirePermission("create_invoices"), async (req: any, res) => {
     try {
       const validation = insertInvoiceSchema.safeParse(req.body);
@@ -82,6 +127,23 @@ export function registerInvoicesRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /invoices/{id}:
+   *   patch:
+   *     summary: Update an invoice
+   *     tags: [Invoices]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     requestBody: { content: { application/json: { schema: { type: object } } } }
+   *     responses:
+   *       200: { description: Invoice updated }
+   *       404: { description: Invoice not found }
+   */
   app.patch("/api/invoices/:id", isAuthenticated, requirePermission("edit_invoices"), async (req, res) => {
     try {
       const partialSchema = insertInvoiceSchema.partial();

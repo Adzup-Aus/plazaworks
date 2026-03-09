@@ -118,7 +118,19 @@ import {
   type Role,
   type InsertRole,
   type UserPermission,
+  type Integration,
+  type InsertIntegration,
+  type Scope,
+  type InsertScope,
+  type Service,
+  type InsertService,
+  type IntegrationAuditLog,
+  type InsertIntegrationAuditLog,
   appSettings,
+  integrations,
+  scopes,
+  services,
+  integrationAuditLogs,
   termsTemplates,
   staffProfiles,
   roles,
@@ -203,6 +215,20 @@ export interface IStorage {
   getRolePermissions(roleId: string): Promise<UserPermission[]>;
   setRolePermissions(roleId: string, permissions: UserPermission[]): Promise<void>;
   getUserPermissionsFromRoles(profile: StaffProfile): Promise<UserPermission[]>;
+
+  // Integration operations
+  getIntegrations(): Promise<Integration[]>;
+  getIntegration(id: string): Promise<Integration | undefined>;
+  createIntegration(integration: InsertIntegration & { apiTokenHash: string; tokenPrefix: string | null }): Promise<Integration>;
+  updateIntegration(id: string, updates: Partial<InsertIntegration> & { apiTokenHash?: string; tokenPrefix?: string | null; rotatedAt?: Date | null; revokedAt?: Date | null; revokedBy?: string | null }): Promise<Integration | undefined>;
+  getScopes(): Promise<Scope[]>;
+  getServices(): Promise<Service[]>;
+  getService(id: string): Promise<Service | undefined>;
+  createService(service: InsertService): Promise<Service>;
+  updateService(id: string, updates: Partial<InsertService>): Promise<Service | undefined>;
+  deleteService(id: string): Promise<boolean>;
+  createIntegrationAuditLog(entry: InsertIntegrationAuditLog): Promise<IntegrationAuditLog>;
+  getIntegrationAuditLogs(integrationId: string): Promise<IntegrationAuditLog[]>;
 
   // Job operations
   getJobs(): Promise<Job[]>;
@@ -638,7 +664,6 @@ export class DatabaseStorage implements IStorage {
 
   async getUserPermissionsFromRoles(profile: StaffProfile): Promise<UserPermission[]> {
     const roleNames = profile.roles ?? [];
-    if (roleNames.length === 0) return [];
     const allPerms = new Set<string>();
     for (const name of roleNames) {
       const role = await this.getRoleByName(name);
@@ -650,6 +675,91 @@ export class DatabaseStorage implements IStorage {
     const direct = (profile.permissions ?? []) as string[];
     direct.forEach((p) => allPerms.add(p));
     return normalizePermissions(Array.from(allPerms));
+  }
+
+  async getIntegrations(): Promise<Integration[]> {
+    return db.select().from(integrations).orderBy(desc(integrations.createdAt));
+  }
+
+  async getIntegration(id: string): Promise<Integration | undefined> {
+    const [row] = await db.select().from(integrations).where(eq(integrations.id, id));
+    return row;
+  }
+
+  async createIntegration(
+    data: InsertIntegration & { apiTokenHash: string; tokenPrefix: string | null }
+  ): Promise<Integration> {
+    const [created] = await db
+      .insert(integrations)
+      .values({
+        name: data.name,
+        description: data.description,
+        apiTokenHash: data.apiTokenHash,
+        tokenPrefix: data.tokenPrefix,
+        tokenExpiryDate: data.tokenExpiryDate,
+        scopes: data.scopes,
+        status: data.status ?? "active",
+        createdBy: data.createdBy,
+      })
+      .returning();
+    return created;
+  }
+
+  async updateIntegration(
+    id: string,
+    updates: Partial<InsertIntegration> & { apiTokenHash?: string; tokenPrefix?: string | null; rotatedAt?: Date | null; revokedAt?: Date | null; revokedBy?: string | null }
+  ): Promise<Integration | undefined> {
+    const [updated] = await db
+      .update(integrations)
+      .set(updates as Record<string, unknown>)
+      .where(eq(integrations.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getScopes(): Promise<Scope[]> {
+    return db.select().from(scopes).orderBy(scopes.name);
+  }
+
+  async getServices(): Promise<Service[]> {
+    return db.select().from(services).orderBy(services.name);
+  }
+
+  async getService(id: string): Promise<Service | undefined> {
+    const [row] = await db.select().from(services).where(eq(services.id, id));
+    return row;
+  }
+
+  async createService(service: InsertService): Promise<Service> {
+    const [created] = await db.insert(services).values(service).returning();
+    return created;
+  }
+
+  async updateService(id: string, updates: Partial<InsertService>): Promise<Service | undefined> {
+    const [updated] = await db
+      .update(services)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(services.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteService(id: string): Promise<boolean> {
+    const result = await db.delete(services).where(eq(services.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async createIntegrationAuditLog(entry: InsertIntegrationAuditLog): Promise<IntegrationAuditLog> {
+    const [created] = await db.insert(integrationAuditLogs).values(entry).returning();
+    return created;
+  }
+
+  async getIntegrationAuditLogs(integrationId: string): Promise<IntegrationAuditLog[]> {
+    return db
+      .select()
+      .from(integrationAuditLogs)
+      .where(eq(integrationAuditLogs.integrationId, integrationId))
+      .orderBy(desc(integrationAuditLogs.performedAt));
   }
 
   // Job operations

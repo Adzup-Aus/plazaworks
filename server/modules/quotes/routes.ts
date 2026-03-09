@@ -5,6 +5,20 @@ import { insertQuoteSchema, insertTermsTemplateSchema } from "@shared/schema";
 import { sendQuoteNotification } from "../../email";
 
 export function registerQuotesRoutes(app: Express): void {
+  /**
+   * @openapi
+   * /quotes:
+   *   get:
+   *     summary: List quotes
+   *     tags: [Quotes]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: status
+   *         in: query
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: List of quotes }
+   */
   app.get("/api/quotes", isAuthenticated, requirePermission("view_quotes"), async (req, res) => {
     try {
       const { status } = req.query;
@@ -21,6 +35,22 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /quotes/{id}:
+   *   get:
+   *     summary: Get quote by ID
+   *     tags: [Quotes]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: Quote details }
+   *       404: { description: Quote not found }
+   */
   app.get("/api/quotes/:id", isAuthenticated, requirePermission("view_quotes"), async (req, res) => {
     try {
       const quote = await storage.getQuoteWithLineItems(req.params.id);
@@ -34,6 +64,18 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /quotes:
+   *   post:
+   *     summary: Create a quote
+   *     tags: [Quotes]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     requestBody: { content: { application/json: { schema: { type: object } } } }
+   *     responses:
+   *       201: { description: Quote created }
+   *       400: { description: Validation error }
+   */
   app.post("/api/quotes", isAuthenticated, requirePermission("create_quotes"), async (req: any, res) => {
     try {
       const validation = insertQuoteSchema.safeParse(req.body);
@@ -53,6 +95,23 @@ export function registerQuotesRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /quotes/{id}:
+   *   patch:
+   *     summary: Update a quote
+   *     tags: [Quotes]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     requestBody: { content: { application/json: { schema: { type: object } } } }
+   *     responses:
+   *       200: { description: Quote updated }
+   *       404: { description: Quote not found }
+   */
   app.patch("/api/quotes/:id", isAuthenticated, requirePermission("edit_quotes"), async (req, res) => {
     try {
       const partialSchema = insertQuoteSchema.partial();

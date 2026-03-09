@@ -3,6 +3,29 @@ import { storage, isAuthenticated, requireUserId, requirePermission } from "../.
 import { insertScheduleEntrySchema, patchScheduleEntrySchema } from "./model";
 
 export function registerScheduleRoutes(app: Express): void {
+  /**
+   * @openapi
+   * /schedule:
+   *   get:
+   *     summary: List schedule entries
+   *     tags: [Schedule]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: startDate
+   *         in: query
+   *         schema: { type: string }
+   *       - name: endDate
+   *         in: query
+   *         schema: { type: string }
+   *       - name: jobId
+   *         in: query
+   *         schema: { type: string }
+   *       - name: staffId
+   *         in: query
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: List of schedule entries }
+   */
   app.get("/api/schedule", isAuthenticated, requirePermission("view_schedule"), async (req, res) => {
     try {
       const { startDate, endDate, jobId, staffId } = req.query;
@@ -24,6 +47,22 @@ export function registerScheduleRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /schedule/{id}:
+   *   get:
+   *     summary: Get schedule entry by ID
+   *     tags: [Schedule]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: Schedule entry details }
+   *       404: { description: Not found }
+   */
   app.get("/api/schedule/:id", isAuthenticated, requirePermission("view_schedule"), async (req, res) => {
     try {
       const entry = await storage.getScheduleEntry(req.params.id);
@@ -37,6 +76,18 @@ export function registerScheduleRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /schedule:
+   *   post:
+   *     summary: Create a schedule entry
+   *     tags: [Schedule]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     requestBody: { content: { application/json: { schema: { type: object } } } }
+   *     responses:
+   *       201: { description: Schedule entry created }
+   *       400: { description: Validation error }
+   */
   app.post("/api/schedule", isAuthenticated, requirePermission("manage_schedule"), async (req: any, res) => {
     try {
       const userId = requireUserId(req);

@@ -53,6 +53,13 @@ async function main() {
     env: process.env,
   });
 
+  console.log("Seeding integration scopes...");
+  execSync("npm run seed:integration-scopes", {
+    stdio: "inherit",
+    cwd: process.cwd(),
+    env: process.env,
+  });
+
   console.log("Database reset and initialized.");
 }
 

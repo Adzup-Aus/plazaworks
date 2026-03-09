@@ -3,6 +3,16 @@ import { storage, isAuthenticated, requirePermission, requireAnyPermission } fro
 import { insertActivitySchema, patchActivitySchema } from "./model";
 
 export function registerActivitiesRoutes(app: Express): void {
+  /**
+   * @openapi
+   * /activities:
+   *   get:
+   *     summary: List activities
+   *     tags: [Activities]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     responses:
+   *       200: { description: List of activities }
+   */
   // view_schedule allows listing activities so Schedule page can show activity names on entries
   app.get("/api/activities", isAuthenticated, requireAnyPermission("view_activities", "view_schedule"), async (req: any, res) => {
     try {
@@ -14,6 +24,22 @@ export function registerActivitiesRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /activities/{id}:
+   *   get:
+   *     summary: Get activity by ID
+   *     tags: [Activities]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: Activity details }
+   *       404: { description: Activity not found }
+   */
   app.get("/api/activities/:id", isAuthenticated, requireAnyPermission("view_activities", "view_schedule"), async (req: any, res) => {
     try {
       const activity = await storage.getActivity(req.params.id);
@@ -27,6 +53,18 @@ export function registerActivitiesRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /activities:
+   *   post:
+   *     summary: Create an activity
+   *     tags: [Activities]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     requestBody: { content: { application/json: { schema: { type: object } } } }
+   *     responses:
+   *       201: { description: Activity created }
+   *       400: { description: Validation error }
+   */
   app.post("/api/activities", isAuthenticated, requirePermission("view_activities"), async (req: any, res) => {
     try {
       const parsed = insertActivitySchema.safeParse(req.body);
@@ -43,6 +81,23 @@ export function registerActivitiesRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /activities/{id}:
+   *   patch:
+   *     summary: Update an activity
+   *     tags: [Activities]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     requestBody: { content: { application/json: { schema: { type: object } } } }
+   *     responses:
+   *       200: { description: Activity updated }
+   *       404: { description: Activity not found }
+   */
   app.patch("/api/activities/:id", isAuthenticated, requirePermission("view_activities"), async (req: any, res) => {
     try {
       const existing = await storage.getActivity(req.params.id);
@@ -63,6 +118,22 @@ export function registerActivitiesRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /activities/{id}:
+   *   delete:
+   *     summary: Delete an activity
+   *     tags: [Activities]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: Activity deleted }
+   *       400: { description: Activity in use }
+   */
   app.delete("/api/activities/:id", isAuthenticated, requirePermission("view_activities"), async (req: any, res) => {
     try {
       const existing = await storage.getActivity(req.params.id);

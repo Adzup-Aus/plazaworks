@@ -52,6 +52,16 @@ const CATEGORIES = [
 ];
 
 export function registerRolesRoutes(app: Express): void {
+  /**
+   * @openapi
+   * /roles:
+   *   get:
+   *     summary: List roles
+   *     tags: [Roles]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     responses:
+   *       200: { description: List of roles }
+   */
   app.get("/api/roles", isAuthenticated, requirePermission("admin_settings"), async (_req, res) => {
     try {
       const list = await storage.getRoles();
@@ -62,6 +72,22 @@ export function registerRolesRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /roles/{id}:
+   *   get:
+   *     summary: Get role by ID
+   *     tags: [Roles]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: Role details }
+   *       404: { description: Role not found }
+   */
   app.get("/api/roles/:id", isAuthenticated, requirePermission("admin_settings"), async (req, res) => {
     try {
       const role = await storage.getRole(req.params.id);
@@ -73,6 +99,18 @@ export function registerRolesRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /roles:
+   *   post:
+   *     summary: Create a role
+   *     tags: [Roles]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     requestBody: { content: { application/json: { schema: { type: object } } } }
+   *     responses:
+   *       201: { description: Role created }
+   *       400: { description: Validation error }
+   */
   app.post("/api/roles", isAuthenticated, requirePermission("admin_settings"), async (req, res) => {
     try {
       const parsed = createRoleBodySchema.safeParse(req.body);

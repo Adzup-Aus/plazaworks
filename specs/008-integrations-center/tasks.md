@@ -23,22 +23,22 @@ This task list implements the Integrations Center allowing third-party applicati
 
 ### Dependencies
 
-- [ ] T001 Install swagger-jsdoc and swagger-ui-express packages
+- [x] T001 Install swagger-jsdoc and swagger-ui-express packages
   - `npm install swagger-jsdoc swagger-ui-express`
   - `npm install -D @types/swagger-jsdoc @types/swagger-ui-express`
 
 ### Project Structure
 
-- [ ] T002 [P] Create backend module directory structure
+- [x] T002 [P] Create backend module directory structure
   - `server/modules/integrations/` - Integration module
   - `server/middleware/apiAuth.ts` - API token auth middleware
   - `server/middleware/requireScope.ts` - Scope authorization middleware
   - `server/docs/swagger.ts` - Auto-doc generation skill
 
-- [ ] T003 [P] Create shared model file
+- [x] T003 [P] Create shared model file
   - `shared/models/integrations.ts` - Drizzle table definitions
 
-- [ ] T004 [P] Create frontend component directories
+- [x] T004 [P] Create frontend component directories
   - `client/src/components/integrations/` - Integration UI components
 
 ---
@@ -49,45 +49,45 @@ This task list implements the Integrations Center allowing third-party applicati
 
 ### Database Schema
 
-- [ ] T005 Define Integration table in `shared/models/integrations.ts`
+- [x] T005 Define Integration table in `shared/models/integrations.ts`
   - Create `integrationStatusEnum` (active, revoked)
   - Create `integrationActionEnum` (created, rotated, revoked)
   - Define `integrations` table with all fields per data-model.md
   - Export insert schema and types
 
-- [ ] T006 [P] Define Scope table in `shared/models/integrations.ts`
+- [x] T006 [P] Define Scope table in `shared/models/integrations.ts`
   - Define `scopes` table with name, description, resource, actions
   - Export insert schema and types
 
-- [ ] T007 [P] Define Service table in `shared/models/integrations.ts`
+- [x] T007 [P] Define Service table in `shared/models/integrations.ts`
   - Define `services` table with configuration fields as jsonb
   - Export insert schema and types
 
-- [ ] T008 Define IntegrationAuditLog table in `shared/models/integrations.ts`
+- [x] T008 Define IntegrationAuditLog table in `shared/models/integrations.ts`
   - Define `integrationAuditLogs` table
   - Export insert schema and types
 
-- [ ] T009 Export all integration models from `shared/schema.ts`
+- [x] T009 Export all integration models from `shared/schema.ts`
   - Re-export from `shared/models/integrations.ts`
 
-- [ ] T010 [P] Create database migration
+- [x] T010 [P] Create database migration
   - Generate migration with `npm run db:generate`
   - Apply migration with `npm run db:migrate`
 
 ### Core Middleware
 
-- [ ] T011 Implement API token authentication middleware in `server/middleware/apiAuth.ts`
+- [x] T011 Implement API token authentication middleware in `server/middleware/apiAuth.ts`
   - Check Authorization header for Bearer token
   - Validate token against database
   - Set `req.user` with integration context
   - Fall through to session auth if no token
 
-- [ ] T012 Implement scope authorization middleware in `server/middleware/requireScope.ts`
+- [x] T012 Implement scope authorization middleware in `server/middleware/requireScope.ts`
   - Factory function accepting scope names
   - Check if integration has required scopes
   - Return 403 if insufficient scope
 
-- [ ] T013 Create integration module model file `server/modules/integrations/model.ts`
+- [x] T013 Create integration module model file `server/modules/integrations/model.ts`
   - Re-export from `@shared/schema` for integration tables
 
 ---
@@ -100,54 +100,54 @@ This task list implements the Integrations Center allowing third-party applicati
 
 ### Backend
 
-- [ ] T014 Implement list scopes endpoint in `server/modules/integrations/routes.ts`
+- [x] T014 Implement list scopes endpoint in `server/modules/integrations/routes.ts`
   - `GET /api/scopes` - Returns all available scopes
   - JSDoc @openapi annotations for auto-doc
 
-- [ ] T015 Implement create integration endpoint in `server/modules/integrations/routes.ts`
+- [x] T015 Implement create integration endpoint in `server/modules/integrations/routes.ts`
   - `POST /api/integrations` - Creates new integration
   - Generate UUID token, hash with bcrypt
   - Return full token only once
   - JSDoc @openapi annotations
 
-- [ ] T016 Implement list integrations endpoint in `server/modules/integrations/routes.ts`
+- [x] T016 Implement list integrations endpoint in `server/modules/integrations/routes.ts`
   - `GET /api/integrations` - Returns all integrations
   - Admin only (session auth)
   - Exclude apiTokenHash from response
 
-- [ ] T017 [P] Implement audit logging for integration creation
+- [x] T017 [P] Implement audit logging for integration creation
   - Log to `integrationAuditLogs` table
   - Include createdBy, timestamp, details
 
-- [ ] T018 Register integration routes in `server/routes/index.ts`
+- [x] T018 Register integration routes in `server/routes/index.ts`
   - Import `registerIntegrationsRoutes`
   - Call in `registerRoutes()` function
 
 ### Frontend
 
-- [ ] T019 Create Integrations page component `client/src/pages/integrations.tsx`
+- [x] T019 Create Integrations page component `client/src/pages/integrations.tsx`
   - Main Integrations Center UI
   - Admin-only access check
 
-- [ ] T020 [P] Create IntegrationCard component `client/src/components/integrations/IntegrationCard.tsx`
+- [x] T020 [P] Create IntegrationCard component `client/src/components/integrations/IntegrationCard.tsx`
   - Display integration details
   - Show status, scopes, created date
 
-- [ ] T021 Create TokenDisplay component `client/src/components/integrations/TokenDisplay.tsx`
+- [x] T021 Create TokenDisplay component `client/src/components/integrations/TokenDisplay.tsx`
   - Display token with eye icon toggle
   - Copy to clipboard button
   - Show only when token available
 
-- [ ] T022 Create ScopeSelector component `client/src/components/integrations/ScopeSelector.tsx`
+- [x] T022 Create ScopeSelector component `client/src/components/integrations/ScopeSelector.tsx`
   - Multi-select for scopes
   - Fetch available scopes from API
 
-- [ ] T023 [P] Create CreateIntegrationDialog component
+- [x] T023 [P] Create CreateIntegrationDialog component
   - Form for name, description, scopes
   - Token expiry date picker
   - Display generated token after creation
 
-- [ ] T024 Add Integrations route in `client/src/App.tsx`
+- [x] T024 Add Integrations route in `client/src/App.tsx`
   - Add to AuthenticatedRouter
   - Path: `/integrations`
 
@@ -161,16 +161,16 @@ This task list implements the Integrations Center allowing third-party applicati
 
 ### Backend
 
-- [ ] T025 Create documentation skill `server/docs/swagger.ts`
+- [x] T025 Create documentation skill `server/docs/swagger.ts`
   - Configure swagger-jsdoc with JSDoc annotations
   - Set up Bearer auth security scheme
   - Watch for route file changes
 
-- [ ] T026 Implement OpenAPI spec endpoint in `server/modules/integrations/routes.ts`
+- [x] T026 Implement OpenAPI spec endpoint in `server/modules/integrations/routes.ts`
   - `GET /api/docs/openapi.json` - Returns generated spec
   - Trigger regeneration on request
 
-- [ ] T027 Serve Swagger UI in `server/modules/integrations/routes.ts`
+- [x] T027 Serve Swagger UI in `server/modules/integrations/routes.ts`
   - `GET /api/docs` - Serves Swagger UI
   - Use swagger-ui-express middleware
 
@@ -180,7 +180,7 @@ This task list implements the Integrations Center allowing third-party applicati
 
 ### Frontend
 
-- [ ] T029 [P] Create link to API docs in Integrations Center
+- [x] T029 [P] Create link to API docs in Integrations Center
   - Add "View API Documentation" button/link
   - Opens in new tab to `/api/docs`
 
@@ -194,19 +194,19 @@ This task list implements the Integrations Center allowing third-party applicati
 
 ### Backend
 
-- [ ] T030 Implement rotate token endpoint in `server/modules/integrations/routes.ts`
+- [x] T030 Implement rotate token endpoint in `server/modules/integrations/routes.ts`
   - `POST /api/integrations/:id/rotate` - Rotates token
   - Generate new UUID, hash and store
   - Invalidate old token
   - Return new token once
 
-- [ ] T031 [P] Add audit logging for rotation
+- [x] T031 [P] Add audit logging for rotation
   - Log rotation event
   - Include performedBy, timestamp
 
 ### Frontend
 
-- [ ] T032 Add rotate token button to IntegrationCard
+- [x] T032 Add rotate token button to IntegrationCard
   - Confirmation dialog
   - Display new token after rotation
   - Show warning that old token stops working
@@ -221,18 +221,18 @@ This task list implements the Integrations Center allowing third-party applicati
 
 ### Backend
 
-- [ ] T033 Implement revoke integration endpoint in `server/modules/integrations/routes.ts`
+- [x] T033 Implement revoke integration endpoint in `server/modules/integrations/routes.ts`
   - `DELETE /api/integrations/:id` - Revokes integration
   - Set status to revoked
   - Set revokedAt and revokedBy
 
-- [ ] T034 [P] Add audit logging for revocation
+- [x] T034 [P] Add audit logging for revocation
   - Log revoke event
   - Include performedBy, timestamp
 
 ### Frontend
 
-- [ ] T035 Add revoke button to IntegrationCard
+- [x] T035 Add revoke button to IntegrationCard
   - Confirmation dialog with warning
   - Show revoked status after revocation
   - Disable actions on revoked integrations
@@ -247,17 +247,17 @@ This task list implements the Integrations Center allowing third-party applicati
 
 ### Backend
 
-- [ ] T036 Implement list services endpoint in `server/modules/integrations/routes.ts`
+- [x] T036 Implement list services endpoint in `server/modules/integrations/routes.ts`
   - `GET /api/services` - Returns all services
 
-- [ ] T037 [P] Implement create service endpoint
+- [x] T037 [P] Implement create service endpoint
   - `POST /api/services` - Creates new service
   - Validate configuration fields schema
 
-- [ ] T038 [P] Implement update service endpoint
+- [x] T038 [P] Implement update service endpoint
   - `PATCH /api/services/:id` - Updates service
 
-- [ ] T039 [P] Implement delete service endpoint
+- [x] T039 [P] Implement delete service endpoint
   - `DELETE /api/services/:id` - Removes service
 
 ### Frontend
@@ -282,7 +282,7 @@ This task list implements the Integrations Center allowing third-party applicati
 
 ### Testing
 
-- [ ] T043 Create API tests in `server/__tests__/api.integrations.test.ts`
+- [x] T043 Create API tests in `server/__tests__/api.integrations.test.ts`
   - Test all integration endpoints
   - Test token authentication
   - Test scope authorization
