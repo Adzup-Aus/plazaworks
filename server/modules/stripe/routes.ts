@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import type Stripe from "stripe";
 import { getStripe } from "../../services/stripeService";
 import { storage } from "../../routes/shared";
+import { triggerSyncPayment } from "../../services/quickbooksSync";
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -52,6 +53,7 @@ export function registerStripeRoutes(app: Express): void {
         stripePaymentIntentId: typeof session.payment_intent === "string" ? session.payment_intent : null,
         description: `Stripe payment ${session.id}`,
       });
+      triggerSyncPayment(invoiceId, Number(amountPaid));
 
       // Guarantee job creation for Stripe-paid invoices (independent of autoCreateJobFromInvoice)
       const updated = await storage.getInvoice(invoiceId);

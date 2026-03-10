@@ -17,6 +17,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-16
 - swagger-jsdoc + swagger-ui-express for auto-generated API documentation (008-integrations-center)
 - UUID v4 for API tokens, bcrypt for token hashing (008-integrations-center)
 - Dual auth: Bearer token + session cookie support (008-integrations-center)
+- TypeScript 5.x (existing) + Express (existing), Drizzle ORM (existing), QuickBooks Online API (OAuth 2.0 + REST) (009-quickbooks-integration)
+- PostgreSQL via Drizzle; new tables for QuickBooks connection and sync mapping (invoice ↔ QuickBooks ID) (009-quickbooks-integration)
 
 - TypeScript 5.6 + Express, React 18, Vite, Drizzle ORM, TanStack Query, Zod, bcrypt, Resend (email) (001-admin-invite-users)
 
@@ -36,9 +38,9 @@ npm test && npm run lint
 TypeScript 5.6: Follow standard conventions
 
 ## Recent Changes
+- 009-quickbooks-integration: Added TypeScript 5.x (existing) + Express (existing), Drizzle ORM (existing), QuickBooks Online API (OAuth 2.0 + REST)
 - 008-integrations-center: Added TypeScript 5.x (aligned with project)
 - 007-invite-account-setup: Added TypeScript 5.x + Express, React 18, Vite, Drizzle ORM, TanStack Query, Zod, bcrypt, Resend (email); existing upload (S3/GCS) if used elsewhere
-- 005-role-permissions: Added TypeScript 5.x, Node.js 20+ + Express.js, Drizzle ORM, React 18, TanStack Query, Tailwind CSS
 
 
 <!-- MANUAL ADDITIONS START -->

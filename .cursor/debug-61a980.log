@@ -1,0 +1,12 @@
+{"sessionId":"61a980","hypothesisId":"H2","location":"quotes/routes.ts:GET /api/quotes","message":"GET /api/quotes entry","data":{"hasStatusFilter":false},"timestamp":1773032004710}
+{"sessionId":"61a980","hypothesisId":"H4","location":"storage.ts:getQuotes","message":"About to select from quotes (schema includes version)","data":{},"timestamp":1773032004723}
+{"sessionId":"61a980","hypothesisId":"H3","location":"quotes/routes.ts:catch","message":"Error fetching quotes","data":{"code":"42703","message":"column \"version\" does not exist","hasVersion":true},"timestamp":1773032004748}
+{"sessionId":"61a980","hypothesisId":"H2","location":"quotes/routes.ts:GET /api/quotes","message":"GET /api/quotes entry","data":{"hasStatusFilter":false},"timestamp":1773032491352}
+{"sessionId":"61a980","hypothesisId":"H4","location":"storage.ts:getQuotes","message":"About to select from quotes (schema includes version)","data":{},"timestamp":1773032491354}
+{"sessionId":"61a980","hypothesisId":"H3","location":"quotes/routes.ts:catch","message":"Error fetching quotes","data":{"code":"42703","message":"column \"version\" does not exist","hasVersion":true},"timestamp":1773032491374}
+{"sessionId":"61a980","hypothesisId":"H2","location":"quotes/routes.ts:GET /api/quotes","message":"GET /api/quotes entry","data":{"hasStatusFilter":false},"timestamp":1773032846046}
+{"sessionId":"61a980","hypothesisId":"H4","location":"storage.ts:getQuotes","message":"About to select from quotes (schema includes version)","data":{},"timestamp":1773032846088}
+{"sessionId":"61a980","hypothesisId":"H2","location":"quotes/routes.ts:GET /api/quotes","message":"GET /api/quotes entry","data":{"hasStatusFilter":false},"timestamp":1773032865418}
+{"sessionId":"61a980","hypothesisId":"H4","location":"storage.ts:getQuotes","message":"About to select from quotes (schema includes version)","data":{},"timestamp":1773032865420}
+{"sessionId":"61a980","hypothesisId":"H2","location":"quotes/routes.ts:GET /api/quotes","message":"GET /api/quotes entry","data":{"hasStatusFilter":false},"timestamp":1773032900403}
+{"sessionId":"61a980","hypothesisId":"H4","location":"storage.ts:getQuotes","message":"About to select from quotes (schema includes version)","data":{},"timestamp":1773032900406}

@@ -1,0 +1,138 @@
+openapi: 3.0.3
+info:
+  title: QuickBooks Integration API
+  description: Config and status endpoints for QuickBooks (009-quickbooks-integration). Sync is triggered internally on invoice/payment events.
+  version: 0.1.0
+
+servers:
+  - url: /api
+    description: Relative to app root
+
+tags:
+  - name: QuickBooks
+    description: QuickBooks connection and OAuth
+
+paths:
+  /quickbooks/connection:
+    get:
+      summary: Get QuickBooks connection status
+      description: Returns whether QuickBooks is configured and connected. Does not return credentials or tokens.
+      tags: [QuickBooks]
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          description: Connection status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuickBooksConnectionStatus'
+        '401':
+          description: Unauthorized
+
+    put:
+      summary: Save QuickBooks credentials (Client ID and Client Secret)
+      description: Stores encrypted credentials. Does not complete OAuth; client should then redirect user to OAuth start URL.
+      tags: [QuickBooks]
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuickBooksConfigBody'
+      responses:
+        '200':
+          description: Credentials saved; returns OAuth start URL or connection status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuickBooksConfigResponse'
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+
+  /quickbooks/oauth/callback:
+    get:
+      summary: OAuth callback (redirect from Intuit)
+      description: Exchanges authorization code for tokens and stores them. Redirects back to Integrations page.
+      tags: [QuickBooks]
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema: { type: string }
+        - name: realmId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: state
+          in: query
+          schema: { type: string }
+      responses:
+        '302':
+          description: Redirect to Integrations page (success or error query params)
+        '400':
+          description: Missing code or realmId
+
+  /quickbooks/oauth/start:
+    get:
+      summary: Get OAuth authorization URL
+      description: Returns the Intuit authorization URL to redirect the admin to. Requires credentials to be saved first.
+      tags: [QuickBooks]
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          description: URL to redirect user to
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, format: uri }
+        '400':
+          description: QuickBooks not configured (no credentials)
+        '401':
+          description: Unauthorized
+
+  /quickbooks/disconnect:
+    post:
+      summary: Disconnect QuickBooks
+      description: Clears tokens and optionally enabled_at. Does not delete stored Client ID/Secret so user can reconnect.
+      tags: [QuickBooks]
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          description: Disconnected
+        '401':
+          description: Unauthorized
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: (session cookie name per app)
+
+  schemas:
+    QuickBooksConnectionStatus:
+      type: object
+      properties:
+        configured: { type: boolean, description: True if Client ID/Secret are stored }
+        connected: { type: boolean, description: True if OAuth complete and tokens valid }
+        realmId: { type: string, nullable: true, description: QuickBooks company ID when connected }
+        enabledAt: { type: string, format: date-time, nullable: true }
+      required: [configured, connected]
+
+    QuickBooksConfigBody:
+      type: object
+      properties:
+        clientId: { type: string, minLength: 1 }
+        clientSecret: { type: string, minLength: 1 }
+      required: [clientId, clientSecret]
+
+    QuickBooksConfigResponse:
+      type: object
+      properties:
+        saved: { type: boolean }
+        oauthStartUrl: { type: string, format: uri, description: URL for admin to start OAuth }

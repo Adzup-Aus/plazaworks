@@ -1,13 +1,17 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Integration, Scope, Service } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CreateIntegrationDialog } from "@/components/integrations/CreateIntegrationDialog";
 import { IntegrationCard } from "@/components/integrations/IntegrationCard";
-import { ServiceCard } from "@/components/integrations/ServiceCard";
+import {
+  ServiceCard,
+  type QuickBooksConnectionStatus,
+} from "@/components/integrations/ServiceCard";
 import { ServiceDialog } from "@/components/integrations/ServiceForm";
+import { QuickBooksConfigForm } from "@/components/integrations/QuickBooksConfigForm";
 import { Plus, ExternalLink } from "lucide-react";
 import { getQueryFn } from "@/lib/queryClient";
 
@@ -16,6 +20,8 @@ export default function Integrations() {
   const [rotatedToken, setRotatedToken] = useState<{ id: string; token: string } | null>(null);
   const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
+  const [quickbooksConfigOpen, setQuickbooksConfigOpen] = useState(false);
+  const queryClient = useQueryClient();
 
   const { data: integrations, isLoading: integrationsLoading } = useQuery<Integration[]>({
     queryKey: ["/api/integrations"],
@@ -32,15 +38,40 @@ export default function Integrations() {
     queryFn: getQueryFn({ on401: "throw" }),
   });
 
+  const hasQuickBooksService = (services ?? []).some((s) => s.type === "quickbooks");
+
+  const { data: quickbooksStatus } = useQuery<QuickBooksConnectionStatus>({
+    queryKey: ["/api/quickbooks/connection"],
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled: hasQuickBooksService,
+  });
+
   const openCreateService = () => {
     setEditingService(null);
     setServiceDialogOpen(true);
   };
 
-  const openEditService = (service: Service) => {
-    setEditingService(service);
-    setServiceDialogOpen(true);
-  };
+  const openEditService = useCallback(
+    (service: Service) => {
+      if (service.type === "quickbooks") {
+        setQuickbooksConfigOpen(true);
+        return;
+      }
+      setEditingService(service);
+      setServiceDialogOpen(true);
+    },
+    []
+  );
+
+  const handleQuickBooksConfigOpenChange = useCallback(
+    (open: boolean) => {
+      setQuickbooksConfigOpen(open);
+      if (!open) {
+        queryClient.invalidateQueries({ queryKey: ["/api/quickbooks/connection"] });
+      }
+    },
+    [queryClient]
+  );
 
   return (
     <div className="space-y-6">
@@ -120,6 +151,9 @@ export default function Integrations() {
                   key={service.id}
                   service={service}
                   onEdit={openEditService}
+                  quickbooksConnectionStatus={
+                    service.type === "quickbooks" ? quickbooksStatus ?? undefined : undefined
+                  }
                 />
               ))}
             </div>
@@ -136,6 +170,10 @@ export default function Integrations() {
         open={serviceDialogOpen}
         onOpenChange={setServiceDialogOpen}
         service={editingService}
+      />
+      <QuickBooksConfigForm
+        open={quickbooksConfigOpen}
+        onOpenChange={handleQuickBooksConfigOpenChange}
       />
     </div>
   );

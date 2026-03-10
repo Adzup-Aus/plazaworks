@@ -20,6 +20,7 @@ export * from "./models/jobs";
 export * from "./models/activities";
 export * from "./models/schedule";
 export * from "./models/integrations";
+export * from "./models/quickbooks";
 
 // Import table refs for schema relations
 import { termsTemplates } from "./models/organizations";

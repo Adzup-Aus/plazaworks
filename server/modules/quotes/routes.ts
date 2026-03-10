@@ -3,6 +3,7 @@ import { randomBytes } from "crypto";
 import { storage, isAuthenticated, requireUserId, getUserId, requirePermission } from "../../routes/shared";
 import { insertQuoteSchema, insertTermsTemplateSchema } from "@shared/schema";
 import { sendQuoteNotification } from "../../email";
+import { triggerSyncInvoice } from "../../services/quickbooksSync";
 
 export function registerQuotesRoutes(app: Express): void {
   /**
@@ -211,6 +212,7 @@ export function registerQuotesRoutes(app: Express): void {
       if (!quote.convertedToInvoiceId) {
         const invoice = await storage.createInvoiceFromAcceptedQuote(req.params.id, requireUserId(req));
         createdInvoiceId = invoice?.id;
+        if (invoice) triggerSyncInvoice(invoice.id);
       }
       const updated = await storage.getQuote(req.params.id);
       const payload = updated ?? quote;

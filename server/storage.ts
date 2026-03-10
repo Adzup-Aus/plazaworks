@@ -126,11 +126,20 @@ import {
   type InsertService,
   type IntegrationAuditLog,
   type InsertIntegrationAuditLog,
+  type QuickBooksConnection,
+  type InsertQuickBooksConnection,
+  type QuickBooksCustomerMapping,
+  type InsertQuickBooksCustomerMapping,
+  type QuickBooksInvoiceMapping,
+  type InsertQuickBooksInvoiceMapping,
   appSettings,
   integrations,
   scopes,
   services,
   integrationAuditLogs,
+  quickbooks_connections,
+  quickbooks_customer_mappings,
+  quickbooks_invoice_mappings,
   termsTemplates,
   staffProfiles,
   roles,
@@ -229,6 +238,15 @@ export interface IStorage {
   deleteService(id: string): Promise<boolean>;
   createIntegrationAuditLog(entry: InsertIntegrationAuditLog): Promise<IntegrationAuditLog>;
   getIntegrationAuditLogs(integrationId: string): Promise<IntegrationAuditLog[]>;
+
+  // QuickBooks connection and mappings
+  getQuickBooksConnection(): Promise<QuickBooksConnection | undefined>;
+  upsertQuickBooksConnection(data: Partial<InsertQuickBooksConnection>): Promise<QuickBooksConnection>;
+  getQuickBooksCustomerMapping(connectionId: string, platformClientId: string): Promise<QuickBooksCustomerMapping | undefined>;
+  upsertQuickBooksCustomerMapping(data: InsertQuickBooksCustomerMapping): Promise<QuickBooksCustomerMapping>;
+  getQuickBooksInvoiceMapping(connectionId: string, platformInvoiceId: string): Promise<QuickBooksInvoiceMapping | undefined>;
+  upsertQuickBooksInvoiceMapping(data: InsertQuickBooksInvoiceMapping): Promise<QuickBooksInvoiceMapping>;
+  getQuickBooksInvoiceMappingByInvoiceId(platformInvoiceId: string): Promise<QuickBooksInvoiceMapping | undefined>;
 
   // Job operations
   getJobs(): Promise<Job[]>;
@@ -760,6 +778,117 @@ export class DatabaseStorage implements IStorage {
       .from(integrationAuditLogs)
       .where(eq(integrationAuditLogs.integrationId, integrationId))
       .orderBy(desc(integrationAuditLogs.performedAt));
+  }
+
+  // QuickBooks connection and mappings
+  async getQuickBooksConnection(): Promise<QuickBooksConnection | undefined> {
+    const [row] = await db.select().from(quickbooks_connections).limit(1);
+    return row;
+  }
+
+  async upsertQuickBooksConnection(data: Partial<InsertQuickBooksConnection>): Promise<QuickBooksConnection> {
+    const [existing] = await db.select().from(quickbooks_connections).limit(1);
+    const payload: Record<string, unknown> = { ...data, updated_at: new Date() };
+    if (existing) {
+      const setPayload = Object.fromEntries(
+        Object.entries(payload).filter(([, v]) => v !== undefined)
+      ) as Partial<InsertQuickBooksConnection>;
+      const [updated] = await db
+        .update(quickbooks_connections)
+        .set(setPayload)
+        .where(eq(quickbooks_connections.id, existing.id))
+        .returning();
+      return updated!;
+    }
+    const [created] = await db.insert(quickbooks_connections).values(payload as InsertQuickBooksConnection).returning();
+    return created!;
+  }
+
+  async getQuickBooksCustomerMapping(
+    connectionId: string,
+    platformClientId: string
+  ): Promise<QuickBooksCustomerMapping | undefined> {
+    const [row] = await db
+      .select()
+      .from(quickbooks_customer_mappings)
+      .where(
+        and(
+          eq(quickbooks_customer_mappings.quickbooks_connection_id, connectionId),
+          eq(quickbooks_customer_mappings.platform_client_id, platformClientId)
+        )
+      );
+    return row;
+  }
+
+  async upsertQuickBooksCustomerMapping(data: InsertQuickBooksCustomerMapping): Promise<QuickBooksCustomerMapping> {
+    const [existing] = await db
+      .select()
+      .from(quickbooks_customer_mappings)
+      .where(
+        and(
+          eq(quickbooks_customer_mappings.quickbooks_connection_id, data.quickbooks_connection_id),
+          eq(quickbooks_customer_mappings.platform_client_id, data.platform_client_id)
+        )
+      );
+    if (existing) {
+      const [updated] = await db
+        .update(quickbooks_customer_mappings)
+        .set({ quickbooks_customer_id: data.quickbooks_customer_id })
+        .where(eq(quickbooks_customer_mappings.id, existing.id))
+        .returning();
+      return updated!;
+    }
+    const [created] = await db.insert(quickbooks_customer_mappings).values(data).returning();
+    return created!;
+  }
+
+  async getQuickBooksInvoiceMapping(
+    connectionId: string,
+    platformInvoiceId: string
+  ): Promise<QuickBooksInvoiceMapping | undefined> {
+    const [row] = await db
+      .select()
+      .from(quickbooks_invoice_mappings)
+      .where(
+        and(
+          eq(quickbooks_invoice_mappings.quickbooks_connection_id, connectionId),
+          eq(quickbooks_invoice_mappings.platform_invoice_id, platformInvoiceId)
+        )
+      );
+    return row;
+  }
+
+  async getQuickBooksInvoiceMappingByInvoiceId(platformInvoiceId: string): Promise<QuickBooksInvoiceMapping | undefined> {
+    const [row] = await db
+      .select()
+      .from(quickbooks_invoice_mappings)
+      .where(eq(quickbooks_invoice_mappings.platform_invoice_id, platformInvoiceId));
+    return row;
+  }
+
+  async upsertQuickBooksInvoiceMapping(data: InsertQuickBooksInvoiceMapping): Promise<QuickBooksInvoiceMapping> {
+    const [existing] = await db
+      .select()
+      .from(quickbooks_invoice_mappings)
+      .where(
+        and(
+          eq(quickbooks_invoice_mappings.quickbooks_connection_id, data.quickbooks_connection_id),
+          eq(quickbooks_invoice_mappings.platform_invoice_id, data.platform_invoice_id)
+        )
+      );
+    if (existing) {
+      const [updated] = await db
+        .update(quickbooks_invoice_mappings)
+        .set({
+          quickbooks_invoice_id: data.quickbooks_invoice_id,
+          updated_at: new Date(),
+        })
+        .where(eq(quickbooks_invoice_mappings.id, existing.id))
+        .returning();
+      return updated!;
+    }
+    const [created] = await db.insert(quickbooks_invoice_mappings).values(data).returning();
+    return created!;
   }
 
   // Job operations
@@ -1320,9 +1449,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async generateQuoteNumber(): Promise<string> {
-    const result = await db.select({ count: sql<number>`count(*)` }).from(quotes);
-    const count = (result[0]?.count ?? 0) + 1;
-    return String(count).padStart(6, "0");
+    // Use MAX(quote_number) not COUNT(*): deleted quotes leave gaps, so count+1 can collide.
+    const result = await db
+      .select({ next: sql<number>`COALESCE(MAX(quote_number::int), 0) + 1` })
+      .from(quotes);
+    const next = result[0]?.next ?? 1;
+    return String(next).padStart(6, "0");
   }
 
   // Invoice operations
@@ -1387,6 +1519,7 @@ export class DatabaseStorage implements IStorage {
     const [invoice] = await db.insert(invoices).values({
       invoiceNumber,
       jobId,
+      clientId: job.clientId ?? undefined,
       clientName: job.clientName,
       clientEmail: job.clientEmail,
       clientPhone: job.clientPhone,

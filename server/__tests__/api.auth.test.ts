@@ -127,6 +127,8 @@ describe.runIf(hasDb)("API auth", () => {
     const postRes = await request(app).post("/api/invites/accept").send({
       token,
       password: "newpassword123",
+      firstName: "Accept",
+      lastName: "User",
     });
     expect(postRes.status).toBe(201);
     expect(postRes.body).toHaveProperty("userId");
@@ -148,7 +150,12 @@ describe.runIf(hasDb)("API auth", () => {
       invitedBy: loginRes.body.userId,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     });
-    await request(app).post("/api/invites/accept").send({ token, password: "acceptpass123" });
+    await request(app).post("/api/invites/accept").send({
+      token,
+      password: "acceptpass123",
+      firstName: "Login",
+      lastName: "AfterAccept",
+    });
     const signInRes = await request(app).post("/api/auth/login").send({
       email,
       password: "acceptpass123",

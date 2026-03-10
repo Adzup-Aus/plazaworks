@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { storage, isAuthenticated, requireUserId, requirePermission } from "../../routes/shared";
 import { insertInvoiceSchema } from "@shared/schema";
 import { sendPaymentLinkEmail } from "../../email";
+import { triggerSyncInvoice, triggerVoidInvoiceInQuickBooks } from "../../services/quickbooksSync";
 
 export function registerInvoicesRoutes(app: Express): void {
   /**
@@ -92,6 +93,7 @@ export function registerInvoicesRoutes(app: Express): void {
         ...validation.data,
         createdById: userId,
       });
+      triggerSyncInvoice(invoice.id);
       res.status(201).json(invoice);
     } catch (err: any) {
       console.error("Error creating invoice:", err);
@@ -106,6 +108,7 @@ export function registerInvoicesRoutes(app: Express): void {
       if (!invoice) {
         return res.status(404).json({ message: "Job not found" });
       }
+      triggerSyncInvoice(invoice.id);
       res.status(201).json(invoice);
     } catch (err: any) {
       console.error("Error creating invoice from job:", err);
@@ -120,6 +123,7 @@ export function registerInvoicesRoutes(app: Express): void {
       if (!invoice) {
         return res.status(404).json({ message: "Quote not found" });
       }
+      triggerSyncInvoice(invoice.id);
       res.status(201).json(invoice);
     } catch (err: any) {
       console.error("Error creating invoice from quote:", err);
@@ -156,6 +160,7 @@ export function registerInvoicesRoutes(app: Express): void {
       if (!updated) {
         return res.status(404).json({ message: "Invoice not found" });
       }
+      triggerSyncInvoice(req.params.id);
       res.json(updated);
     } catch (err: any) {
       console.error("Error updating invoice:", err);
@@ -229,6 +234,7 @@ export function registerInvoicesRoutes(app: Express): void {
 
   app.delete("/api/invoices/:id", isAuthenticated, requirePermission("delete_invoices"), async (req, res) => {
     try {
+      triggerVoidInvoiceInQuickBooks(req.params.id);
       const deleted = await storage.deleteInvoice(req.params.id);
       if (!deleted) {
         return res.status(404).json({ message: "Invoice not found" });
@@ -247,6 +253,7 @@ export function registerInvoicesRoutes(app: Express): void {
       if (!invoice) {
         return res.status(404).json({ message: "Job not found" });
       }
+      triggerSyncInvoice(invoice.id);
       res.status(201).json(invoice);
     } catch (err: any) {
       console.error("Error generating invoice from job:", err);
@@ -261,6 +268,7 @@ export function registerInvoicesRoutes(app: Express): void {
       if (!invoice) {
         return res.status(404).json({ message: "Quote not found" });
       }
+      triggerSyncInvoice(invoice.id);
       res.status(201).json(invoice);
     } catch (err: any) {
       console.error("Error generating invoice from quote:", err);
