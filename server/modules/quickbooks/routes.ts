@@ -5,7 +5,7 @@ import OAuthClient from "intuit-oauth";
 import { storage, isAuthenticated, requirePermission } from "../../routes/shared";
 import { encrypt, decrypt } from "../../lib/encrypt";
 import { refreshAccessToken } from "../../services/quickbooksClient";
-import { syncInvoice, getValidQuickBooksConnection } from "../../services/quickbooksSync";
+import { getValidQuickBooksConnection } from "../../services/quickbooksSync";
 
 const QB_CALLBACK_PATH = "/api/quickbooks/oauth/callback";
 const QB_ENVIRONMENT = process.env.QUICKBOOKS_ENVIRONMENT === "production" ? "production" : "sandbox";
@@ -83,6 +83,23 @@ export function registerQuickBooksRoutes(app: Express): void {
       res.status(500).json({ message: "Failed to get redirect URI" });
     }
   });
+
+  // GET /api/quickbooks/status - whether sync is enabled (for invoices page; view_invoices can see)
+  app.get(
+    "/api/quickbooks/status",
+    isAuthenticated,
+    requirePermission("view_invoices"),
+    async (_req, res) => {
+      try {
+        const conn = await storage.getQuickBooksConnection();
+        const enabled = !!(conn?.realm_id && conn.encrypted_access_token && conn.enabled_at);
+        res.json({ enabled });
+      } catch (err) {
+        console.error("QuickBooks get status:", err);
+        res.status(500).json({ message: "Failed to get QuickBooks status" });
+      }
+    }
+  );
 
   // GET /api/quickbooks/connection - status only, no credentials
   app.get("/api/quickbooks/connection", ...adminOnly, async (_req, res) => {
@@ -250,23 +267,6 @@ export function registerQuickBooksRoutes(app: Express): void {
         keys: Object.keys(errObj),
       });
       res.redirect(`${redirectBase}${integrationsPath}?quickbooks=error&message=${encodeURIComponent(errMessage)}`);
-    }
-  });
-
-  // POST /api/quickbooks/sync-invoice/:invoiceId - manually trigger sync for an invoice (admin only)
-  app.post("/api/quickbooks/sync-invoice/:invoiceId", ...adminOnly, async (req: Request, res: Response) => {
-    try {
-      const valid = await getValidQuickBooksConnection();
-      if (!valid?.enabledAt) {
-        return res.status(400).json({ message: "QuickBooks not connected or sync not enabled" });
-      }
-      await syncInvoice(valid.connectionId, req.params.invoiceId);
-      const mapping = await storage.getQuickBooksInvoiceMapping(valid.connectionId, req.params.invoiceId);
-      res.json({ synced: true, quickbooksInvoiceId: mapping?.quickbooks_invoice_id ?? null });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("QuickBooks manual sync failed:", err);
-      res.status(500).json({ synced: false, error: msg });
     }
   });
 

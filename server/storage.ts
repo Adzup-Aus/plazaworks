@@ -247,6 +247,7 @@ export interface IStorage {
   getQuickBooksInvoiceMapping(connectionId: string, platformInvoiceId: string): Promise<QuickBooksInvoiceMapping | undefined>;
   upsertQuickBooksInvoiceMapping(data: InsertQuickBooksInvoiceMapping): Promise<QuickBooksInvoiceMapping>;
   getQuickBooksInvoiceMappingByInvoiceId(platformInvoiceId: string): Promise<QuickBooksInvoiceMapping | undefined>;
+  getQuickBooksInvoiceMappingsForInvoices(connectionId: string, platformInvoiceIds: string[]): Promise<QuickBooksInvoiceMapping[]>;
 
   // Job operations
   getJobs(): Promise<Job[]>;
@@ -864,6 +865,23 @@ export class DatabaseStorage implements IStorage {
       .from(quickbooks_invoice_mappings)
       .where(eq(quickbooks_invoice_mappings.platform_invoice_id, platformInvoiceId));
     return row;
+  }
+
+  /** Get QB invoice mappings for a connection and given platform invoice IDs (for enriching invoice list). */
+  async getQuickBooksInvoiceMappingsForInvoices(
+    connectionId: string,
+    platformInvoiceIds: string[]
+  ): Promise<QuickBooksInvoiceMapping[]> {
+    if (platformInvoiceIds.length === 0) return [];
+    return db
+      .select()
+      .from(quickbooks_invoice_mappings)
+      .where(
+        and(
+          eq(quickbooks_invoice_mappings.quickbooks_connection_id, connectionId),
+          inArray(quickbooks_invoice_mappings.platform_invoice_id, platformInvoiceIds)
+        )
+      );
   }
 
   async upsertQuickBooksInvoiceMapping(data: InsertQuickBooksInvoiceMapping): Promise<QuickBooksInvoiceMapping> {
@@ -1512,6 +1530,28 @@ export class DatabaseStorage implements IStorage {
     const job = await this.getJob(jobId);
     if (!job) return undefined;
 
+    // Use job's clientId when present; otherwise try to resolve a client from job's client email/name so the invoice is linked
+    let resolvedClientId: string | null = job.clientId ?? null;
+    if (!resolvedClientId && (job.clientEmail?.trim() || job.clientName?.trim())) {
+      if (job.clientEmail?.trim()) {
+        const byEmail = await this.getClientByEmail(job.clientEmail.trim());
+        if (byEmail) resolvedClientId = byEmail.id;
+      }
+      if (!resolvedClientId && job.clientName?.trim()) {
+        const allClients = await this.getClients();
+        const displayNameToMatch = job.clientName.trim().toLowerCase();
+        const match = allClients.find((c) => {
+          const dn = [c.firstName, c.lastName].filter(Boolean).join(" ").trim() || c.company || "";
+          return dn.toLowerCase() === displayNameToMatch;
+        });
+        if (match) resolvedClientId = match.id;
+      }
+      // Backfill job with resolved clientId so the job record is correct for future use
+      if (resolvedClientId) {
+        await db.update(jobs).set({ clientId: resolvedClientId, updatedAt: new Date() }).where(eq(jobs.id, jobId));
+      }
+    }
+
     const invoiceNumber = await this.generateInvoiceNumber();
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 14); // 14 days payment terms
@@ -1519,7 +1559,7 @@ export class DatabaseStorage implements IStorage {
     const [invoice] = await db.insert(invoices).values({
       invoiceNumber,
       jobId,
-      clientId: job.clientId ?? undefined,
+      clientId: resolvedClientId ?? undefined,
       clientName: job.clientName,
       clientEmail: job.clientEmail,
       clientPhone: job.clientPhone,

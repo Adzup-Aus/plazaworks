@@ -4,7 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Send, DollarSign, Plus, Trash2, ExternalLink, Briefcase, Copy, Mail } from "lucide-react";
+import { ArrowLeft, Send, DollarSign, Plus, Trash2, ExternalLink, Briefcase, Copy, Mail, CloudUpload, CheckCircle, Loader2, Lock } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,8 +43,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/use-permissions";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { InvoiceWithDetails, Payment, InvoicePayment, Job } from "@shared/schema";
+
+type InvoiceWithDetailsWithQB = InvoiceWithDetails & { quickbooksSynced?: boolean; quickbooksInvoiceId?: string | null };
 
 /** Unified row for display: manual payments (payments) + Stripe/token (invoicePayments), sorted by date */
 interface InvoiceTransactionRow {
@@ -165,6 +168,7 @@ export default function InvoiceDetail() {
   const [location, navigate] = useLocation();
   const params = useParams<{ id: string }>();
   const { toast } = useToast();
+  const { hasPermission } = usePermissions();
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [createLineItems, setCreateLineItems] = useState<CreateLineItemRow[]>([createEmptyLineItem()]);
   const jobIdFromUrl = getJobIdFromUrl();
@@ -172,12 +176,19 @@ export default function InvoiceDetail() {
   // Route is /invoices/new (no :id), so params.id is undefined; detect create by path
   const isCreateMode = location === "/invoices/new" || location.startsWith("/invoices/new?");
 
-  const { data: invoice, isLoading } = useQuery<InvoiceWithDetails>({
+  const { data: invoice, isLoading } = useQuery<InvoiceWithDetailsWithQB>({
     queryKey: ["/api/invoices", params.id],
     enabled: !isCreateMode,
   });
 
-  const { data: job } = useQuery<Job>({
+  const { data: qbStatus } = useQuery<{ enabled: boolean }>({
+    queryKey: ["/api/quickbooks/status"],
+    enabled: !isCreateMode,
+  });
+  const qbEnabled = qbStatus?.enabled ?? false;
+  const canSyncQB = hasPermission("admin_settings");
+
+  const { data: job, isLoading: jobLoading } = useQuery<Job>({
     queryKey: ["/api/jobs", jobIdFromUrl],
     enabled: !!jobIdFromUrl && isCreateMode,
   });
@@ -247,6 +258,7 @@ export default function InvoiceDetail() {
       const total = subtotal + taxAmount;
       const res = await apiRequest("POST", "/api/invoices", {
         ...(jobIdFromUrl && { jobId: jobIdFromUrl }),
+        ...(jobIdFromUrl && job?.clientId && { clientId: job.clientId }),
         clientName: data.clientName,
         clientEmail: data.clientEmail || undefined,
         clientPhone: data.clientPhone || undefined,
@@ -317,6 +329,38 @@ export default function InvoiceDetail() {
     },
     onError: (err: any) => {
       toast({ title: err?.message || "Failed to send payment link", variant: "destructive" });
+    },
+  });
+
+  const syncQuickBooksMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/invoices/${params.id}/trigger-quickbooks-sync`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = (await res.json().catch(() => ({}))) as { triggered?: boolean; synced?: boolean; message?: string; error?: string };
+      if (!res.ok) {
+        throw new Error(data.message ?? data.error ?? "Sync failed");
+      }
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices", params.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/quickbooks/status"] });
+      if (data.triggered) {
+        toast({ title: "QuickBooks sync triggered" });
+      } else if (data.synced === false && data.message) {
+        toast({
+          title: "Could not sync to QuickBooks",
+          description: data.message,
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : "Sync failed";
+      toast({ title: msg, variant: "destructive" });
     },
   });
 
@@ -395,61 +439,93 @@ export default function InvoiceDetail() {
             <Card>
               <CardHeader>
                 <CardTitle>Client</CardTitle>
-                <CardDescription>Bill-to details</CardDescription>
+                <CardDescription>
+                  {jobIdFromUrl && job
+                    ? "Client is set from the job and cannot be changed"
+                    : "Bill-to details"}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <FormField
-                  control={createForm.control}
-                  name="clientName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Client name *</FormLabel>
-                      <FormControl>
-                        <Input {...field} placeholder="Acme Pty Ltd" data-testid="input-create-client-name" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={createForm.control}
-                  name="clientEmail"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <Input {...field} type="email" placeholder="billing@acme.com" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={createForm.control}
-                  name="clientPhone"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Phone</FormLabel>
-                      <FormControl>
-                        <Input {...field} placeholder="+61 2 0000 0000" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={createForm.control}
-                  name="clientAddress"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Address *</FormLabel>
-                      <FormControl>
-                        <Input {...field} placeholder="123 Main St, Sydney NSW 2000" data-testid="input-create-client-address" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {jobIdFromUrl && jobLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-4 w-1/2" />
+                  </div>
+                ) : jobIdFromUrl && job ? (
+                  <>
+                    <div className="flex items-center gap-2 rounded-md border border-muted bg-muted/40 px-3 py-2 text-sm">
+                      <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <span className="font-medium text-foreground">{job.clientName || "No client name"}</span>
+                    </div>
+                    {(job.clientEmail || job.clientPhone || job.address) && (
+                      <div className="space-y-1 text-sm text-muted-foreground">
+                        {job.clientEmail && <p>{job.clientEmail}</p>}
+                        {job.clientPhone && <p>{job.clientPhone}</p>}
+                        {job.address && <p className="whitespace-pre-wrap">{job.address}</p>}
+                      </div>
+                    )}
+                    <input type="hidden" {...createForm.register("clientName")} />
+                    <input type="hidden" {...createForm.register("clientEmail")} />
+                    <input type="hidden" {...createForm.register("clientPhone")} />
+                    <input type="hidden" {...createForm.register("clientAddress")} />
+                  </>
+                ) : (
+                  <>
+                    <FormField
+                      control={createForm.control}
+                      name="clientName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Client name *</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="Acme Pty Ltd" data-testid="input-create-client-name" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={createForm.control}
+                      name="clientEmail"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl>
+                            <Input {...field} type="email" placeholder="billing@acme.com" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={createForm.control}
+                      name="clientPhone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Phone</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="+61 2 0000 0000" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={createForm.control}
+                      name="clientAddress"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Address *</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="123 Main St, Sydney NSW 2000" data-testid="input-create-client-address" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </>
+                )}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <FormField
                     control={createForm.control}
@@ -625,6 +701,27 @@ export default function InvoiceDetail() {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {qbEnabled && canSyncQB && (
+            <Button
+              variant="outline"
+              onClick={() => syncQuickBooksMutation.mutate()}
+              disabled={syncQuickBooksMutation.isPending}
+              data-testid="button-sync-quickbooks"
+            >
+              {syncQuickBooksMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <CloudUpload className="mr-2 h-4 w-4" />
+              )}
+              {invoice.quickbooksSynced ? "Re-sync to QuickBooks" : "Sync to QuickBooks"}
+            </Button>
+          )}
+          {qbEnabled && !canSyncQB && invoice.quickbooksSynced && (
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+              <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+              Synced to QuickBooks
+            </span>
+          )}
           {invoice.status === "draft" && (
             <Button
               variant="outline"

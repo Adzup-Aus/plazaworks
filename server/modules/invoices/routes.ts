@@ -25,13 +25,29 @@ export function registerInvoicesRoutes(app: Express): void {
   app.get("/api/invoices", isAuthenticated, requirePermission("view_invoices"), async (req, res) => {
     try {
       const { status, jobId } = req.query;
-      let invoicesList;
+      let invoicesList: Awaited<ReturnType<typeof storage.getInvoices>>;
       if (jobId && typeof jobId === "string") {
         invoicesList = await storage.getInvoicesByJob(jobId);
       } else if (status && typeof status === "string") {
         invoicesList = await storage.getInvoicesByStatus(status);
       } else {
         invoicesList = await storage.getInvoices();
+      }
+      const conn = await storage.getQuickBooksConnection();
+      const qbEnabled = !!(conn?.realm_id && conn.encrypted_access_token && conn.enabled_at);
+      if (qbEnabled && conn && invoicesList.length > 0) {
+        const mappings = await storage.getQuickBooksInvoiceMappingsForInvoices(
+          conn.id,
+          invoicesList.map((inv) => inv.id)
+        );
+        const syncedSet = new Set(mappings.map((m) => m.platform_invoice_id));
+        const qbIdByInvoice = new Map(mappings.map((m) => [m.platform_invoice_id, m.quickbooks_invoice_id]));
+        const enriched = invoicesList.map((inv) => ({
+          ...inv,
+          quickbooksSynced: syncedSet.has(inv.id),
+          quickbooksInvoiceId: qbIdByInvoice.get(inv.id) ?? null,
+        }));
+        return res.json(enriched);
       }
       res.json(invoicesList);
     } catch (err: any) {
@@ -61,6 +77,16 @@ export function registerInvoicesRoutes(app: Express): void {
       const invoice = await storage.getInvoiceWithDetails(req.params.id);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
+      }
+      const conn = await storage.getQuickBooksConnection();
+      const qbEnabled = !!(conn?.realm_id && conn.encrypted_access_token && conn.enabled_at);
+      if (qbEnabled && conn) {
+        const mapping = await storage.getQuickBooksInvoiceMapping(conn.id, invoice.id);
+        return res.json({
+          ...invoice,
+          quickbooksSynced: !!mapping?.quickbooks_invoice_id,
+          quickbooksInvoiceId: mapping?.quickbooks_invoice_id ?? null,
+        });
       }
       res.json(invoice);
     } catch (err: any) {
@@ -178,6 +204,16 @@ export function registerInvoicesRoutes(app: Express): void {
     } catch (err: any) {
       console.error("Error sending invoice:", err);
       res.status(500).json({ message: "Failed to send invoice" });
+    }
+  });
+
+  app.post("/api/invoices/:id/trigger-quickbooks-sync", isAuthenticated, requirePermission("admin_settings"), async (req: any, res) => {
+    try {
+      triggerSyncInvoice(req.params.id);
+      res.status(202).json({ triggered: true });
+    } catch (err: any) {
+      console.error("Trigger QuickBooks sync failed:", err);
+      res.status(500).json({ message: "Failed to trigger QuickBooks sync" });
     }
   });
 

@@ -19,6 +19,7 @@ vi.mock("../services/quickbooksClient", () => ({
   getInvoice: vi.fn().mockResolvedValue({ Id: "1", SyncToken: "0" }),
   getServiceItemRef: vi.fn().mockResolvedValue({ value: "1", name: "Services" }),
   getTaxCodeRef: vi.fn().mockResolvedValue({ value: "TAX" }),
+  getNonTaxableTaxCodeRef: vi.fn().mockResolvedValue({ value: "NON" }),
   findCustomerByEmail: vi.fn().mockResolvedValue(null),
   findCustomerByPhone: vi.fn().mockResolvedValue(null),
 }));
