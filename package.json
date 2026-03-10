@@ -12,6 +12,7 @@
     "db:reset": "tsx scripts/db-reset.ts",
     "db:migrate:remove-multi-org": "tsx scripts/run-migration.ts migrations/003_remove_multi_org.sql",
     "db:migrate:object-key": "tsx scripts/run-migration.ts migrations/004_add_object_key_columns.sql",
+    "db:migrate:quotes-version": "tsx scripts/run-migration.ts migrations/007_quotes_version_revision.sql",
     "seed:admin": "tsx scripts/seed-admin.ts",
     "seed:activities": "tsx scripts/seed-default-activities.ts",
     "seed:roles": "tsx scripts/seed-roles.ts",

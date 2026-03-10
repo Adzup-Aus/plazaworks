@@ -171,6 +171,29 @@ describe.runIf(hasDb)("API quotes", () => {
     expect(res.body.convertedToInvoiceId ?? res.body.createdInvoiceId).toBeDefined();
   });
 
+  it("POST /api/quotes/:id/revise returns 400 when quote is accepted", async () => {
+    if (!clientId) return;
+    const createRes = await request(app)
+      .post("/api/quotes")
+      .set("Cookie", authCookie)
+      .send({
+        clientId,
+        clientName: "Accepted Quote Client",
+        clientAddress: "444 Accepted St",
+        jobType: "general",
+      });
+    const quoteId = createRes.body?.id;
+    if (!quoteId) return;
+    await request(app).post(`/api/quotes/${quoteId}/send`).set("Cookie", authCookie);
+    await request(app).post(`/api/quotes/${quoteId}/accept`).set("Cookie", authCookie);
+    const res = await request(app)
+      .post(`/api/quotes/${quoteId}/revise`)
+      .set("Cookie", authCookie)
+      .send({ revisionReason: "Change pricing" });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/not allowed once.*accepted/i);
+  });
+
   it("DELETE /api/quotes/:id with auth removes quote", async () => {
     if (!clientId) return;
     const createRes = await request(app)
