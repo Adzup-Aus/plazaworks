@@ -15,6 +15,8 @@ import {
   voidInvoice,
   getServiceItemRef,
   getTaxCodeRef,
+  findCustomerByEmail,
+  findCustomerByPhone,
   type QBCustomerPayload,
   type QBInvoicePayload,
   type QBLineItem,
@@ -147,11 +149,38 @@ export async function ensureCustomer(connectionId: string, platformClientId: str
   const valid = await getValidQuickBooksConnection();
   if (!valid || valid.connectionId !== connectionId) return null;
 
-  const existing = await storage.getQuickBooksCustomerMapping(connectionId, platformClientId);
-  if (existing) return existing.quickbooks_customer_id;
-
   const client = await storage.getClient(platformClientId);
   if (!client) return null;
+
+  // Prefer QuickBooks lookup by email or phone (per QB API: query by PrimaryEmailAddr / PrimaryPhone)
+  const email = client.email?.trim();
+  const phone = (client.phone || client.mobilePhone)?.trim();
+  if (email) {
+    const qbIdByEmail = await findCustomerByEmail(valid.realmId, valid.accessToken, email);
+    if (qbIdByEmail) {
+      await storage.upsertQuickBooksCustomerMapping({
+        quickbooks_connection_id: connectionId,
+        platform_client_id: platformClientId,
+        quickbooks_customer_id: qbIdByEmail,
+      });
+      return qbIdByEmail;
+    }
+  }
+  if (phone) {
+    const qbIdByPhone = await findCustomerByPhone(valid.realmId, valid.accessToken, phone);
+    if (qbIdByPhone) {
+      await storage.upsertQuickBooksCustomerMapping({
+        quickbooks_connection_id: connectionId,
+        platform_client_id: platformClientId,
+        quickbooks_customer_id: qbIdByPhone,
+      });
+      return qbIdByPhone;
+    }
+  }
+
+  // Fallback: existing mapping (e.g. client had no email/phone when first synced)
+  const existing = await storage.getQuickBooksCustomerMapping(connectionId, platformClientId);
+  if (existing) return existing.quickbooks_customer_id;
 
   // T031: require at least a display name for QuickBooks customer
   const displayName = [client.firstName, client.lastName].filter(Boolean).join(" ").trim() || client.company || null;

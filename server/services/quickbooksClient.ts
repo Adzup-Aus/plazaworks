@@ -197,6 +197,56 @@ export async function getTaxCodeRef(
   return { value: "TAX" };
 }
 
+/** Escape single quotes for QuickBooks query string literal (double the quote). */
+function escapeQBQueryString(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+/**
+ * Query a Customer in QuickBooks by email.
+ * See: https://developer.intuit.com/app/developer/qbo/docs/api/accounting/most-commonly-used/customer#query-a-customer
+ * Uses PrimaryEmailAddr in WHERE clause; returns first match Id or null.
+ */
+export async function findCustomerByEmail(
+  realmId: string,
+  accessToken: string,
+  email: string
+): Promise<string | null> {
+  const trimmed = email.trim();
+  if (!trimmed) return null;
+  const escaped = escapeQBQueryString(trimmed);
+  const { data, status } = await qbQuery(
+    realmId,
+    accessToken,
+    `select * from Customer where PrimaryEmailAddr = '${escaped}' maxresults 1`
+  );
+  if (status !== 200 || !data || typeof data !== "object") return null;
+  const customers = (data as { QueryResponse?: { Customer?: Array<{ Id: string }> } }).QueryResponse?.Customer;
+  return customers?.length && customers[0]?.Id ? customers[0].Id : null;
+}
+
+/**
+ * Query a Customer in QuickBooks by phone (PrimaryPhone).
+ * Returns first match Id or null.
+ */
+export async function findCustomerByPhone(
+  realmId: string,
+  accessToken: string,
+  phone: string
+): Promise<string | null> {
+  const trimmed = phone.trim();
+  if (!trimmed) return null;
+  const escaped = escapeQBQueryString(trimmed);
+  const { data, status } = await qbQuery(
+    realmId,
+    accessToken,
+    `select * from Customer where PrimaryPhone = '${escaped}' maxresults 1`
+  );
+  if (status !== 200 || !data || typeof data !== "object") return null;
+  const customers = (data as { QueryResponse?: { Customer?: Array<{ Id: string }> } }).QueryResponse?.Customer;
+  return customers?.length && customers[0]?.Id ? customers[0].Id : null;
+}
+
 /**
  * Create a Customer in QuickBooks. Returns the created Customer Id.
  */
