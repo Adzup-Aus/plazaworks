@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Plus, FileText, Send, MoreHorizontal, Trash2, DollarSign, Copy, Mail } from "lucide-react";
+import { Plus, FileText, Send, MoreHorizontal, Trash2, DollarSign, Copy, Mail, CheckCircle, CloudUpload, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,9 +40,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/use-permissions";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Invoice, Job } from "@shared/schema";
 import { PermissionGate } from "@/components/permission-gate";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
+type InvoiceWithQB = Invoice & { quickbooksSynced?: boolean; quickbooksInvoiceId?: string | null };
 
 const statusColors: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -64,14 +73,22 @@ const statusLabels: Record<string, string> = {
 
 export default function Invoices() {
   const { toast } = useToast();
+  const { hasPermission } = usePermissions();
   const [, setLocation] = useLocation();
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [syncingQBInvoiceId, setSyncingQBInvoiceId] = useState<string | null>(null);
   const [newInvoiceDialogOpen, setNewInvoiceDialogOpen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string>("");
 
-  const { data: invoices, isLoading } = useQuery<Invoice[]>({
+  const { data: invoices, isLoading } = useQuery<InvoiceWithQB[]>({
     queryKey: ["/api/invoices"],
   });
+
+  const { data: qbStatus } = useQuery<{ enabled: boolean }>({
+    queryKey: ["/api/quickbooks/status"],
+  });
+  const qbEnabled = qbStatus?.enabled ?? false;
+  const canSyncQB = hasPermission("admin_settings");
 
   const { data: jobs } = useQuery<Job[]>({
     queryKey: ["/api/jobs"],
@@ -122,6 +139,43 @@ export default function Invoices() {
     },
     onError: (err: any) => {
       toast({ title: err?.message || "Failed to send payment link", variant: "destructive" });
+    },
+  });
+
+  const syncQuickBooksMutation = useMutation({
+    mutationFn: async (invoiceId: string) => {
+      const res = await fetch(`/api/invoices/${invoiceId}/trigger-quickbooks-sync`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = (await res.json().catch(() => ({}))) as { triggered?: boolean; synced?: boolean; message?: string; error?: string };
+      if (!res.ok) {
+        throw new Error(data.message ?? data.error ?? "Sync failed");
+      }
+      return data;
+    },
+    onMutate: (invoiceId) => {
+      setSyncingQBInvoiceId(invoiceId);
+    },
+    onSettled: () => {
+      setSyncingQBInvoiceId(null);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/quickbooks/status"] });
+      if (data.triggered) {
+        toast({ title: "QuickBooks sync triggered" });
+      } else if (data.synced === false && data.message) {
+        toast({
+          title: "Could not sync to QuickBooks",
+          description: data.message,
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : "Sync failed";
+      toast({ title: msg, variant: "destructive" });
     },
   });
 
@@ -211,9 +265,53 @@ export default function Invoices() {
                   </CardTitle>
                   <p className="text-sm text-muted-foreground">{invoice.clientName}</p>
                 </div>
-                <Badge className={statusColors[invoice.status] || ""}>
-                  {statusLabels[invoice.status] || invoice.status}
-                </Badge>
+                <div className="flex items-center gap-1.5">
+                  {qbEnabled && (
+                    <TooltipProvider delayDuration={300}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex items-center gap-1">
+                            {invoice.quickbooksSynced && (
+                              <span className="text-green-600 dark:text-green-400" aria-hidden>
+                                <CheckCircle className="h-4 w-4" />
+                              </span>
+                            )}
+                            {canSyncQB ? (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                onClick={() => syncQuickBooksMutation.mutate(invoice.id)}
+                                disabled={syncingQBInvoiceId !== null}
+                                aria-label={invoice.quickbooksSynced ? "Re-sync to QuickBooks" : "Sync to QuickBooks"}
+                              >
+                                {syncingQBInvoiceId === invoice.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <CloudUpload className="h-4 w-4" />
+                                )}
+                              </Button>
+                            ) : (
+                              !invoice.quickbooksSynced && (
+                                <span className="text-muted-foreground" aria-hidden>
+                                  <CloudUpload className="h-4 w-4" />
+                                </span>
+                              )
+                            )}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {invoice.quickbooksSynced
+                            ? (canSyncQB ? "Synced. Click to re-sync latest updates." : "Synced to QuickBooks")
+                            : (canSyncQB ? "Sync to QuickBooks" : "Not synced to QuickBooks")}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                  <Badge className={statusColors[invoice.status] || ""}>
+                    {statusLabels[invoice.status] || invoice.status}
+                  </Badge>
+                </div>
               </CardHeader>
               <CardContent className="flex flex-1 flex-col">
                 <div className="flex-1 space-y-1 text-sm">

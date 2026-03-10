@@ -8,6 +8,7 @@ import {
   type ClientPortalRequest,
 } from "../../routes/shared";
 import { sendOtpEmail } from "../../email";
+import { triggerSyncInvoice } from "../../services/quickbooksSync";
 
 export function registerClientPortalRoutes(app: Express): void {
   // Share link for job
@@ -401,6 +402,7 @@ export function registerClientPortalRoutes(app: Express): void {
           try {
             const invoice = await storage.createInvoiceFromAcceptedQuote(req.params.id, "system");
             if (invoice) {
+              triggerSyncInvoice(invoice.id);
               await storage.createQuoteWorkflowEvent({
                 quoteId: req.params.id,
                 eventType: "auto_converted_to_invoice",

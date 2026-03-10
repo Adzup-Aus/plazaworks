@@ -47,6 +47,7 @@ import {
   UserPlus,
   Settings,
   ListTodo,
+  Plug,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -62,6 +63,7 @@ const mainNavItems = [
   { title: "Team", url: "/team", icon: Users, permission: "view_users" as UserPermission },
   { title: "Clients", url: "/clients", icon: UserCircle, permission: "view_clients" as UserPermission },
   { title: "Roles", url: "/roles", icon: ShieldCheck, permission: "admin_settings" as UserPermission },
+  { title: "Integrations", url: "/integrations", icon: Plug, permission: "admin_settings" as UserPermission },
   { title: "Settings", url: "/settings", icon: Settings, permission: "admin_settings" as UserPermission },
 ];
 

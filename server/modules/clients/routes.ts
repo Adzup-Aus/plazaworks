@@ -3,6 +3,16 @@ import { storage, isAuthenticated, requirePermission } from "../../routes/shared
 import { insertClientSchema } from "@shared/schema";
 
 export function registerClientsRoutes(app: Express): void {
+  /**
+   * @openapi
+   * /clients:
+   *   get:
+   *     summary: List clients
+   *     tags: [Clients]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     responses:
+   *       200: { description: List of clients }
+   */
   app.get("/api/clients", isAuthenticated, requirePermission("view_clients"), async (req: any, res) => {
     try {
       const clientList = await storage.getClients();
@@ -13,6 +23,22 @@ export function registerClientsRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /clients/{id}:
+   *   get:
+   *     summary: Get client by ID
+   *     tags: [Clients]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: Client details }
+   *       404: { description: Client not found }
+   */
   app.get("/api/clients/:id", isAuthenticated, requirePermission("view_clients"), async (req, res) => {
     try {
       const client = await storage.getClient(req.params.id);
@@ -26,6 +52,18 @@ export function registerClientsRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /clients:
+   *   post:
+   *     summary: Create a client
+   *     tags: [Clients]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     requestBody: { content: { application/json: { schema: { type: object } } } }
+   *     responses:
+   *       201: { description: Client created }
+   *       400: { description: Validation error }
+   */
   app.post("/api/clients", isAuthenticated, requirePermission("create_clients"), async (req: any, res) => {
     try {
       const parsed = insertClientSchema.safeParse(req.body);
@@ -43,6 +81,23 @@ export function registerClientsRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /clients/{id}:
+   *   patch:
+   *     summary: Update a client
+   *     tags: [Clients]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     requestBody: { content: { application/json: { schema: { type: object } } } }
+   *     responses:
+   *       200: { description: Client updated }
+   *       404: { description: Client not found }
+   */
   app.patch("/api/clients/:id", isAuthenticated, requirePermission("edit_clients"), async (req, res) => {
     try {
       const updated = await storage.updateClient(req.params.id, req.body);
@@ -56,6 +111,21 @@ export function registerClientsRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /clients/{id}:
+   *   delete:
+   *     summary: Delete a client
+   *     tags: [Clients]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: Client deleted }
+   */
   app.delete("/api/clients/:id", isAuthenticated, requirePermission("delete_clients"), async (req, res) => {
     try {
       await storage.deleteClient(req.params.id);

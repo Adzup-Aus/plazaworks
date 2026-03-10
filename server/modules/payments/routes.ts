@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { storage, isAuthenticated } from "../../routes/shared";
 import { insertPaymentSchema } from "@shared/schema";
+import { triggerSyncPayment } from "../../services/quickbooksSync";
 
 export function registerPaymentsRoutes(app: Express): void {
   app.get("/api/invoices/:invoiceId/payments", isAuthenticated, async (req, res) => {
@@ -24,6 +25,7 @@ export function registerPaymentsRoutes(app: Express): void {
       }
 
       const payment = await storage.createPayment(validation.data);
+      triggerSyncPayment(payment.invoiceId, Number(payment.amount));
       let convertedJob = null;
       const invoice = await storage.getInvoice(req.params.invoiceId);
       if (

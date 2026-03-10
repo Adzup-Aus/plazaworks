@@ -2,18 +2,52 @@ import type { Express } from "express";
 import { storage, isAuthenticated, requireUserId, requirePermission } from "../../routes/shared";
 import { insertInvoiceSchema } from "@shared/schema";
 import { sendPaymentLinkEmail } from "../../email";
+import { triggerSyncInvoice, triggerVoidInvoiceInQuickBooks } from "../../services/quickbooksSync";
 
 export function registerInvoicesRoutes(app: Express): void {
+  /**
+   * @openapi
+   * /invoices:
+   *   get:
+   *     summary: List invoices
+   *     tags: [Invoices]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: status
+   *         in: query
+   *         schema: { type: string }
+   *       - name: jobId
+   *         in: query
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: List of invoices }
+   */
   app.get("/api/invoices", isAuthenticated, requirePermission("view_invoices"), async (req, res) => {
     try {
       const { status, jobId } = req.query;
-      let invoicesList;
+      let invoicesList: Awaited<ReturnType<typeof storage.getInvoices>>;
       if (jobId && typeof jobId === "string") {
         invoicesList = await storage.getInvoicesByJob(jobId);
       } else if (status && typeof status === "string") {
         invoicesList = await storage.getInvoicesByStatus(status);
       } else {
         invoicesList = await storage.getInvoices();
+      }
+      const conn = await storage.getQuickBooksConnection();
+      const qbEnabled = !!(conn?.realm_id && conn.encrypted_access_token && conn.enabled_at);
+      if (qbEnabled && conn && invoicesList.length > 0) {
+        const mappings = await storage.getQuickBooksInvoiceMappingsForInvoices(
+          conn.id,
+          invoicesList.map((inv) => inv.id)
+        );
+        const syncedSet = new Set(mappings.map((m) => m.platform_invoice_id));
+        const qbIdByInvoice = new Map(mappings.map((m) => [m.platform_invoice_id, m.quickbooks_invoice_id]));
+        const enriched = invoicesList.map((inv) => ({
+          ...inv,
+          quickbooksSynced: syncedSet.has(inv.id),
+          quickbooksInvoiceId: qbIdByInvoice.get(inv.id) ?? null,
+        }));
+        return res.json(enriched);
       }
       res.json(invoicesList);
     } catch (err: any) {
@@ -22,11 +56,37 @@ export function registerInvoicesRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /invoices/{id}:
+   *   get:
+   *     summary: Get invoice by ID
+   *     tags: [Invoices]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: Invoice details }
+   *       404: { description: Invoice not found }
+   */
   app.get("/api/invoices/:id", isAuthenticated, requirePermission("view_invoices"), async (req, res) => {
     try {
       const invoice = await storage.getInvoiceWithDetails(req.params.id);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
+      }
+      const conn = await storage.getQuickBooksConnection();
+      const qbEnabled = !!(conn?.realm_id && conn.encrypted_access_token && conn.enabled_at);
+      if (qbEnabled && conn) {
+        const mapping = await storage.getQuickBooksInvoiceMapping(conn.id, invoice.id);
+        return res.json({
+          ...invoice,
+          quickbooksSynced: !!mapping?.quickbooks_invoice_id,
+          quickbooksInvoiceId: mapping?.quickbooks_invoice_id ?? null,
+        });
       }
       res.json(invoice);
     } catch (err: any) {
@@ -35,6 +95,18 @@ export function registerInvoicesRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /invoices:
+   *   post:
+   *     summary: Create an invoice
+   *     tags: [Invoices]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     requestBody: { content: { application/json: { schema: { type: object } } } }
+   *     responses:
+   *       201: { description: Invoice created }
+   *       400: { description: Validation error }
+   */
   app.post("/api/invoices", isAuthenticated, requirePermission("create_invoices"), async (req: any, res) => {
     try {
       const validation = insertInvoiceSchema.safeParse(req.body);
@@ -47,6 +119,7 @@ export function registerInvoicesRoutes(app: Express): void {
         ...validation.data,
         createdById: userId,
       });
+      triggerSyncInvoice(invoice.id);
       res.status(201).json(invoice);
     } catch (err: any) {
       console.error("Error creating invoice:", err);
@@ -61,6 +134,7 @@ export function registerInvoicesRoutes(app: Express): void {
       if (!invoice) {
         return res.status(404).json({ message: "Job not found" });
       }
+      triggerSyncInvoice(invoice.id);
       res.status(201).json(invoice);
     } catch (err: any) {
       console.error("Error creating invoice from job:", err);
@@ -75,6 +149,7 @@ export function registerInvoicesRoutes(app: Express): void {
       if (!invoice) {
         return res.status(404).json({ message: "Quote not found" });
       }
+      triggerSyncInvoice(invoice.id);
       res.status(201).json(invoice);
     } catch (err: any) {
       console.error("Error creating invoice from quote:", err);
@@ -82,6 +157,23 @@ export function registerInvoicesRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /invoices/{id}:
+   *   patch:
+   *     summary: Update an invoice
+   *     tags: [Invoices]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     requestBody: { content: { application/json: { schema: { type: object } } } }
+   *     responses:
+   *       200: { description: Invoice updated }
+   *       404: { description: Invoice not found }
+   */
   app.patch("/api/invoices/:id", isAuthenticated, requirePermission("edit_invoices"), async (req, res) => {
     try {
       const partialSchema = insertInvoiceSchema.partial();
@@ -94,6 +186,7 @@ export function registerInvoicesRoutes(app: Express): void {
       if (!updated) {
         return res.status(404).json({ message: "Invoice not found" });
       }
+      triggerSyncInvoice(req.params.id);
       res.json(updated);
     } catch (err: any) {
       console.error("Error updating invoice:", err);
@@ -111,6 +204,16 @@ export function registerInvoicesRoutes(app: Express): void {
     } catch (err: any) {
       console.error("Error sending invoice:", err);
       res.status(500).json({ message: "Failed to send invoice" });
+    }
+  });
+
+  app.post("/api/invoices/:id/trigger-quickbooks-sync", isAuthenticated, requirePermission("admin_settings"), async (req: any, res) => {
+    try {
+      triggerSyncInvoice(req.params.id);
+      res.status(202).json({ triggered: true });
+    } catch (err: any) {
+      console.error("Trigger QuickBooks sync failed:", err);
+      res.status(500).json({ message: "Failed to trigger QuickBooks sync" });
     }
   });
 
@@ -167,6 +270,7 @@ export function registerInvoicesRoutes(app: Express): void {
 
   app.delete("/api/invoices/:id", isAuthenticated, requirePermission("delete_invoices"), async (req, res) => {
     try {
+      triggerVoidInvoiceInQuickBooks(req.params.id);
       const deleted = await storage.deleteInvoice(req.params.id);
       if (!deleted) {
         return res.status(404).json({ message: "Invoice not found" });
@@ -185,6 +289,7 @@ export function registerInvoicesRoutes(app: Express): void {
       if (!invoice) {
         return res.status(404).json({ message: "Job not found" });
       }
+      triggerSyncInvoice(invoice.id);
       res.status(201).json(invoice);
     } catch (err: any) {
       console.error("Error generating invoice from job:", err);
@@ -199,6 +304,7 @@ export function registerInvoicesRoutes(app: Express): void {
       if (!invoice) {
         return res.status(404).json({ message: "Quote not found" });
       }
+      triggerSyncInvoice(invoice.id);
       res.status(201).json(invoice);
     } catch (err: any) {
       console.error("Error generating invoice from quote:", err);

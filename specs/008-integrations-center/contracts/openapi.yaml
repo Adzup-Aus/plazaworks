@@ -1,0 +1,678 @@
+openapi: 3.0.0
+info:
+  title: Integrations Center API
+  description: |
+    API for managing third-party integrations, API tokens, and service configurations.
+    
+    Authentication:
+    - Web UI: Session cookie (existing auth)
+    - API Access: Bearer token in Authorization header
+    
+    All timestamps are in ISO 8601 format (UTC).
+  version: 1.0.0
+  contact:
+    name: API Support
+
+servers:
+  - url: /api
+    description: Base API path
+
+security:
+  - bearerAuth: []
+  - cookieAuth: []
+
+tags:
+  - name: Integrations
+    description: Manage API integrations and tokens
+  - name: Scopes
+    description: Available permission scopes
+  - name: Services
+    description: Configure outbound service connections
+  - name: Documentation
+    description: API documentation and exploration
+
+paths:
+  # Integrations
+  /integrations:
+    get:
+      summary: List all integrations
+      description: Returns a list of all integrations (active and revoked). Admin only.
+      tags: [Integrations]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: List of integrations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Integration'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    
+    post:
+      summary: Create a new integration
+      description: Creates a new API integration with scopes and generates an API token. Admin only.
+      tags: [Integrations]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIntegrationRequest'
+      responses:
+        '201':
+          description: Integration created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationWithToken'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /integrations/{id}:
+    get:
+      summary: Get integration details
+      description: Returns details of a specific integration. Admin only.
+      tags: [Integrations]
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Integration details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Integration'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    delete:
+      summary: Revoke an integration
+      description: Revokes an integration, invalidating its API token. Admin only.
+      tags: [Integrations]
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Integration revoked successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /integrations/{id}/rotate:
+    post:
+      summary: Rotate API token
+      description: Generates a new API token and invalidates the old one. Admin only.
+      tags: [Integrations]
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tokenExpiryDate:
+                  type: string
+                  format: date-time
+                  description: New expiry date for the rotated token
+      responses:
+        '200':
+          description: Token rotated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationWithToken'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /integrations/{id}/audit-log:
+    get:
+      summary: Get integration audit log
+      description: Returns the audit history for a specific integration. Admin only.
+      tags: [Integrations]
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Audit log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditLogEntry'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # Scopes
+  /scopes:
+    get:
+      summary: List available scopes
+      description: Returns all available permission scopes.
+      tags: [Scopes]
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of scopes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Scope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Services
+  /services:
+    get:
+      summary: List configured services
+      description: Returns all outbound service configurations. Admin only.
+      tags: [Services]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: List of services
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Service'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    
+    post:
+      summary: Create a new service configuration
+      description: Adds a new outbound service configuration. Admin only.
+      tags: [Services]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateServiceRequest'
+      responses:
+        '201':
+          description: Service created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /services/{id}:
+    get:
+      summary: Get service details
+      description: Returns details of a specific service. Admin only.
+      tags: [Services]
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Service details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    patch:
+      summary: Update service configuration
+      description: Updates an existing service configuration. Admin only.
+      tags: [Services]
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateServiceRequest'
+      responses:
+        '200':
+          description: Service updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    delete:
+      summary: Delete service configuration
+      description: Removes a service configuration. Admin only.
+      tags: [Services]
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Service deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Documentation
+  /docs/openapi.json:
+    get:
+      summary: Get OpenAPI specification
+      description: Returns the current OpenAPI specification as JSON.
+      tags: [Documentation]
+      responses:
+        '200':
+          description: OpenAPI specification
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /docs:
+    get:
+      summary: API Documentation UI
+      description: Serves the Swagger UI for interactive API exploration.
+      tags: [Documentation]
+      responses:
+        '200':
+          description: Swagger UI HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: UUID
+      description: API token obtained from integration creation
+    
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: connect.sid
+      description: Session cookie for web UI authentication
+
+  schemas:
+    Integration:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        scopes:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [active, revoked]
+        tokenExpiryDate:
+          type: string
+          format: date-time
+          nullable: true
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        rotatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - name
+        - scopes
+        - status
+        - createdBy
+        - createdAt
+
+    IntegrationWithToken:
+      allOf:
+        - $ref: '#/components/schemas/Integration'
+        - type: object
+          properties:
+            apiToken:
+              type: string
+              format: uuid
+              description: The full API token. Only shown once at creation or rotation.
+          required:
+            - apiToken
+
+    CreateIntegrationRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 1000
+        scopes:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        tokenExpiryDate:
+          type: string
+          format: date-time
+          description: Optional expiry date for the token
+      required:
+        - name
+        - scopes
+
+    Scope:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: jobs:read
+        description:
+          type: string
+        resource:
+          type: string
+          example: jobs
+        actions:
+          type: array
+          items:
+            type: string
+            enum: [read, write, delete]
+      required:
+        - id
+        - name
+        - description
+        - resource
+        - actions
+
+    Service:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+        description:
+          type: string
+          nullable: true
+        configurationFields:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigurationField'
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - type
+        - configurationFields
+        - isActive
+        - createdAt
+        - updatedAt
+
+    ConfigurationField:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [text, password, url, number, email, textarea]
+        label:
+          type: string
+        required:
+          type: boolean
+        placeholder:
+          type: string
+        defaultValue:
+          type: string
+        helpText:
+          type: string
+      required:
+        - name
+        - type
+        - label
+        - required
+
+    CreateServiceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        type:
+          type: string
+        description:
+          type: string
+          maxLength: 1000
+        configurationFields:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigurationField'
+          minItems: 1
+      required:
+        - name
+        - type
+        - configurationFields
+
+    UpdateServiceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 1000
+        configurationFields:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigurationField'
+        isActive:
+          type: boolean
+
+    AuditLogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        integrationId:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum: [created, rotated, revoked]
+        performedBy:
+          type: string
+          format: uuid
+        performedAt:
+          type: string
+          format: date-time
+        details:
+          type: object
+          nullable: true
+      required:
+        - id
+        - integrationId
+        - action
+        - performedBy
+        - performedAt
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Bad Request
+            message: Invalid input data
+            details:
+              scopes: At least one scope is required
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Unauthorized
+            message: Authentication required
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Forbidden
+            message: Admin access required
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Not Found
+            message: Integration not found

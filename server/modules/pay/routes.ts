@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../../routes/shared";
 import { getStripe } from "../../services/stripeService";
+import { triggerSyncInvoice, triggerSyncPayment } from "../../services/quickbooksSync";
 
 export function registerPayRoutes(app: Express): void {
   app.get("/api/pay/success-details", async (req, res) => {
@@ -33,6 +34,7 @@ export function registerPayRoutes(app: Express): void {
                   typeof session.payment_intent === "string" ? session.payment_intent : null,
                 description: `Stripe payment ${session.id}`,
               });
+              triggerSyncPayment(invoice.id, Number(amountPaid));
               const updated = await storage.getInvoice(invoice.id);
               if (
                 (updated?.status === "partially_paid" || updated?.status === "paid") &&
@@ -129,6 +131,7 @@ export function registerPayRoutes(app: Express): void {
         description: reference || `PAY-${Date.now()}`,
         status: "completed",
       });
+      triggerSyncPayment(invoice.id, paymentAmount);
 
       const newAmountDue = Math.max(0, currentAmountDue - paymentAmount);
       const newStatus = newAmountDue === 0 ? "paid" : "partial";
@@ -137,6 +140,7 @@ export function registerPayRoutes(app: Express): void {
         amountDue: String(newAmountDue.toFixed(2)),
         status: newStatus,
       });
+      triggerSyncInvoice(invoice.id);
 
       if (invoice.quoteId) {
         const schedules = await storage.getQuotePaymentSchedules(invoice.quoteId);

@@ -118,7 +118,28 @@ import {
   type Role,
   type InsertRole,
   type UserPermission,
+  type Integration,
+  type InsertIntegration,
+  type Scope,
+  type InsertScope,
+  type Service,
+  type InsertService,
+  type IntegrationAuditLog,
+  type InsertIntegrationAuditLog,
+  type QuickBooksConnection,
+  type InsertQuickBooksConnection,
+  type QuickBooksCustomerMapping,
+  type InsertQuickBooksCustomerMapping,
+  type QuickBooksInvoiceMapping,
+  type InsertQuickBooksInvoiceMapping,
   appSettings,
+  integrations,
+  scopes,
+  services,
+  integrationAuditLogs,
+  quickbooks_connections,
+  quickbooks_customer_mappings,
+  quickbooks_invoice_mappings,
   termsTemplates,
   staffProfiles,
   roles,
@@ -203,6 +224,30 @@ export interface IStorage {
   getRolePermissions(roleId: string): Promise<UserPermission[]>;
   setRolePermissions(roleId: string, permissions: UserPermission[]): Promise<void>;
   getUserPermissionsFromRoles(profile: StaffProfile): Promise<UserPermission[]>;
+
+  // Integration operations
+  getIntegrations(): Promise<Integration[]>;
+  getIntegration(id: string): Promise<Integration | undefined>;
+  createIntegration(integration: InsertIntegration & { apiTokenHash: string; tokenPrefix: string | null }): Promise<Integration>;
+  updateIntegration(id: string, updates: Partial<InsertIntegration> & { apiTokenHash?: string; tokenPrefix?: string | null; rotatedAt?: Date | null; revokedAt?: Date | null; revokedBy?: string | null }): Promise<Integration | undefined>;
+  getScopes(): Promise<Scope[]>;
+  getServices(): Promise<Service[]>;
+  getService(id: string): Promise<Service | undefined>;
+  createService(service: InsertService): Promise<Service>;
+  updateService(id: string, updates: Partial<InsertService>): Promise<Service | undefined>;
+  deleteService(id: string): Promise<boolean>;
+  createIntegrationAuditLog(entry: InsertIntegrationAuditLog): Promise<IntegrationAuditLog>;
+  getIntegrationAuditLogs(integrationId: string): Promise<IntegrationAuditLog[]>;
+
+  // QuickBooks connection and mappings
+  getQuickBooksConnection(): Promise<QuickBooksConnection | undefined>;
+  upsertQuickBooksConnection(data: Partial<InsertQuickBooksConnection>): Promise<QuickBooksConnection>;
+  getQuickBooksCustomerMapping(connectionId: string, platformClientId: string): Promise<QuickBooksCustomerMapping | undefined>;
+  upsertQuickBooksCustomerMapping(data: InsertQuickBooksCustomerMapping): Promise<QuickBooksCustomerMapping>;
+  getQuickBooksInvoiceMapping(connectionId: string, platformInvoiceId: string): Promise<QuickBooksInvoiceMapping | undefined>;
+  upsertQuickBooksInvoiceMapping(data: InsertQuickBooksInvoiceMapping): Promise<QuickBooksInvoiceMapping>;
+  getQuickBooksInvoiceMappingByInvoiceId(platformInvoiceId: string): Promise<QuickBooksInvoiceMapping | undefined>;
+  getQuickBooksInvoiceMappingsForInvoices(connectionId: string, platformInvoiceIds: string[]): Promise<QuickBooksInvoiceMapping[]>;
 
   // Job operations
   getJobs(): Promise<Job[]>;
@@ -638,7 +683,6 @@ export class DatabaseStorage implements IStorage {
 
   async getUserPermissionsFromRoles(profile: StaffProfile): Promise<UserPermission[]> {
     const roleNames = profile.roles ?? [];
-    if (roleNames.length === 0) return [];
     const allPerms = new Set<string>();
     for (const name of roleNames) {
       const role = await this.getRoleByName(name);
@@ -650,6 +694,219 @@ export class DatabaseStorage implements IStorage {
     const direct = (profile.permissions ?? []) as string[];
     direct.forEach((p) => allPerms.add(p));
     return normalizePermissions(Array.from(allPerms));
+  }
+
+  async getIntegrations(): Promise<Integration[]> {
+    return db.select().from(integrations).orderBy(desc(integrations.createdAt));
+  }
+
+  async getIntegration(id: string): Promise<Integration | undefined> {
+    const [row] = await db.select().from(integrations).where(eq(integrations.id, id));
+    return row;
+  }
+
+  async createIntegration(
+    data: InsertIntegration & { apiTokenHash: string; tokenPrefix: string | null }
+  ): Promise<Integration> {
+    const [created] = await db
+      .insert(integrations)
+      .values({
+        name: data.name,
+        description: data.description,
+        apiTokenHash: data.apiTokenHash,
+        tokenPrefix: data.tokenPrefix,
+        tokenExpiryDate: data.tokenExpiryDate,
+        scopes: data.scopes,
+        status: data.status ?? "active",
+        createdBy: data.createdBy,
+      })
+      .returning();
+    return created;
+  }
+
+  async updateIntegration(
+    id: string,
+    updates: Partial<InsertIntegration> & { apiTokenHash?: string; tokenPrefix?: string | null; rotatedAt?: Date | null; revokedAt?: Date | null; revokedBy?: string | null }
+  ): Promise<Integration | undefined> {
+    const [updated] = await db
+      .update(integrations)
+      .set(updates as Record<string, unknown>)
+      .where(eq(integrations.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getScopes(): Promise<Scope[]> {
+    return db.select().from(scopes).orderBy(scopes.name);
+  }
+
+  async getServices(): Promise<Service[]> {
+    return db.select().from(services).orderBy(services.name);
+  }
+
+  async getService(id: string): Promise<Service | undefined> {
+    const [row] = await db.select().from(services).where(eq(services.id, id));
+    return row;
+  }
+
+  async createService(service: InsertService): Promise<Service> {
+    const [created] = await db.insert(services).values(service).returning();
+    return created;
+  }
+
+  async updateService(id: string, updates: Partial<InsertService>): Promise<Service | undefined> {
+    const [updated] = await db
+      .update(services)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(services.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteService(id: string): Promise<boolean> {
+    const result = await db.delete(services).where(eq(services.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async createIntegrationAuditLog(entry: InsertIntegrationAuditLog): Promise<IntegrationAuditLog> {
+    const [created] = await db.insert(integrationAuditLogs).values(entry).returning();
+    return created;
+  }
+
+  async getIntegrationAuditLogs(integrationId: string): Promise<IntegrationAuditLog[]> {
+    return db
+      .select()
+      .from(integrationAuditLogs)
+      .where(eq(integrationAuditLogs.integrationId, integrationId))
+      .orderBy(desc(integrationAuditLogs.performedAt));
+  }
+
+  // QuickBooks connection and mappings
+  async getQuickBooksConnection(): Promise<QuickBooksConnection | undefined> {
+    const [row] = await db.select().from(quickbooks_connections).limit(1);
+    return row;
+  }
+
+  async upsertQuickBooksConnection(data: Partial<InsertQuickBooksConnection>): Promise<QuickBooksConnection> {
+    const [existing] = await db.select().from(quickbooks_connections).limit(1);
+    const payload: Record<string, unknown> = { ...data, updated_at: new Date() };
+    if (existing) {
+      const setPayload = Object.fromEntries(
+        Object.entries(payload).filter(([, v]) => v !== undefined)
+      ) as Partial<InsertQuickBooksConnection>;
+      const [updated] = await db
+        .update(quickbooks_connections)
+        .set(setPayload)
+        .where(eq(quickbooks_connections.id, existing.id))
+        .returning();
+      return updated!;
+    }
+    const [created] = await db.insert(quickbooks_connections).values(payload as InsertQuickBooksConnection).returning();
+    return created!;
+  }
+
+  async getQuickBooksCustomerMapping(
+    connectionId: string,
+    platformClientId: string
+  ): Promise<QuickBooksCustomerMapping | undefined> {
+    const [row] = await db
+      .select()
+      .from(quickbooks_customer_mappings)
+      .where(
+        and(
+          eq(quickbooks_customer_mappings.quickbooks_connection_id, connectionId),
+          eq(quickbooks_customer_mappings.platform_client_id, platformClientId)
+        )
+      );
+    return row;
+  }
+
+  async upsertQuickBooksCustomerMapping(data: InsertQuickBooksCustomerMapping): Promise<QuickBooksCustomerMapping> {
+    const [existing] = await db
+      .select()
+      .from(quickbooks_customer_mappings)
+      .where(
+        and(
+          eq(quickbooks_customer_mappings.quickbooks_connection_id, data.quickbooks_connection_id),
+          eq(quickbooks_customer_mappings.platform_client_id, data.platform_client_id)
+        )
+      );
+    if (existing) {
+      const [updated] = await db
+        .update(quickbooks_customer_mappings)
+        .set({ quickbooks_customer_id: data.quickbooks_customer_id })
+        .where(eq(quickbooks_customer_mappings.id, existing.id))
+        .returning();
+      return updated!;
+    }
+    const [created] = await db.insert(quickbooks_customer_mappings).values(data).returning();
+    return created!;
+  }
+
+  async getQuickBooksInvoiceMapping(
+    connectionId: string,
+    platformInvoiceId: string
+  ): Promise<QuickBooksInvoiceMapping | undefined> {
+    const [row] = await db
+      .select()
+      .from(quickbooks_invoice_mappings)
+      .where(
+        and(
+          eq(quickbooks_invoice_mappings.quickbooks_connection_id, connectionId),
+          eq(quickbooks_invoice_mappings.platform_invoice_id, platformInvoiceId)
+        )
+      );
+    return row;
+  }
+
+  async getQuickBooksInvoiceMappingByInvoiceId(platformInvoiceId: string): Promise<QuickBooksInvoiceMapping | undefined> {
+    const [row] = await db
+      .select()
+      .from(quickbooks_invoice_mappings)
+      .where(eq(quickbooks_invoice_mappings.platform_invoice_id, platformInvoiceId));
+    return row;
+  }
+
+  /** Get QB invoice mappings for a connection and given platform invoice IDs (for enriching invoice list). */
+  async getQuickBooksInvoiceMappingsForInvoices(
+    connectionId: string,
+    platformInvoiceIds: string[]
+  ): Promise<QuickBooksInvoiceMapping[]> {
+    if (platformInvoiceIds.length === 0) return [];
+    return db
+      .select()
+      .from(quickbooks_invoice_mappings)
+      .where(
+        and(
+          eq(quickbooks_invoice_mappings.quickbooks_connection_id, connectionId),
+          inArray(quickbooks_invoice_mappings.platform_invoice_id, platformInvoiceIds)
+        )
+      );
+  }
+
+  async upsertQuickBooksInvoiceMapping(data: InsertQuickBooksInvoiceMapping): Promise<QuickBooksInvoiceMapping> {
+    const [existing] = await db
+      .select()
+      .from(quickbooks_invoice_mappings)
+      .where(
+        and(
+          eq(quickbooks_invoice_mappings.quickbooks_connection_id, data.quickbooks_connection_id),
+          eq(quickbooks_invoice_mappings.platform_invoice_id, data.platform_invoice_id)
+        )
+      );
+    if (existing) {
+      const [updated] = await db
+        .update(quickbooks_invoice_mappings)
+        .set({
+          quickbooks_invoice_id: data.quickbooks_invoice_id,
+          updated_at: new Date(),
+        })
+        .where(eq(quickbooks_invoice_mappings.id, existing.id))
+        .returning();
+      return updated!;
+    }
+    const [created] = await db.insert(quickbooks_invoice_mappings).values(data).returning();
+    return created!;
   }
 
   // Job operations
@@ -1210,9 +1467,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async generateQuoteNumber(): Promise<string> {
-    const result = await db.select({ count: sql<number>`count(*)` }).from(quotes);
-    const count = (result[0]?.count ?? 0) + 1;
-    return String(count).padStart(6, "0");
+    // Use MAX(quote_number) not COUNT(*): deleted quotes leave gaps, so count+1 can collide.
+    const result = await db
+      .select({ next: sql<number>`COALESCE(MAX(quote_number::int), 0) + 1` })
+      .from(quotes);
+    const next = result[0]?.next ?? 1;
+    return String(next).padStart(6, "0");
   }
 
   // Invoice operations
@@ -1270,6 +1530,28 @@ export class DatabaseStorage implements IStorage {
     const job = await this.getJob(jobId);
     if (!job) return undefined;
 
+    // Use job's clientId when present; otherwise try to resolve a client from job's client email/name so the invoice is linked
+    let resolvedClientId: string | null = job.clientId ?? null;
+    if (!resolvedClientId && (job.clientEmail?.trim() || job.clientName?.trim())) {
+      if (job.clientEmail?.trim()) {
+        const byEmail = await this.getClientByEmail(job.clientEmail.trim());
+        if (byEmail) resolvedClientId = byEmail.id;
+      }
+      if (!resolvedClientId && job.clientName?.trim()) {
+        const allClients = await this.getClients();
+        const displayNameToMatch = job.clientName.trim().toLowerCase();
+        const match = allClients.find((c) => {
+          const dn = [c.firstName, c.lastName].filter(Boolean).join(" ").trim() || c.company || "";
+          return dn.toLowerCase() === displayNameToMatch;
+        });
+        if (match) resolvedClientId = match.id;
+      }
+      // Backfill job with resolved clientId so the job record is correct for future use
+      if (resolvedClientId) {
+        await db.update(jobs).set({ clientId: resolvedClientId, updatedAt: new Date() }).where(eq(jobs.id, jobId));
+      }
+    }
+
     const invoiceNumber = await this.generateInvoiceNumber();
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 14); // 14 days payment terms
@@ -1277,6 +1559,7 @@ export class DatabaseStorage implements IStorage {
     const [invoice] = await db.insert(invoices).values({
       invoiceNumber,
       jobId,
+      clientId: resolvedClientId ?? undefined,
       clientName: job.clientName,
       clientEmail: job.clientEmail,
       clientPhone: job.clientPhone,

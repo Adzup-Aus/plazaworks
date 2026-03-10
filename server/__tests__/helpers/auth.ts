@@ -63,13 +63,13 @@ export async function loginAsStaff(
   if (!profile) {
     const created = await storage.createStaffProfile({
       userId,
-      roles: ["plumber"],
+      roles: [], // no role so effective permissions = only direct `permissions`
       employmentType: "permanent",
       isActive: true,
       permissions,
     });
     return { authCookie, userId, profileId: created.id };
   }
-  await storage.updateStaffProfile(profile.id, { permissions });
+  await storage.updateStaffProfile(profile.id, { roles: [], permissions });
   return { authCookie, userId, profileId: profile.id };
 }

@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { storage } from "../../routes/shared";
+import { triggerSyncInvoice } from "../../services/quickbooksSync";
 
 /**
  * Public (no-auth) routes so clients can view and respond to quotes via email link token.
@@ -70,7 +71,8 @@ export function registerQuoteRespondRoutes(app: Express): void {
         });
         if (!quote.convertedToInvoiceId) {
           try {
-            await storage.createInvoiceFromAcceptedQuote(quote.id, "system");
+            const invoice = await storage.createInvoiceFromAcceptedQuote(quote.id, "system");
+            if (invoice) triggerSyncInvoice(invoice.id);
           } catch (e) {
             console.error("Create invoice from accepted quote (email link):", e);
           }

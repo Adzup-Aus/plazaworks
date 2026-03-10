@@ -4,6 +4,16 @@ import { updateStaffSchema } from "../../routes/schemas";
 import { resolveDisplayUrl } from "../storage/service";
 
 export function registerStaffRoutes(app: Express): void {
+  /**
+   * @openapi
+   * /staff:
+   *   get:
+   *     summary: List staff profiles
+   *     tags: [Staff]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     responses:
+   *       200: { description: List of staff profiles (or own profile only depending on permission) }
+   */
   // Check permission first so we don't create an empty profile (ensureStaffProfile) then 403.
   // view_users: full list; view_schedule/manage_schedule: only own profile (so Schedule page can show their row)
   app.get("/api/staff", isAuthenticated, requireAnyPermission("view_users", "view_schedule", "manage_schedule"), ensureStaffProfile, async (req: any, res) => {
@@ -37,6 +47,22 @@ export function registerStaffRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /staff/{id}:
+   *   get:
+   *     summary: Get staff profile by ID
+   *     tags: [Staff]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: Staff profile details }
+   *       404: { description: Staff profile not found }
+   */
   app.get("/api/staff/:id", isAuthenticated, requirePermission("view_users"), async (req, res) => {
     try {
       const profile = await storage.getStaffProfile(req.params.id);
@@ -50,6 +76,23 @@ export function registerStaffRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /staff/{id}:
+   *   patch:
+   *     summary: Update staff profile
+   *     tags: [Staff]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     requestBody: { content: { application/json: { schema: { type: object } } } }
+   *     responses:
+   *       200: { description: Staff profile updated }
+   *       404: { description: Staff profile not found }
+   */
   app.patch("/api/staff/:id", isAuthenticated, requirePermission("edit_users"), async (req: any, res) => {
     try {
       const validation = updateStaffSchema.safeParse(req.body);

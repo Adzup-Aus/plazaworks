@@ -3,6 +3,20 @@ import { storage, isAuthenticated, ensureStaffProfile, requireUserId, requirePer
 import { insertJobSchema } from "./model";
 
 export function registerJobsRoutes(app: Express): void {
+  /**
+   * @openapi
+   * /jobs:
+   *   get:
+   *     summary: List jobs
+   *     tags: [Jobs]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: status
+   *         in: query
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: List of jobs }
+   */
   // view_schedule allows listing jobs so Schedule page can show job names on entries
   app.get("/api/jobs", isAuthenticated, ensureStaffProfile, requireAnyPermission("view_jobs", "view_schedule"), async (req, res) => {
     try {
@@ -20,6 +34,22 @@ export function registerJobsRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /jobs/{id}:
+   *   get:
+   *     summary: Get job by ID
+   *     tags: [Jobs]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: Job details }
+   *       404: { description: Job not found }
+   */
   app.get("/api/jobs/:id", isAuthenticated, requireAnyPermission("view_jobs", "view_schedule"), async (req, res) => {
     try {
       const job = await storage.getJob(req.params.id);
@@ -33,6 +63,18 @@ export function registerJobsRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /jobs:
+   *   post:
+   *     summary: Create a job
+   *     tags: [Jobs]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     requestBody: { content: { application/json: { schema: { type: object } } } }
+   *     responses:
+   *       201: { description: Job created }
+   *       400: { description: Validation error }
+   */
   app.post("/api/jobs", isAuthenticated, requirePermission("create_jobs"), async (req: any, res) => {
     try {
       const validation = insertJobSchema.safeParse(req.body);
@@ -52,6 +94,23 @@ export function registerJobsRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /jobs/{id}:
+   *   patch:
+   *     summary: Update a job
+   *     tags: [Jobs]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     requestBody: { content: { application/json: { schema: { type: object } } } }
+   *     responses:
+   *       200: { description: Job updated }
+   *       404: { description: Job not found }
+   */
   app.patch("/api/jobs/:id", isAuthenticated, requirePermission("edit_jobs"), async (req, res) => {
     try {
       const partialSchema = insertJobSchema.partial();
@@ -71,6 +130,22 @@ export function registerJobsRoutes(app: Express): void {
     }
   });
 
+  /**
+   * @openapi
+   * /jobs/{id}:
+   *   delete:
+   *     summary: Delete a job
+   *     tags: [Jobs]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: Job deleted }
+   *       404: { description: Job not found }
+   */
   app.delete("/api/jobs/:id", isAuthenticated, requirePermission("delete_jobs"), async (req, res) => {
     try {
       const deleted = await storage.deleteJob(req.params.id);

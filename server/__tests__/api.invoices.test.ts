@@ -139,4 +139,50 @@ describe.runIf(hasDb)("API invoices", () => {
     const res = await request(app).post(`/api/invoices/${invoiceId}/payment-link`);
     expect(res.status).toBe(401);
   });
+
+  it("invoice process: create job, generate invoice from job, verify invoice", async () => {
+    const jobRes = await request(app)
+      .post("/api/jobs")
+      .set("Cookie", authCookie)
+      .send({
+        clientName: "Invoice Process Client",
+        address: "300 Invoice St",
+        jobType: "plumbing",
+      });
+    expect(jobRes.status).toBe(201);
+    const jobId = jobRes.body?.id;
+    expect(jobId).toBeDefined();
+
+    const invRes = await request(app)
+      .post(`/api/invoices/generate/job/${jobId}`)
+      .set("Cookie", authCookie);
+    expect(invRes.status).toBe(201);
+    expect(invRes.body).toHaveProperty("id");
+    expect(invRes.body).toHaveProperty("invoiceNumber");
+    expect(invRes.body.clientName).toBe("Invoice Process Client");
+    expect(invRes.body.jobId).toBe(jobId);
+  });
+
+  it("invoice process: POST /api/invoices creates invoice and returns 201", async () => {
+    const { storage } = await import("../storage");
+    const client = await storage.createClient({
+      firstName: "Direct",
+      lastName: "InvoiceClient",
+      email: `direct-inv-${Date.now()}@example.com`,
+      streetAddress: "400 Direct St",
+    });
+    const res = await request(app)
+      .post("/api/invoices")
+      .set("Cookie", authCookie)
+      .send({
+        clientId: client.id,
+        clientName: "Direct Invoice Client",
+        clientAddress: "400 Direct St",
+        status: "draft",
+      });
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveProperty("id");
+    expect(res.body.invoiceNumber).toBeDefined();
+    expect(res.body.clientName).toBe("Direct Invoice Client");
+  });
 });

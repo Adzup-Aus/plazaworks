@@ -30,6 +30,8 @@ import { registerRolesRoutes } from "../modules/roles/routes";
 import { registerStripeRoutes } from "../modules/stripe/routes";
 import { registerQuoteRespondRoutes } from "../modules/quoteRespond/routes";
 import { registerStorageRoutes } from "../modules/storage/routes";
+import { registerIntegrationsRoutes } from "../modules/integrations/routes";
+import { registerQuickBooksRoutes } from "../modules/quickbooks/routes";
 
 /**
  * Register all API routes. Order matters for middleware and feature gating.
@@ -73,6 +75,8 @@ export async function registerRoutes(
   registerRolesRoutes(app);
   registerStripeRoutes(app);
   registerQuoteRespondRoutes(app);
+  registerIntegrationsRoutes(app);
+  registerQuickBooksRoutes(app);
 
   return httpServer;
 }
