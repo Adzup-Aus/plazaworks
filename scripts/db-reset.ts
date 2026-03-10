@@ -32,6 +32,13 @@ async function main() {
     env: process.env,
   });
 
+  console.log("Running quotes version migration...");
+  execSync("npm run db:migrate:quotes-version", {
+    stdio: "inherit",
+    cwd: process.cwd(),
+    env: process.env,
+  });
+
   console.log("Seeding admin...");
   execSync("npm run seed:admin", {
     stdio: "inherit",
