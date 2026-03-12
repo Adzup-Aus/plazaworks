@@ -3,8 +3,6 @@
  * One-way sync only: platform → QuickBooks. No data is pulled from QuickBooks to update the platform.
  * Only invoices created after the integration is enabled (invoice.createdAt >= connection.enabled_at) are synced; no historical sync.
  */
-import fs from "fs";
-import path from "path";
 import { decrypt, encrypt } from "../lib/encrypt";
 import { storage } from "../storage";
 import {
@@ -24,8 +22,14 @@ import {
 } from "./quickbooksClient";
 
 const TOKEN_EXPIRY_BUFFER_MS = 60 * 1000; // refresh 1 min before expiry
+/** Buffer for proactive refresh: refresh when token expires within this many ms (24h) so integration stays valid without sync traffic */
+const PROACTIVE_REFRESH_BUFFER_MS = 24 * 60 * 60 * 1000;
 
 const INTUIT_ACCESS_TOKEN_MAX_LENGTH = 4096;
+
+function isAuthError(msg: string): boolean {
+  return /401|403|AuthenticationFailed|unauthorized|forbidden/i.test(msg);
+}
 
 /** T030: Retry once on transient QB API failure (5xx, network). Never retry on 401/403. */
 function isTransientError(err: unknown): boolean {
@@ -139,6 +143,96 @@ export async function getValidQuickBooksConnection(): Promise<ValidConnection | 
     accessToken: token,
     enabledAt: conn.enabled_at ?? null,
   };
+}
+
+/**
+ * Force refresh the access token (e.g. after 401 "Malformed bearer token") and return a valid connection.
+ * Use when getValidQuickBooksConnection() returned a connection but the API rejected the token.
+ */
+export async function forceRefreshAndGetValidConnection(): Promise<ValidConnection | null> {
+  const conn = await storage.getQuickBooksConnection();
+  if (
+    !conn?.realm_id ||
+    !conn.encrypted_refresh_token ||
+    !conn.encrypted_client_id ||
+    !conn.encrypted_client_secret
+  ) {
+    return null;
+  }
+  const refreshToken = decrypt(conn.encrypted_refresh_token);
+  const clientId = decrypt(conn.encrypted_client_id);
+  const clientSecret = decrypt(conn.encrypted_client_secret);
+  let trimmedAccess: string;
+  try {
+    const refreshed = await refreshAccessToken(clientId, clientSecret, refreshToken);
+    trimmedAccess = typeof refreshed.access_token === "string" ? refreshed.access_token.trim() : "";
+    const newExpiresAt = new Date(Date.now() + (refreshed.expires_in || 3600) * 1000);
+    const trimmedRefresh =
+      refreshed.refresh_token && typeof refreshed.refresh_token === "string"
+        ? refreshed.refresh_token.trim()
+        : undefined;
+    await storage.upsertQuickBooksConnection({
+      encrypted_access_token: encrypt(trimmedAccess),
+      token_expires_at: newExpiresAt,
+      ...(trimmedRefresh ? { encrypted_refresh_token: encrypt(trimmedRefresh) } : {}),
+    });
+  } catch (err) {
+    console.warn("QuickBooks force refresh failed:", err instanceof Error ? err.message : err);
+    await storage.upsertQuickBooksConnection({
+      encrypted_access_token: null,
+      encrypted_refresh_token: null,
+      realm_id: null,
+      token_expires_at: null,
+      enabled_at: null,
+    });
+    return null;
+  }
+  if (!trimmedAccess || trimmedAccess.length > INTUIT_ACCESS_TOKEN_MAX_LENGTH) return null;
+  return {
+    connectionId: conn.id,
+    realmId: conn.realm_id,
+    accessToken: trimmedAccess,
+    enabledAt: conn.enabled_at ?? null,
+  };
+}
+
+/**
+ * Proactively refresh the QuickBooks access token when it expires within PROACTIVE_REFRESH_BUFFER_MS (e.g. 24h).
+ * Call on a schedule (e.g. every 12h) or on startup so the integration stays valid even when no syncs run.
+ */
+export async function proactiveRefreshQuickBooksToken(): Promise<void> {
+  const conn = await storage.getQuickBooksConnection();
+  if (!conn?.encrypted_access_token || !conn.encrypted_refresh_token || !conn.encrypted_client_id || !conn.encrypted_client_secret) {
+    return;
+  }
+  if (!conn.enabled_at) return;
+
+  const expiresAt = conn.token_expires_at ? new Date(conn.token_expires_at) : null;
+  const shouldRefresh = !expiresAt || expiresAt.getTime() - PROACTIVE_REFRESH_BUFFER_MS < Date.now();
+  if (!shouldRefresh) return;
+
+  const refreshToken = decrypt(conn.encrypted_refresh_token);
+  const clientId = decrypt(conn.encrypted_client_id);
+  const clientSecret = decrypt(conn.encrypted_client_secret);
+  try {
+    const refreshed = await refreshAccessToken(clientId, clientSecret, refreshToken);
+    const newExpiresAt = new Date(Date.now() + (refreshed.expires_in || 3600) * 1000);
+    const trimmedAccess = typeof refreshed.access_token === "string" ? refreshed.access_token.trim() : "";
+    const trimmedRefresh = refreshed.refresh_token && typeof refreshed.refresh_token === "string" ? refreshed.refresh_token.trim() : undefined;
+    await storage.upsertQuickBooksConnection({
+      encrypted_access_token: encrypt(trimmedAccess),
+      token_expires_at: newExpiresAt,
+      ...(trimmedRefresh ? { encrypted_refresh_token: encrypt(trimmedRefresh) } : {}),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const isInvalidClient = /invalid_client|401/.test(msg);
+    if (isInvalidClient) {
+      console.warn("QuickBooks proactive refresh skipped: connection credentials invalid or expired. Reconnect in Integrations to fix.");
+    } else {
+      console.error("QuickBooks proactive token refresh failed:", err);
+    }
+  }
 }
 
 /**
@@ -282,39 +376,24 @@ function buildQBInvoicePayload(
 export async function syncInvoice(connectionId: string, platformInvoiceId: string): Promise<void> {
   const valid = await getValidQuickBooksConnection();
   if (!valid || valid.connectionId !== connectionId || !valid.enabledAt) {
-    try { fs.appendFileSync(path.join(process.cwd(), ".cursor", "debug-c7ce08.log"), JSON.stringify({ sessionId: "c7ce08", location: "quickbooksSync.ts:syncInvoice", message: "early return", data: { reason: "no valid connection or enabledAt" }, timestamp: Date.now(), hypothesisId: "H3" }) + "\n"); } catch (_) {}
     return;
   }
 
   const invoice = await storage.getInvoiceWithDetails(platformInvoiceId);
-  if (!invoice) {
-    try { fs.appendFileSync(path.join(process.cwd(), ".cursor", "debug-c7ce08.log"), JSON.stringify({ sessionId: "c7ce08", location: "quickbooksSync.ts:syncInvoice", message: "early return", data: { reason: "no invoice" }, timestamp: Date.now(), hypothesisId: "H3" }) + "\n"); } catch (_) {}
-    return;
-  }
+  if (!invoice) return;
+
   const enabledAt = valid.enabledAt;
   const createdAt = invoice.createdAt ? new Date(invoice.createdAt) : null;
-  if (createdAt && createdAt < enabledAt) {
-    try { fs.appendFileSync(path.join(process.cwd(), ".cursor", "debug-c7ce08.log"), JSON.stringify({ sessionId: "c7ce08", location: "quickbooksSync.ts:syncInvoice", message: "early return", data: { reason: "invoice createdAt < enabledAt", createdAt: createdAt?.toISOString(), enabledAt: enabledAt?.toISOString() }, timestamp: Date.now(), hypothesisId: "H3" }) + "\n"); } catch (_) {}
-    return;
-  }
+  if (createdAt && createdAt < enabledAt) return;
 
   const clientId = invoice.clientId ?? null;
-  if (!clientId) {
-    try { fs.appendFileSync(path.join(process.cwd(), ".cursor", "debug-c7ce08.log"), JSON.stringify({ sessionId: "c7ce08", location: "quickbooksSync.ts:syncInvoice", message: "early return", data: { reason: "no clientId" }, timestamp: Date.now(), hypothesisId: "H3" }) + "\n"); } catch (_) {}
-    return;
-  }
+  if (!clientId) return;
 
   const qbCustomerId = await ensureCustomer(connectionId, clientId);
-  if (!qbCustomerId) {
-    try { fs.appendFileSync(path.join(process.cwd(), ".cursor", "debug-c7ce08.log"), JSON.stringify({ sessionId: "c7ce08", location: "quickbooksSync.ts:syncInvoice", message: "early return", data: { reason: "ensureCustomer returned null" }, timestamp: Date.now(), hypothesisId: "H3" }) + "\n"); } catch (_) {}
-    return;
-  }
+  if (!qbCustomerId) return;
 
   const existingMapping = await storage.getQuickBooksInvoiceMapping(connectionId, platformInvoiceId);
-  if (existingMapping) {
-    try { fs.appendFileSync(path.join(process.cwd(), ".cursor", "debug-c7ce08.log"), JSON.stringify({ sessionId: "c7ce08", location: "quickbooksSync.ts:syncInvoice", message: "early return", data: { reason: "already synced" }, timestamp: Date.now(), hypothesisId: "H3" }) + "\n"); } catch (_) {}
-    return;
-  }
+  if (existingMapping) return;
 
   const itemRef = await getServiceItemRef(valid.realmId, valid.accessToken);
   const taxCodeRef = await getTaxCodeRef(valid.realmId, valid.accessToken);
@@ -330,30 +409,54 @@ export async function syncInvoice(connectionId: string, platformInvoiceId: strin
     })),
   });
 
-  try {
-    const qbInvoiceId = await createInvoiceWithRetry(valid.realmId, valid.accessToken, payload);
-    try { fs.appendFileSync(path.join(process.cwd(), ".cursor", "debug-c7ce08.log"), JSON.stringify({ sessionId: "c7ce08", location: "quickbooksSync.ts:syncInvoice", message: "createInvoice OK", data: { qbInvoiceId }, timestamp: Date.now(), hypothesisId: "H5" }) + "\n"); } catch (_) {}
-    await storage.upsertQuickBooksInvoiceMapping({
-      quickbooks_connection_id: connectionId,
-      platform_invoice_id: platformInvoiceId,
-      quickbooks_invoice_id: qbInvoiceId,
-    });
-    console.log("QuickBooks syncInvoice OK:", { platformInvoiceId, qbInvoiceId, invoiceNumber: invoice.invoiceNumber });
-  } catch (err: unknown) {
-    console.error("QuickBooks syncInvoice failed:", err);
-    // T029: clear tokens on 401/403 so UI shows Reconnect
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("401") || msg.includes("403") || /unauthorized|forbidden/i.test(msg)) {
-      await storage.upsertQuickBooksConnection({
-        encrypted_access_token: null,
-        encrypted_refresh_token: null,
-        realm_id: null,
-        token_expires_at: null,
-        enabled_at: null,
+  let lastErr: unknown;
+  let validToUse: ValidConnection | null = valid;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (!validToUse) break;
+    try {
+      const qbInvoiceId = await createInvoiceWithRetry(validToUse.realmId, validToUse.accessToken, payload);
+      await storage.upsertQuickBooksInvoiceMapping({
+        quickbooks_connection_id: connectionId,
+        platform_invoice_id: platformInvoiceId,
+        quickbooks_invoice_id: qbInvoiceId,
       });
+      await storage.insertQuickBooksSyncLog({
+        quickbooks_connection_id: connectionId,
+        entity_type: "invoice",
+        entity_id: platformInvoiceId,
+        status: "succeeded",
+      });
+      console.log("QuickBooks syncInvoice OK:", { platformInvoiceId, qbInvoiceId, invoiceNumber: invoice.invoiceNumber });
+      return;
+    } catch (err: unknown) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (attempt === 0 && isAuthError(msg)) {
+        validToUse = await forceRefreshAndGetValidConnection();
+        if (validToUse?.connectionId === connectionId && validToUse.enabledAt) continue;
+      }
+      break;
     }
-    throw err;
   }
+  await storage.insertQuickBooksSyncLog({
+    quickbooks_connection_id: connectionId,
+    entity_type: "invoice",
+    entity_id: platformInvoiceId,
+    status: "failed",
+    error_message: lastErr instanceof Error ? lastErr.message : String(lastErr),
+  });
+  console.error("QuickBooks syncInvoice failed:", lastErr);
+  const msg = lastErr instanceof Error ? lastErr.message : String(lastErr);
+  if (isAuthError(msg)) {
+    await storage.upsertQuickBooksConnection({
+      encrypted_access_token: null,
+      encrypted_refresh_token: null,
+      realm_id: null,
+      token_expires_at: null,
+      enabled_at: null,
+    });
+  }
+  throw lastErr;
 }
 
 /**
@@ -386,22 +489,48 @@ export async function syncPayment(connectionId: string, platformInvoiceId: strin
     ],
   };
 
-  try {
-    await createPaymentWithRetry(valid.realmId, valid.accessToken, payload);
-  } catch (err: unknown) {
-    console.error("QuickBooks syncPayment failed:", err);
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("401") || msg.includes("403") || /unauthorized|forbidden/i.test(msg)) {
-      await storage.upsertQuickBooksConnection({
-        encrypted_access_token: null,
-        encrypted_refresh_token: null,
-        realm_id: null,
-        token_expires_at: null,
-        enabled_at: null,
+  let lastErr: unknown;
+  let validToUse: ValidConnection | null = valid;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (!validToUse) break;
+    try {
+      await createPaymentWithRetry(validToUse.realmId, validToUse.accessToken, payload);
+      await storage.insertQuickBooksSyncLog({
+        quickbooks_connection_id: connectionId,
+        entity_type: "payment",
+        entity_id: platformInvoiceId,
+        status: "succeeded",
       });
+      return;
+    } catch (err: unknown) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (attempt === 0 && isAuthError(msg)) {
+        validToUse = await forceRefreshAndGetValidConnection();
+        if (validToUse?.connectionId === connectionId) continue;
+      }
+      break;
     }
-    throw err;
   }
+  await storage.insertQuickBooksSyncLog({
+    quickbooks_connection_id: connectionId,
+    entity_type: "payment",
+    entity_id: platformInvoiceId,
+    status: "failed",
+    error_message: lastErr instanceof Error ? lastErr.message : String(lastErr),
+  });
+  console.error("QuickBooks syncPayment failed:", lastErr);
+  const msg = lastErr instanceof Error ? lastErr.message : String(lastErr);
+  if (isAuthError(msg)) {
+    await storage.upsertQuickBooksConnection({
+      encrypted_access_token: null,
+      encrypted_refresh_token: null,
+      realm_id: null,
+      token_expires_at: null,
+      enabled_at: null,
+    });
+  }
+  throw lastErr;
 }
 
 /**
@@ -410,19 +539,10 @@ export async function syncPayment(connectionId: string, platformInvoiceId: strin
 export function triggerSyncInvoice(platformInvoiceId: string): void {
   void (async () => {
     try {
-      // #region agent log
-      try { fs.appendFileSync(path.join(process.cwd(), ".cursor", "debug-c7ce08.log"), JSON.stringify({ sessionId: "c7ce08", location: "quickbooksSync.ts:triggerSyncInvoice", message: "triggered", data: { platformInvoiceId }, timestamp: Date.now(), hypothesisId: "H1" }) + "\n"); } catch (_) {}
-      // #endregion
       const valid = await getValidQuickBooksConnection();
-      // #region agent log
-      try { fs.appendFileSync(path.join(process.cwd(), ".cursor", "debug-c7ce08.log"), JSON.stringify({ sessionId: "c7ce08", location: "quickbooksSync.ts:triggerSyncInvoice", message: "getValidQuickBooksConnection result", data: { hasValid: !!valid, hasEnabledAt: !!valid?.enabledAt, reason: !valid ? "null" : !valid.enabledAt ? "no enabledAt" : "ok" }, timestamp: Date.now(), hypothesisId: "H2" }) + "\n"); } catch (_) {}
-      // #endregion
       if (valid?.enabledAt) await syncInvoice(valid.connectionId, platformInvoiceId);
     } catch (err) {
       console.error("QuickBooks triggerSyncInvoice failed:", err);
-      // #region agent log
-      try { fs.appendFileSync(path.join(process.cwd(), ".cursor", "debug-c7ce08.log"), JSON.stringify({ sessionId: "c7ce08", location: "quickbooksSync.ts:triggerSyncInvoice", message: "caught error", data: { error: err instanceof Error ? err.message : String(err) }, timestamp: Date.now(), hypothesisId: "H4" }) + "\n"); } catch (_) {}
-      // #endregion
     }
   })();
 }

@@ -1,0 +1,4 @@
+{"sessionId":"afac4a","location":"jobs/routes.ts:invoice-draft","message":"invoice-draft no quote","data":{"jobId":"a1a32528-a8ef-44fc-9376-b546103c87d9","quoteId":null,"lineItemsCount":0},"timestamp":1773285594654,"hypothesisId":"H1"}
+{"sessionId":"afac4a","location":"invoices/routes.ts:POST /api/invoices","message":"create invoice from job with zero total","data":{"jobId":"a1a32528-a8ef-44fc-9376-b546103c87d9","subtotal":"0.00","total":"0.00"},"timestamp":1773285611111,"hypothesisId":"H3"}
+{"sessionId":"afac4a","location":"jobs/routes.ts:invoice-draft","message":"invoice-draft no quote","data":{"jobId":"a1a32528-a8ef-44fc-9376-b546103c87d9","quoteId":null,"lineItemsCount":0},"timestamp":1773285611605,"hypothesisId":"H1"}
+{"sessionId":"afac4a","location":"jobs/routes.ts:invoice-draft","message":"invoice-draft no quote","data":{"jobId":"a1a32528-a8ef-44fc-9376-b546103c87d9","quoteId":null,"lineItemsCount":0},"timestamp":1773285611792,"hypothesisId":"H1"}

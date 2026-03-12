@@ -13,6 +13,7 @@
     "db:migrate:remove-multi-org": "tsx scripts/run-migration.ts migrations/003_remove_multi_org.sql",
     "db:migrate:object-key": "tsx scripts/run-migration.ts migrations/004_add_object_key_columns.sql",
     "db:migrate:quickbooks": "tsx scripts/run-migration.ts migrations/007_quickbooks_tables.sql",
+    "db:migrate:quickbooks-sync-log": "tsx scripts/run-migration.ts migrations/008_quickbooks_sync_log.sql",
     "seed:admin": "tsx scripts/seed-admin.ts",
     "seed:activities": "tsx scripts/seed-default-activities.ts",
     "seed:roles": "tsx scripts/seed-roles.ts",

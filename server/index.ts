@@ -98,6 +98,15 @@ if (!process.env.VITEST) {
       },
       () => {
         log(`serving on port ${port}`);
+        void (async () => {
+          try {
+            const { proactiveRefreshQuickBooksToken } = await import("./services/quickbooksSync");
+            await proactiveRefreshQuickBooksToken();
+            setInterval(proactiveRefreshQuickBooksToken, 12 * 60 * 60 * 1000);
+          } catch (_) {
+            // no QuickBooks connection or refresh failed; interval will retry
+          }
+        })();
       },
     );
   })();

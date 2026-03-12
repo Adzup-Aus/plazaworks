@@ -58,6 +58,12 @@ describe.runIf(hasDb)("API invoices", () => {
         clientName: "API Invoice Client",
         clientAddress: "200 API St",
         status: "draft",
+        subtotal: "100.00",
+        taxRate: "10",
+        taxAmount: "10.00",
+        total: "110.00",
+        amountPaid: "0",
+        amountDue: "110.00",
       });
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty("id");
@@ -140,7 +146,7 @@ describe.runIf(hasDb)("API invoices", () => {
     expect(res.status).toBe(401);
   });
 
-  it("invoice process: create job, generate invoice from job, verify invoice", async () => {
+  it("invoice process: generate from job with no quote returns 400 and does not persist zero-total invoice", async () => {
     const jobRes = await request(app)
       .post("/api/jobs")
       .set("Cookie", authCookie)
@@ -156,11 +162,12 @@ describe.runIf(hasDb)("API invoices", () => {
     const invRes = await request(app)
       .post(`/api/invoices/generate/job/${jobId}`)
       .set("Cookie", authCookie);
-    expect(invRes.status).toBe(201);
-    expect(invRes.body).toHaveProperty("id");
-    expect(invRes.body).toHaveProperty("invoiceNumber");
-    expect(invRes.body.clientName).toBe("Invoice Process Client");
-    expect(invRes.body.jobId).toBe(jobId);
+    expect(invRes.status).toBe(400);
+    expect(invRes.body).toHaveProperty("message");
+    expect(invRes.body.message).toMatch(/line item with an amount greater than zero/i);
+    const { storage } = await import("../storage");
+    const job = await storage.getJob(jobId);
+    expect(job?.invoiceId).toBeNull();
   });
 
   it("invoice process: POST /api/invoices creates invoice and returns 201", async () => {
@@ -179,10 +186,40 @@ describe.runIf(hasDb)("API invoices", () => {
         clientName: "Direct Invoice Client",
         clientAddress: "400 Direct St",
         status: "draft",
+        subtotal: "50.00",
+        taxRate: "10",
+        taxAmount: "5.00",
+        total: "55.00",
+        amountPaid: "0",
+        amountDue: "55.00",
       });
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty("id");
     expect(res.body.invoiceNumber).toBeDefined();
     expect(res.body.clientName).toBe("Direct Invoice Client");
+  });
+
+  it("POST /api/invoices with zero total returns 400", async () => {
+    const { storage } = await import("../storage");
+    const client = await storage.createClient({
+      firstName: "Zero",
+      lastName: "TotalClient",
+      email: `zero-${Date.now()}@example.com`,
+      streetAddress: "500 Zero St",
+    });
+    const res = await request(app)
+      .post("/api/invoices")
+      .set("Cookie", authCookie)
+      .send({
+        clientId: client.id,
+        clientName: "Zero Total Client",
+        clientAddress: "500 Zero St",
+        status: "draft",
+        subtotal: "0",
+        total: "0",
+        amountDue: "0",
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/line item with an amount greater than zero/i);
   });
 });

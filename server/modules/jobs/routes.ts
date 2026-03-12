@@ -36,6 +36,44 @@ export function registerJobsRoutes(app: Express): void {
 
   /**
    * @openapi
+   * /jobs/{id}/invoice-draft:
+   *   get:
+   *     summary: Get draft line items for creating an invoice from this job (from linked quote)
+   *     tags: [Jobs]
+   *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200: { description: Draft line items for invoice form }
+   */
+  app.get("/api/jobs/:id/invoice-draft", isAuthenticated, requireAnyPermission("view_jobs", "view_schedule"), async (req, res) => {
+    try {
+      const job = await storage.getJob(req.params.id);
+      if (!job?.quoteId) {
+        return res.json({ lineItems: [] });
+      }
+      const quoteData = await storage.getQuoteWithLineItems(job.quoteId);
+      if (!quoteData?.lineItems?.length) {
+        return res.json({ lineItems: [] });
+      }
+      const lineItems = quoteData.lineItems.map((item: { heading?: string | null; description?: string | null; quantity: string; unitPrice: string; amount: string }) => ({
+        description: [item.heading, item.description].filter(Boolean).join(": ") || (item.description ?? ""),
+        quantity: String(item.quantity ?? "1"),
+        unitPrice: String(item.unitPrice ?? "0"),
+        amount: String(item.amount ?? "0"),
+      }));
+      res.json({ lineItems });
+    } catch (err: any) {
+      console.error("Error fetching job invoice draft:", err);
+      res.status(500).json({ message: "Failed to fetch draft" });
+    }
+  });
+
+  /**
+   * @openapi
    * /jobs/{id}:
    *   get:
    *     summary: Get job by ID

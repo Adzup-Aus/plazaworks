@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -250,12 +250,47 @@ export default function InvoiceDetail() {
     });
   }, [isCreateMode, job]);
 
+  const { data: invoiceDraft } = useQuery<{ lineItems: Array<{ description: string; quantity: string; unitPrice: string; amount: string }> }>({
+    queryKey: ["/api/jobs", jobIdFromUrl, "invoice-draft"],
+    enabled: !!jobIdFromUrl && isCreateMode,
+  });
+  const invoiceDraftPrefilledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isCreateMode || !jobIdFromUrl || !invoiceDraft) return;
+    if (invoiceDraftPrefilledRef.current === jobIdFromUrl) return;
+    invoiceDraftPrefilledRef.current = jobIdFromUrl;
+    if (invoiceDraft.lineItems?.length) {
+      setCreateLineItems(
+        invoiceDraft.lineItems.map((item) => ({
+          id: crypto.randomUUID(),
+          description: item.description ?? "",
+          quantity: item.quantity ?? "1",
+          unitPrice: item.unitPrice ?? "0",
+          amount: item.amount ?? "0",
+        }))
+      );
+    }
+  }, [isCreateMode, jobIdFromUrl, invoiceDraft]);
+
   const createInvoiceMutation = useMutation({
     mutationFn: async (data: CreateInvoiceFormValues) => {
       const subtotal = createLineItems.reduce((sum, row) => sum + parseFloat(row.amount || "0"), 0);
       const taxRate = DEFAULT_TAX_RATE;
       const taxAmount = (subtotal * taxRate) / 100;
       const total = subtotal + taxAmount;
+      const lineItems = createLineItems
+        .filter((row) => parseFloat(row.amount || "0") > 0)
+        .map((row) => {
+          const qty = parseFloat(row.quantity) || 0;
+          const unit = parseFloat(row.unitPrice) || 0;
+          const amt = parseFloat(row.amount) || qty * unit;
+          return {
+            description: row.description?.trim() || "Line item",
+            quantity: String(qty),
+            unitPrice: String(unit),
+            amount: String(amt),
+          };
+        });
       const res = await apiRequest("POST", "/api/invoices", {
         ...(jobIdFromUrl && { jobId: jobIdFromUrl }),
         ...(jobIdFromUrl && job?.clientId && { clientId: job.clientId }),
@@ -272,21 +307,9 @@ export default function InvoiceDetail() {
         total: total.toFixed(2),
         amountPaid: "0",
         amountDue: total.toFixed(2),
+        lineItems,
       });
       const created = (await res.json()) as { id: string };
-      for (let i = 0; i < createLineItems.length; i++) {
-        const row = createLineItems[i];
-        if (!row.description.trim()) continue;
-        const qty = parseFloat(row.quantity) || 0;
-        const unit = parseFloat(row.unitPrice) || 0;
-        const amt = parseFloat(row.amount) || qty * unit;
-        await apiRequest("POST", `/api/invoices/${created.id}/line-items`, {
-          description: row.description,
-          quantity: String(qty),
-          unitPrice: String(unit),
-          amount: String(amt),
-        });
-      }
       return created;
     },
     onSuccess: (data) => {
@@ -298,8 +321,16 @@ export default function InvoiceDetail() {
       toast({ title: "Invoice created" });
       navigate(`/invoices/${data.id}`);
     },
-    onError: () => {
-      toast({ title: "Failed to create invoice", variant: "destructive" });
+    onError: (err: Error) => {
+      let message = "Failed to create invoice";
+      const match = err.message?.match(/^\d+:\s*(\{.+\})$/);
+      if (match) {
+        try {
+          const data = JSON.parse(match[1]) as { message?: string };
+          if (data.message) message = data.message;
+        } catch (_) {}
+      }
+      toast({ title: message, variant: "destructive" });
     },
   });
 
@@ -655,13 +686,24 @@ export default function InvoiceDetail() {
               </CardContent>
             </Card>
 
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={() => navigate("/invoices")}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={createInvoiceMutation.isPending} data-testid="button-submit-create-invoice">
-                {createInvoiceMutation.isPending ? "Creating…" : "Create invoice"}
-              </Button>
+            <div className="flex flex-col gap-2">
+              {createSubtotal === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Add at least one line item with an amount greater than zero.
+                </p>
+              )}
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => navigate("/invoices")}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={createInvoiceMutation.isPending || createSubtotal === 0}
+                  data-testid="button-submit-create-invoice"
+                >
+                  {createInvoiceMutation.isPending ? "Creating…" : "Create invoice"}
+                </Button>
+              </div>
             </div>
           </form>
         </Form>

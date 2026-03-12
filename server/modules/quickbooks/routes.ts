@@ -5,7 +5,7 @@ import OAuthClient from "intuit-oauth";
 import { storage, isAuthenticated, requirePermission } from "../../routes/shared";
 import { encrypt, decrypt } from "../../lib/encrypt";
 import { refreshAccessToken } from "../../services/quickbooksClient";
-import { getValidQuickBooksConnection } from "../../services/quickbooksSync";
+import { getValidQuickBooksConnection, proactiveRefreshQuickBooksToken } from "../../services/quickbooksSync";
 
 const QB_CALLBACK_PATH = "/api/quickbooks/oauth/callback";
 const QB_ENVIRONMENT = process.env.QUICKBOOKS_ENVIRONMENT === "production" ? "production" : "sandbox";
@@ -286,6 +286,31 @@ export function registerQuickBooksRoutes(app: Express): void {
     } catch (err) {
       console.error("QuickBooks disconnect:", err);
       res.status(500).json({ message: "Failed to disconnect QuickBooks" });
+    }
+  });
+
+  // POST /api/quickbooks/refresh-token - proactively refresh access token (admin only; also run on schedule)
+  app.post("/api/quickbooks/refresh-token", ...adminOnly, async (_req: Request, res: Response) => {
+    try {
+      await proactiveRefreshQuickBooksToken();
+      res.json({ refreshed: true });
+    } catch (err) {
+      console.error("QuickBooks refresh-token:", err);
+      res.status(500).json({ message: "Failed to refresh QuickBooks token" });
+    }
+  });
+
+  // GET /api/quickbooks/sync-log - list sync runs for status monitor (admin only)
+  app.get("/api/quickbooks/sync-log", ...adminOnly, async (req: Request, res: Response) => {
+    try {
+      const limit = req.query.limit != null ? Math.min(Number(req.query.limit), 100) : 50;
+      const offset = req.query.offset != null ? Math.max(0, Number(req.query.offset)) : 0;
+      const status = typeof req.query.status === "string" && /^(succeeded|failed)$/.test(req.query.status) ? req.query.status : undefined;
+      const entries = await storage.getQuickBooksSyncLogs({ limit, offset, status });
+      res.json(entries);
+    } catch (err) {
+      console.error("QuickBooks sync-log:", err);
+      res.status(500).json({ message: "Failed to get sync log" });
     }
   });
 }

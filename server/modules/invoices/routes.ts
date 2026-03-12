@@ -4,6 +4,9 @@ import { insertInvoiceSchema } from "@shared/schema";
 import { sendPaymentLinkEmail } from "../../email";
 import { triggerSyncInvoice, triggerVoidInvoiceInQuickBooks } from "../../services/quickbooksSync";
 
+const ZERO_TOTAL_MESSAGE =
+  "Add at least one line item with an amount greater than zero before creating the invoice.";
+
 export function registerInvoicesRoutes(app: Express): void {
   /**
    * @openapi
@@ -113,14 +116,34 @@ export function registerInvoicesRoutes(app: Express): void {
       if (!validation.success) {
         return res.status(400).json({ message: validation.error.errors[0].message });
       }
-
+      const totalNum = parseFloat(String(validation.data.total ?? 0)) || 0;
+      if (totalNum === 0) {
+        return res.status(400).json({ message: ZERO_TOTAL_MESSAGE });
+      }
       const userId = requireUserId(req);
       const invoice = await storage.createInvoice({
         ...validation.data,
         createdById: userId,
       });
+      const lineItemsPayload = Array.isArray(req.body.lineItems) ? req.body.lineItems : [];
+      for (let i = 0; i < lineItemsPayload.length; i++) {
+        const row = lineItemsPayload[i];
+        const description = typeof row?.description === "string" && row.description.trim() ? row.description.trim() : "Line item";
+        const quantity = String(row?.quantity ?? "1");
+        const unitPrice = String(row?.unitPrice ?? "0");
+        const amount = String(row?.amount ?? "0");
+        await storage.createLineItem({
+          invoiceId: invoice.id,
+          description,
+          quantity,
+          unitPrice,
+          amount,
+          sortOrder: i,
+        });
+      }
       triggerSyncInvoice(invoice.id);
-      res.status(201).json(invoice);
+      const withDetails = await storage.getInvoiceWithDetails(invoice.id);
+      res.status(201).json(withDetails ?? invoice);
     } catch (err: any) {
       console.error("Error creating invoice:", err);
       res.status(500).json({ message: "Failed to create invoice" });
@@ -129,10 +152,17 @@ export function registerInvoicesRoutes(app: Express): void {
 
   app.post("/api/jobs/:jobId/invoice", isAuthenticated, requirePermission("create_invoices"), async (req: any, res) => {
     try {
+      const jobId = req.params.jobId;
       const userId = requireUserId(req);
-      const invoice = await storage.createInvoiceFromJob(req.params.jobId, userId);
+      const invoice = await storage.createInvoiceFromJob(jobId, userId);
       if (!invoice) {
         return res.status(404).json({ message: "Job not found" });
+      }
+      const totalNum = parseFloat(String(invoice.total ?? 0)) || 0;
+      if (totalNum === 0) {
+        await storage.deleteInvoice(invoice.id);
+        await storage.updateJob(jobId, { invoiceId: null });
+        return res.status(400).json({ message: ZERO_TOTAL_MESSAGE });
       }
       triggerSyncInvoice(invoice.id);
       res.status(201).json(invoice);
@@ -284,10 +314,17 @@ export function registerInvoicesRoutes(app: Express): void {
 
   app.post("/api/invoices/generate/job/:jobId", isAuthenticated, requirePermission("create_invoices"), async (req: any, res) => {
     try {
+      const jobId = req.params.jobId;
       const userId = requireUserId(req);
-      const invoice = await storage.createInvoiceFromJob(req.params.jobId, userId);
+      const invoice = await storage.createInvoiceFromJob(jobId, userId);
       if (!invoice) {
         return res.status(404).json({ message: "Job not found" });
+      }
+      const totalNum = parseFloat(String(invoice.total ?? 0)) || 0;
+      if (totalNum === 0) {
+        await storage.deleteInvoice(invoice.id);
+        await storage.updateJob(jobId, { invoiceId: null });
+        return res.status(400).json({ message: ZERO_TOTAL_MESSAGE });
       }
       triggerSyncInvoice(invoice.id);
       res.status(201).json(invoice);

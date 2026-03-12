@@ -132,6 +132,8 @@ import {
   type InsertQuickBooksCustomerMapping,
   type QuickBooksInvoiceMapping,
   type InsertQuickBooksInvoiceMapping,
+  type QuickBooksSyncLogEntry,
+  type InsertQuickBooksSyncLogEntry,
   appSettings,
   integrations,
   scopes,
@@ -140,6 +142,7 @@ import {
   quickbooks_connections,
   quickbooks_customer_mappings,
   quickbooks_invoice_mappings,
+  quickbooks_sync_log,
   termsTemplates,
   staffProfiles,
   roles,
@@ -248,6 +251,8 @@ export interface IStorage {
   upsertQuickBooksInvoiceMapping(data: InsertQuickBooksInvoiceMapping): Promise<QuickBooksInvoiceMapping>;
   getQuickBooksInvoiceMappingByInvoiceId(platformInvoiceId: string): Promise<QuickBooksInvoiceMapping | undefined>;
   getQuickBooksInvoiceMappingsForInvoices(connectionId: string, platformInvoiceIds: string[]): Promise<QuickBooksInvoiceMapping[]>;
+  insertQuickBooksSyncLog(entry: InsertQuickBooksSyncLogEntry): Promise<QuickBooksSyncLogEntry>;
+  getQuickBooksSyncLogs(options?: { limit?: number; offset?: number; status?: string }): Promise<QuickBooksSyncLogEntry[]>;
 
   // Job operations
   getJobs(): Promise<Job[]>;
@@ -909,6 +914,20 @@ export class DatabaseStorage implements IStorage {
     return created!;
   }
 
+  async insertQuickBooksSyncLog(entry: InsertQuickBooksSyncLogEntry): Promise<QuickBooksSyncLogEntry> {
+    const [created] = await db.insert(quickbooks_sync_log).values(entry).returning();
+    return created!;
+  }
+
+  async getQuickBooksSyncLogs(options?: { limit?: number; offset?: number; status?: string }): Promise<QuickBooksSyncLogEntry[]> {
+    const limit = options?.limit ?? 50;
+    const offset = options?.offset ?? 0;
+    const base = options?.status
+      ? db.select().from(quickbooks_sync_log).where(eq(quickbooks_sync_log.status, options.status))
+      : db.select().from(quickbooks_sync_log);
+    return await base.orderBy(desc(quickbooks_sync_log.created_at)).limit(limit).offset(offset);
+  }
+
   // Job operations
   async getJobs(): Promise<Job[]> {
     return db.select().from(jobs).orderBy(desc(jobs.createdAt));
@@ -1556,6 +1575,58 @@ export class DatabaseStorage implements IStorage {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 14); // 14 days payment terms
 
+    // When job has a linked quote, copy line items and totals from the quote (same pattern as createInvoiceFromQuote)
+    if (job.quoteId) {
+      const quoteData = await this.getQuoteWithLineItems(job.quoteId);
+      if (quoteData) {
+        const paymentSchedules = await this.getQuotePaymentSchedules(job.quoteId);
+        const depositSchedule = paymentSchedules.find((s) => s.type === "deposit");
+        const depositAmount = depositSchedule?.calculatedAmount ?? quoteData.total;
+
+        const [invoice] = await db.insert(invoices).values({
+          invoiceNumber,
+          jobId,
+          quoteId: job.quoteId,
+          clientId: resolvedClientId ?? quoteData.clientId ?? undefined,
+          clientName: job.clientName ?? quoteData.clientName,
+          clientEmail: job.clientEmail ?? quoteData.clientEmail,
+          clientPhone: job.clientPhone ?? quoteData.clientPhone,
+          clientAddress: job.address ?? quoteData.clientAddress,
+          status: "draft",
+          subtotal: quoteData.subtotal,
+          taxRate: quoteData.taxRate,
+          taxAmount: quoteData.taxAmount,
+          total: quoteData.total,
+          amountDue: depositAmount,
+          dueDate: dueDate.toISOString().split("T")[0],
+          createdById,
+        }).returning();
+
+        if (invoice) {
+          for (const item of quoteData.lineItems) {
+            await db.insert(lineItems).values({
+              invoiceId: invoice.id,
+              heading: item.heading,
+              description: item.description,
+              richDescription: item.richDescription,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              amount: item.amount,
+              sortOrder: item.sortOrder,
+            });
+          }
+          for (const schedule of paymentSchedules) {
+            await db.update(quotePaymentSchedules)
+              .set({ invoiceId: invoice.id })
+              .where(eq(quotePaymentSchedules.id, schedule.id));
+          }
+          await db.update(jobs).set({ invoiceId: invoice.id, updatedAt: new Date() }).where(eq(jobs.id, jobId));
+          return invoice;
+        }
+      }
+    }
+
+    // No quote or quote missing: create draft invoice with header only (user can add line items)
     const [invoice] = await db.insert(invoices).values({
       invoiceNumber,
       jobId,

@@ -41,9 +41,11 @@ interface ServiceCardProps {
   onEdit: (service: Service) => void;
   /** When service.type === "quickbooks", pass connection status to show Connected / Not connected and primary CTA */
   quickbooksConnectionStatus?: QuickBooksConnectionStatus | null;
+  /** When service.type === "quickbooks", optional callback to open sync history (e.g. switch to Sync status tab) */
+  onViewSyncHistory?: () => void;
 }
 
-export function ServiceCard({ service, onEdit, quickbooksConnectionStatus }: ServiceCardProps) {
+export function ServiceCard({ service, onEdit, quickbooksConnectionStatus, onViewSyncHistory }: ServiceCardProps) {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -131,17 +133,24 @@ export function ServiceCard({ service, onEdit, quickbooksConnectionStatus }: Ser
           )}
           <div className="flex flex-wrap gap-2 pt-2">
             {isQuickBooks ? (
-              <Button
-                size="sm"
-                onClick={() => onEdit(service)}
-                variant={!qbConfigured || !qbConnected ? "default" : "outline"}
-              >
-                {!qbConfigured
-                  ? "Configure QuickBooks"
-                  : !qbConnected
-                    ? "Connect to QuickBooks"
-                    : "Settings"}
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  onClick={() => onEdit(service)}
+                  variant={!qbConfigured || !qbConnected ? "default" : "outline"}
+                >
+                  {!qbConfigured
+                    ? "Configure QuickBooks"
+                    : !qbConnected
+                      ? "Connect to QuickBooks"
+                      : "Settings"}
+                </Button>
+                {qbConnected && onViewSyncHistory && (
+                  <Button size="sm" variant="ghost" onClick={onViewSyncHistory}>
+                    View sync history
+                  </Button>
+                )}
+              </>
             ) : (
               <Button variant="outline" size="sm" onClick={() => onEdit(service)}>
                 <Pencil className="mr-2 h-4 w-4" />

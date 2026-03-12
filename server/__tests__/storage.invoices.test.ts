@@ -230,4 +230,70 @@ describe.runIf(hasDb)("storage (invoices)", () => {
     await storage.deleteInvoice(invoice.id);
     await storage.deleteQuote(quote.id);
   });
+
+  it("createInvoiceFromJob with quote copies line items and totals", async () => {
+    const client = await createTestClient();
+    const quote = await storage.createQuote({
+      clientId: client.id,
+      clientName: `${client.firstName} ${client.lastName}`,
+      clientAddress: "123 Quote St",
+      jobType: "plumbing",
+      total: "200.00",
+      subtotal: "200.00",
+    });
+    await storage.createLineItem({
+      quoteId: quote.id,
+      description: "Line item from quote",
+      unitPrice: "200",
+      amount: "200",
+      sortOrder: 0,
+    });
+    const invoiceFromQuote = await storage.createInvoiceFromQuote(quote.id);
+    if (!invoiceFromQuote) throw new Error("createInvoiceFromQuote failed");
+    await storage.updateInvoice(invoiceFromQuote.id, {
+      status: "partially_paid",
+      amountPaid: "50.00",
+      amountDue: "150.00",
+    });
+    const result = await storage.createJobFromPaidInvoice(invoiceFromQuote.id);
+    if (!result) throw new Error("createJobFromPaidInvoice failed");
+    const { job } = result;
+
+    const invoiceFromJob = await storage.createInvoiceFromJob(job.id);
+    expect(invoiceFromJob).toBeDefined();
+    expect(invoiceFromJob?.total).toBe("200.00");
+    expect(invoiceFromJob?.subtotal).toBe("200.00");
+    expect(invoiceFromJob?.quoteId).toBe(quote.id);
+    const lineItemsFromJob = await storage.getLineItemsByInvoice(invoiceFromJob!.id);
+    expect(lineItemsFromJob).toHaveLength(1);
+    expect(lineItemsFromJob[0].description).toBe("Line item from quote");
+    expect(lineItemsFromJob[0].amount).toBe("200.00");
+
+    await storage.deleteInvoice(invoiceFromJob!.id);
+    await storage.deleteJob(job.id);
+    await storage.deleteInvoice(invoiceFromQuote.id);
+    await storage.deleteQuote(quote.id);
+  });
+
+  it("createInvoiceFromJob without quote creates draft with zero totals and no line items", async () => {
+    const client = await createTestClient();
+    const job = await storage.createJob({
+      clientId: client.id,
+      clientName: "Job No Quote",
+      address: "100 Job St",
+      jobType: "plumbing",
+    });
+
+    const invoice = await storage.createInvoiceFromJob(job.id);
+    expect(invoice).toBeDefined();
+    expect(invoice?.status).toBe("draft");
+    expect(parseFloat(String(invoice?.subtotal ?? "0"))).toBe(0);
+    expect(parseFloat(String(invoice?.total ?? "0"))).toBe(0);
+    expect(invoice?.quoteId).toBeNull();
+    const items = await storage.getLineItemsByInvoice(invoice!.id);
+    expect(items).toHaveLength(0);
+
+    await storage.deleteInvoice(invoice!.id);
+    await storage.deleteJob(job.id);
+  });
 });

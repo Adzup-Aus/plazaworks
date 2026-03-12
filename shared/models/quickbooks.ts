@@ -72,6 +72,29 @@ export const quickbooks_invoice_mappings = pgTable(
   ]
 );
 
+// quickbooks_sync_log: succeeded/failed sync runs for status monitor
+export const quickbooks_sync_log = pgTable(
+  "quickbooks_sync_log",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    quickbooks_connection_id: varchar("quickbooks_connection_id", {
+      length: 255,
+    })
+      .notNull()
+      .references(() => quickbooks_connections.id, { onDelete: "cascade" }),
+    entity_type: varchar("entity_type", { length: 20 }).notNull(), // invoice | payment
+    entity_id: varchar("entity_id", { length: 255 }).notNull(),
+    status: varchar("status", { length: 20 }).notNull(), // succeeded | failed
+    error_message: text("error_message"),
+    created_at: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_qb_sync_log_created").on(table.created_at),
+    index("idx_qb_sync_log_status").on(table.status),
+    index("idx_qb_sync_log_conn").on(table.quickbooks_connection_id),
+  ]
+);
+
 export const insertQuickBooksConnectionSchema = createInsertSchema(
   quickbooks_connections
 ).omit({
@@ -95,6 +118,13 @@ export const insertQuickBooksInvoiceMappingSchema = createInsertSchema(
   updated_at: true,
 });
 
+export const insertQuickBooksSyncLogSchema = createInsertSchema(
+  quickbooks_sync_log
+).omit({
+  id: true,
+  created_at: true,
+});
+
 export type QuickBooksConnection = typeof quickbooks_connections.$inferSelect;
 export type InsertQuickBooksConnection = typeof quickbooks_connections.$inferInsert;
 export type QuickBooksCustomerMapping =
@@ -105,3 +135,5 @@ export type QuickBooksInvoiceMapping =
   typeof quickbooks_invoice_mappings.$inferSelect;
 export type InsertQuickBooksInvoiceMapping =
   typeof quickbooks_invoice_mappings.$inferInsert;
+export type QuickBooksSyncLogEntry = typeof quickbooks_sync_log.$inferSelect;
+export type InsertQuickBooksSyncLogEntry = typeof quickbooks_sync_log.$inferInsert;

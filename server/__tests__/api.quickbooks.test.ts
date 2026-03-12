@@ -79,4 +79,30 @@ describe.runIf(hasDb)("API QuickBooks", () => {
     expect(res.body).toHaveProperty("oauthStartUrl");
     expect(typeof res.body.oauthStartUrl).toBe("string");
   });
+
+  it("GET /api/quickbooks/sync-log returns 401 when unauthenticated", async () => {
+    const res = await request(app).get("/api/quickbooks/sync-log");
+    expect(res.status).toBe(401);
+  });
+
+  it("GET /api/quickbooks/sync-log with auth returns 200 and array", async () => {
+    const res = await request(app).get("/api/quickbooks/sync-log").set("Cookie", authCookie);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    if (res.body.length > 0) {
+      expect(res.body[0]).toHaveProperty("id");
+      expect(res.body[0]).toHaveProperty("entity_type");
+      expect(res.body[0]).toHaveProperty("entity_id");
+      expect(res.body[0]).toHaveProperty("status");
+      expect(res.body[0]).toHaveProperty("created_at");
+    }
+  });
+
+  it("GET /api/quickbooks/sync-log?status=succeeded returns 200 and array", async () => {
+    const res = await request(app)
+      .get("/api/quickbooks/sync-log?status=succeeded")
+      .set("Cookie", authCookie);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
 });
