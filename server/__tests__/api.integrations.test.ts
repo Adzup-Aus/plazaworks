@@ -59,6 +59,32 @@ describe.runIf(hasDb)("API integrations", () => {
     expect(res.body).toHaveProperty("status", "active");
   });
 
+  it("GET /api/jobs with Bearer token (no session) returns 200 and array", async () => {
+    const scopesRes = await request(app).get("/api/scopes").set("Cookie", authCookie);
+    const scopes = scopesRes.body as { name: string }[];
+    if (scopes.length === 0) {
+      console.warn("Skipping: run npm run seed:integration-scopes first");
+      return;
+    }
+    const createRes = await request(app)
+      .post("/api/integrations")
+      .set("Cookie", authCookie)
+      .send({
+        name: "Bearer Test Integration " + Date.now(),
+        description: "E2E Bearer token test",
+        scopes: [scopes[0].name],
+      });
+    expect(createRes.status).toBe(201);
+    const apiToken = createRes.body?.apiToken;
+    expect(apiToken).toBeDefined();
+
+    const jobsRes = await request(app)
+      .get("/api/jobs")
+      .set("Authorization", `Bearer ${apiToken}`);
+    expect(jobsRes.status).toBe(200);
+    expect(Array.isArray(jobsRes.body)).toBe(true);
+  });
+
   it("POST /api/integrations validates at least one scope", async () => {
     const res = await request(app)
       .post("/api/integrations")

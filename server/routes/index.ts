@@ -4,6 +4,7 @@ import {
   setupAuth,
   registerAuthRoutes as registerReplitAuthRoutes,
 } from "../replit_integrations/auth";
+import { apiAuth } from "../middleware/apiAuth";
 import { registerAuthRoutes } from "../modules/auth/routes";
 import { registerSettingsRoutes } from "../modules/settings/routes";
 import { registerStaffRoutes } from "../modules/staff/routes";
@@ -41,6 +42,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   await setupAuth(app);
+  app.use("/api", apiAuth);
   registerReplitAuthRoutes(app);
 
   registerStorageRoutes(app);

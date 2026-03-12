@@ -8,6 +8,7 @@ export interface ApiIntegration {
   id: string;
   scopes: string[];
   tokenExpiryDate: Date | null;
+  createdBy: string;
 }
 
 export interface RequestWithApiIntegration extends Request {
@@ -61,6 +62,7 @@ export function apiAuth(
           id: row.id,
           scopes: row.scopes ?? [],
           tokenExpiryDate: row.tokenExpiryDate,
+          createdBy: row.createdBy,
         };
         return next();
       }

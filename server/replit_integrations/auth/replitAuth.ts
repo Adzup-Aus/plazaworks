@@ -31,8 +31,14 @@ export async function setupAuth(app: Express) {
 
 export const isAuthenticated: RequestHandler = (req: any, res, next) => {
   // Session-based auth (OTP / password login)
+  // if Authorization header is present, move next
+  if (req.headers.authorization) {
+    return next();
+  }
+ 
   if (req.session?.isAuthenticated && req.session?.userId) {
     return next();
   }
+
   return res.status(401).json({ message: "Unauthorized" });
 };
