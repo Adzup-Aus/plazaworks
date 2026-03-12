@@ -1,0 +1,34 @@
+openapi: 3.0.0
+info:
+  title: QuickBooks Connection Status
+  version: 1.0.0
+paths:
+  /api/quickbooks/connection:
+    get:
+      summary: Get QuickBooks connection status
+      description: >
+        Returns whether QuickBooks credentials are configured and whether the
+        integration is currently connected (i.e. has a realm and valid or
+        refreshable tokens).
+      responses:
+        "200":
+          description: Connection status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured:
+                    type: boolean
+                  connected:
+                    type: boolean
+                  realmId:
+                    type: string
+                    nullable: true
+                  enabledAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+        "401":
+          description: Unauthorized (admin only)
+

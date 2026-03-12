@@ -21,8 +21,10 @@ import {
   type QBPaymentPayload,
 } from "./quickbooksClient";
 
-const TOKEN_EXPIRY_BUFFER_MS = 60 * 1000; // refresh 1 min before expiry
-/** Buffer for proactive refresh: refresh when token expires within this many ms (24h) so integration stays valid without sync traffic */
+// When using the connection for an API call, refresh the access token shortly before it expires.
+// Long idle periods are handled separately by proactiveRefreshQuickBooksToken (see below).
+const TOKEN_EXPIRY_BUFFER_MS = 60 * 1000; // refresh ~1 minute before expiry
+/** Buffer for proactive refresh: refresh when token expires within this many ms (24h) so integration stays valid without sync traffic. */
 const PROACTIVE_REFRESH_BUFFER_MS = 24 * 60 * 60 * 1000;
 
 const INTUIT_ACCESS_TOKEN_MAX_LENGTH = 4096;
@@ -80,7 +82,13 @@ export interface ValidConnection {
 }
 
 /**
- * Get the single QuickBooks connection with decrypted tokens. If access token is expired, refresh and persist.
+ * Get the single QuickBooks connection with decrypted tokens.
+ *
+ * - If the access token is close to or past its expiry, this will attempt a refresh using the stored refresh token
+ *   and persist the new access token/expiry.
+ * - The connection is only cleared (and thus treated as disconnected) when we either cannot refresh the token
+ *   or detect an obviously invalid token value (e.g. too long), never merely because the previous access token expired.
+ *
  * Returns null if not configured, not connected, or missing enabled_at for sync.
  */
 export async function getValidQuickBooksConnection(): Promise<ValidConnection | null> {

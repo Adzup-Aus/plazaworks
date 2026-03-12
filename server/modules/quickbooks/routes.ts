@@ -92,7 +92,10 @@ export function registerQuickBooksRoutes(app: Express): void {
     async (_req, res) => {
       try {
         const conn = await storage.getQuickBooksConnection();
-        const enabled = !!(conn?.realm_id && conn.encrypted_access_token && conn.enabled_at);
+        // Treat QuickBooks as enabled when we have a realm, sync has been enabled, and we hold either
+        // a usable access token or a refresh token that allows us to obtain one on demand.
+        const enabled =
+          !!(conn?.realm_id && conn.enabled_at && (conn.encrypted_access_token || conn.encrypted_refresh_token));
         res.json({ enabled });
       } catch (err) {
         console.error("QuickBooks get status:", err);
@@ -109,7 +112,9 @@ export function registerQuickBooksRoutes(app: Express): void {
         return res.json({ configured: false, connected: false, realmId: null, enabledAt: null });
       }
       const configured = !!(conn.encrypted_client_id && conn.encrypted_client_secret);
-      const connected = !!(conn.realm_id && conn.encrypted_access_token);
+      // Consider the integration connected when we have a realm and at least one token (access or refresh)
+      // that allows us to call or refresh the QuickBooks API.
+      const connected = !!(conn.realm_id && (conn.encrypted_access_token || conn.encrypted_refresh_token));
       res.json({
         configured,
         connected,
