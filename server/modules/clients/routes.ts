@@ -7,16 +7,34 @@ export function registerClientsRoutes(app: Express): void {
    * @openapi
    * /clients:
    *   get:
-   *     summary: List clients
+   *     summary: List clients (paginated)
    *     tags: [Clients]
    *     security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+   *     parameters:
+   *       - name: page
+   *         in: query
+   *         schema: { type: integer, default: 1 }
+   *       - name: limit
+   *         in: query
+   *         schema: { type: integer, default: 10 }
+   *       - name: search
+   *         in: query
+   *         schema: { type: string }
    *     responses:
-   *       200: { description: List of clients }
+   *       200: { description: Paginated list of clients. Includes nextPageUrl (path + query) when a next page exists, else null. }
    */
   app.get("/api/clients", isAuthenticated, requirePermission("view_clients"), async (req: any, res) => {
     try {
-      const clientList = await storage.getClients();
-      res.json(clientList);
+      const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || "10"), 10) || 10));
+      const search = typeof req.query.search === "string" ? req.query.search : undefined;
+      const offset = (page - 1) * limit;
+      const { items, total } = await storage.getClientsPaginated({ limit, offset, search });
+      const hasNextPage = page * limit < total;
+      const nextPageUrl = hasNextPage
+        ? `/api/clients?page=${page + 1}&limit=${limit}${search ? `&search=${encodeURIComponent(search)}` : ""}`
+        : null;
+      res.json({ items, total, page, limit, nextPageUrl });
     } catch (err: any) {
       console.error("Error fetching clients:", err);
       res.status(500).json({ message: "Failed to fetch clients" });
