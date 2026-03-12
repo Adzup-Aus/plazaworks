@@ -41,11 +41,11 @@ interface ServiceCardProps {
   onEdit: (service: Service) => void;
   /** When service.type === "quickbooks", pass connection status to show Connected / Not connected and primary CTA */
   quickbooksConnectionStatus?: QuickBooksConnectionStatus | null;
-  /** When service.type === "quickbooks", optional callback to open sync history (e.g. switch to Sync status tab) */
-  onViewSyncHistory?: () => void;
+  /** Optional callback to open service detail page (details and logs) */
+  onViewDetails?: (service: Service) => void;
 }
 
-export function ServiceCard({ service, onEdit, quickbooksConnectionStatus, onViewSyncHistory }: ServiceCardProps) {
+export function ServiceCard({ service, onEdit, quickbooksConnectionStatus, onViewDetails }: ServiceCardProps) {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -132,6 +132,11 @@ export function ServiceCard({ service, onEdit, quickbooksConnectionStatus, onVie
             </div>
           )}
           <div className="flex flex-wrap gap-2 pt-2">
+            {onViewDetails && (
+              <Button size="sm" variant="outline" onClick={() => onViewDetails(service)}>
+                View details
+              </Button>
+            )}
             {isQuickBooks ? (
               <>
                 <Button
@@ -145,8 +150,8 @@ export function ServiceCard({ service, onEdit, quickbooksConnectionStatus, onVie
                       ? "Connect to QuickBooks"
                       : "Settings"}
                 </Button>
-                {qbConnected && onViewSyncHistory && (
-                  <Button size="sm" variant="ghost" onClick={onViewSyncHistory}>
+                {qbConnected && onViewDetails && (
+                  <Button size="sm" variant="ghost" onClick={() => onViewDetails(service)}>
                     View sync history
                   </Button>
                 )}

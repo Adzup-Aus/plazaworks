@@ -120,7 +120,7 @@ export function QuickBooksConfigForm({ open, onOpenChange }: QuickBooksConfigFor
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>QuickBooks configuration</DialogTitle>
           <DialogDescription>
@@ -149,13 +149,6 @@ export function QuickBooksConfigForm({ open, onOpenChange }: QuickBooksConfigFor
             <p className="mt-1.5 text-muted-foreground text-xs">It must match exactly in Intuit—use Copy to avoid typos.</p>
           </div>
         )}
-        <details className="rounded-md border bg-muted/30 p-3 text-sm">
-          <summary className="cursor-pointer font-medium text-muted-foreground">Troubleshooting</summary>
-          <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-muted-foreground">
-            <li><strong>“undefined didn&apos;t connect”</strong>: <strong>Development</strong> keys only work with <strong>sandbox</strong> companies. If you sign in with a real QuickBooks company, use <strong>Production</strong> keys (requires app approval). Create a sandbox company at developer.intuit.com to test with Development keys.</li>
-            <li>Ensure your Intuit app has an <strong>App Name</strong> in developer.intuit.com → Your app → Profile. Add the Redirect URI to the same section as your keys (Development or Production).</li>
-          </ul>
-        </details>
         {statusLoading ? (
           <div className="py-4 text-muted-foreground">Loading…</div>
         ) : (
