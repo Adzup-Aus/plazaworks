@@ -66,7 +66,16 @@ export function registerClientsRoutes(app: Express): void {
    */
   app.post("/api/clients", isAuthenticated, requirePermission("create_clients"), async (req: any, res) => {
     try {
-      const parsed = insertClientSchema.safeParse(req.body);
+      const body = { ...req.body };
+      if (body.addressLine1 !== undefined) body.streetAddress = body.streetAddress ?? body.addressLine1;
+      if (body.addressLine2 !== undefined) body.streetAddress2 = body.streetAddress2 ?? body.addressLine2;
+      if (body.type !== undefined) body.entityType = body.entityType ?? body.type;
+      if (body.companyName !== undefined) body.company = body.company ?? body.companyName;
+      delete body.addressLine1;
+      delete body.addressLine2;
+      delete body.type;
+      delete body.companyName;
+      const parsed = insertClientSchema.safeParse(body);
       if (!parsed.success) {
         return res
           .status(400)
@@ -98,9 +107,18 @@ export function registerClientsRoutes(app: Express): void {
    *       200: { description: Client updated }
    *       404: { description: Client not found }
    */
-  app.patch("/api/clients/:id", isAuthenticated, requirePermission("edit_clients"), async (req, res) => {
+  app.patch("/api/clients/:id", isAuthenticated, requirePermission("edit_clients"), async (req: any, res) => {
     try {
-      const updated = await storage.updateClient(req.params.id, req.body);
+      const body = { ...req.body };
+      if (body.addressLine1 !== undefined) body.streetAddress = body.streetAddress ?? body.addressLine1;
+      if (body.addressLine2 !== undefined) body.streetAddress2 = body.streetAddress2 ?? body.addressLine2;
+      if (body.type !== undefined) body.entityType = body.entityType ?? body.type;
+      if (body.companyName !== undefined) body.company = body.company ?? body.companyName;
+      delete body.addressLine1;
+      delete body.addressLine2;
+      delete body.type;
+      delete body.companyName;
+      const updated = await storage.updateClient(req.params.id, body);
       if (!updated) {
         return res.status(404).json({ message: "Client not found" });
       }

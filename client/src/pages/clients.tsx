@@ -120,15 +120,15 @@ function normalizeCountryCode(country: string | null): string {
 
 interface Client {
   id: string;
-  type: string;
+  entityType: "individual" | "company";
   firstName: string | null;
   lastName: string | null;
-  companyName: string | null;
+  company: string | null;
   email: string | null;
   phone: string | null;
   mobilePhone: string | null;
-  addressLine1: string | null;
-  addressLine2: string | null;
+  streetAddress: string | null;
+  streetAddress2: string | null;
   city: string | null;
   state: string | null;
   postalCode: string | null;
@@ -264,15 +264,15 @@ export default function Clients() {
     if (client) {
       setEditingClient(client);
       form.reset({
-        type: client.type as "individual" | "company",
+        type: (client.entityType || "individual") as "individual" | "company",
         firstName: client.firstName || "",
         lastName: client.lastName || "",
-        companyName: client.companyName || "",
+        companyName: client.company || "",
         email: client.email || "",
         phone: stripDialCode(client.phone || ""),
         mobilePhone: stripDialCode(client.mobilePhone || ""),
-        addressLine1: client.addressLine1 || "",
-        addressLine2: client.addressLine2 || "",
+        addressLine1: client.streetAddress || "",
+        addressLine2: client.streetAddress2 || "",
         city: client.city || "",
         state: client.state || "",
         postalCode: client.postalCode || "",
@@ -291,6 +291,10 @@ export default function Clients() {
       ...data,
       phone: data.phone ? formatPhoneWithCountryCode(data.phone, data.country || "AU") : "",
       mobilePhone: data.mobilePhone ? formatPhoneWithCountryCode(data.mobilePhone, data.country || "AU") : "",
+      streetAddress: data.addressLine1 || null,
+      streetAddress2: data.addressLine2 || null,
+      entityType: data.type,
+      company: data.companyName || null,
     };
     if (editingClient) {
       updateMutation.mutate({ id: editingClient.id, data: formattedData });
@@ -300,8 +304,8 @@ export default function Clients() {
   };
 
   const getClientDisplayName = (client: Client) => {
-    if (client.type === "company") {
-      return client.companyName || "Unnamed Company";
+    if (client.entityType === "company") {
+      return client.company || "Unnamed Company";
     }
     const parts = [client.firstName, client.lastName].filter(Boolean);
     return parts.length > 0 ? parts.join(" ") : "Unnamed Client";
@@ -309,7 +313,7 @@ export default function Clients() {
 
   const getClientAddress = (client: Client) => {
     const parts = [
-      client.addressLine1,
+      client.streetAddress,
       client.city,
       client.state,
       client.postalCode,
@@ -402,7 +406,7 @@ export default function Clients() {
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
-                          {client.type === "company" ? (
+                          {client.entityType === "company" ? (
                             <Building2 className="h-5 w-5 text-muted-foreground" />
                           ) : (
                             <UserCircle className="h-5 w-5 text-muted-foreground" />
@@ -413,7 +417,7 @@ export default function Clients() {
                             {getClientDisplayName(client)}
                           </div>
                           <Badge variant="secondary" className="mt-1">
-                            {client.type === "company" ? "Company" : "Individual"}
+                            {client.entityType === "company" ? "Company" : "Individual"}
                           </Badge>
                         </div>
                       </div>
