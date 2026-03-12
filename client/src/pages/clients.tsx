@@ -169,6 +169,23 @@ const clientFormSchema = z.object({
 
 type ClientFormValues = z.infer<typeof clientFormSchema>;
 
+const defaultClientFormValues: ClientFormValues = {
+  type: "individual",
+  firstName: "",
+  lastName: "",
+  companyName: "",
+  email: "",
+  phone: "",
+  mobilePhone: "",
+  addressLine1: "",
+  addressLine2: "",
+  city: "",
+  state: "",
+  postalCode: "",
+  country: "AU",
+  notes: "",
+};
+
 export default function Clients() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
@@ -181,22 +198,7 @@ export default function Clients() {
 
   const form = useForm<ClientFormValues>({
     resolver: zodResolver(clientFormSchema),
-    defaultValues: {
-      type: "individual",
-      firstName: "",
-      lastName: "",
-      companyName: "",
-      email: "",
-      phone: "",
-      mobilePhone: "",
-      addressLine1: "",
-      addressLine2: "",
-      city: "",
-      state: "",
-      postalCode: "",
-      country: "AU",
-      notes: "",
-    },
+    defaultValues: defaultClientFormValues,
   });
 
   const createMutation = useMutation({
@@ -281,7 +283,7 @@ export default function Clients() {
       });
     } else {
       setEditingClient(null);
-      form.reset();
+      form.reset(defaultClientFormValues);
     }
     setIsDialogOpen(true);
   };
@@ -506,7 +508,16 @@ export default function Clients() {
         </CardContent>
       </Card>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog
+        open={isDialogOpen}
+        onOpenChange={(open) => {
+          setIsDialogOpen(open);
+          if (!open) {
+            setEditingClient(null);
+            form.reset(defaultClientFormValues);
+          }
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>
