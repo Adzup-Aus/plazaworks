@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -44,6 +44,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+} from "@/components/ui/pagination";
+import {
   UserCircle,
   Plus,
   Mail,
@@ -54,6 +59,8 @@ import {
   Pencil,
   Trash2,
   Search,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -120,15 +127,15 @@ function normalizeCountryCode(country: string | null): string {
 
 interface Client {
   id: string;
-  type: string;
+  entityType: "individual" | "company";
   firstName: string | null;
   lastName: string | null;
-  companyName: string | null;
+  company: string | null;
   email: string | null;
   phone: string | null;
   mobilePhone: string | null;
-  addressLine1: string | null;
-  addressLine2: string | null;
+  streetAddress: string | null;
+  streetAddress2: string | null;
   city: string | null;
   state: string | null;
   postalCode: string | null;
@@ -169,34 +176,83 @@ const clientFormSchema = z.object({
 
 type ClientFormValues = z.infer<typeof clientFormSchema>;
 
+const defaultClientFormValues: ClientFormValues = {
+  type: "individual",
+  firstName: "",
+  lastName: "",
+  companyName: "",
+  email: "",
+  phone: "",
+  mobilePhone: "",
+  addressLine1: "",
+  addressLine2: "",
+  city: "",
+  state: "",
+  postalCode: "",
+  country: "AU",
+  notes: "",
+};
+
+const CLIENTS_PAGE_SIZE = 10;
+
+interface ClientsResponse {
+  items: Client[];
+  total: number;
+  page: number;
+  limit: number;
+  nextPageUrl: string | null;
+}
+
+const SEARCH_DEBOUNCE_MS = 300;
+
 export default function Clients() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [page, setPage] = useState(1);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
 
-  const { data: clients, isLoading } = useQuery<Client[]>({
-    queryKey: ["/api/clients"],
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+      debounceRef.current = null;
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [searchQuery]);
+
+  const clientsQueryParams = new URLSearchParams({
+    page: String(page),
+    limit: String(CLIENTS_PAGE_SIZE),
   });
+  if (debouncedSearch) {
+    clientsQueryParams.set("search", debouncedSearch);
+  }
+  const clientsQueryKey = `/api/clients?${clientsQueryParams.toString()}`;
+
+  const { data: clientsData, isLoading } = useQuery<ClientsResponse>({
+    queryKey: [clientsQueryKey],
+    // For new page/search, start with previous data so the table doesn't reset
+    placeholderData: (previousData) => previousData,
+  });
+
+  const clients = clientsData?.items ?? [];
+  const totalClients = clientsData?.total ?? 0;
+  const hasNextPage = !!clientsData?.nextPageUrl;
+  const totalPages = totalClients > 0 ? Math.ceil(totalClients / CLIENTS_PAGE_SIZE) : 1;
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setPage(1);
+  };
 
   const form = useForm<ClientFormValues>({
     resolver: zodResolver(clientFormSchema),
-    defaultValues: {
-      type: "individual",
-      firstName: "",
-      lastName: "",
-      companyName: "",
-      email: "",
-      phone: "",
-      mobilePhone: "",
-      addressLine1: "",
-      addressLine2: "",
-      city: "",
-      state: "",
-      postalCode: "",
-      country: "AU",
-      notes: "",
-    },
+    defaultValues: defaultClientFormValues,
   });
 
   const createMutation = useMutation({
@@ -204,7 +260,7 @@ export default function Clients() {
       return apiRequest("POST", "/api/clients", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0] ?? "").startsWith("/api/clients") });
       toast({ title: "Client created successfully" });
       setIsDialogOpen(false);
       form.reset();
@@ -219,7 +275,7 @@ export default function Clients() {
       return apiRequest("PATCH", `/api/clients/${id}`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0] ?? "").startsWith("/api/clients") });
       toast({ title: "Client updated successfully" });
       setIsDialogOpen(false);
       setEditingClient(null);
@@ -235,7 +291,7 @@ export default function Clients() {
       return apiRequest("DELETE", `/api/clients/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0] ?? "").startsWith("/api/clients") });
       toast({ title: "Client deleted successfully" });
     },
     onError: () => {
@@ -248,7 +304,7 @@ export default function Clients() {
       return apiRequest("POST", `/api/clients/${id}/portal-access`, { enabled });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0] ?? "").startsWith("/api/clients") });
       toast({ title: "Portal access updated" });
     },
     onError: (error: any) => {
@@ -264,15 +320,15 @@ export default function Clients() {
     if (client) {
       setEditingClient(client);
       form.reset({
-        type: client.type as "individual" | "company",
+        type: (client.entityType || "individual") as "individual" | "company",
         firstName: client.firstName || "",
         lastName: client.lastName || "",
-        companyName: client.companyName || "",
+        companyName: client.company || "",
         email: client.email || "",
         phone: stripDialCode(client.phone || ""),
         mobilePhone: stripDialCode(client.mobilePhone || ""),
-        addressLine1: client.addressLine1 || "",
-        addressLine2: client.addressLine2 || "",
+        addressLine1: client.streetAddress || "",
+        addressLine2: client.streetAddress2 || "",
         city: client.city || "",
         state: client.state || "",
         postalCode: client.postalCode || "",
@@ -281,7 +337,7 @@ export default function Clients() {
       });
     } else {
       setEditingClient(null);
-      form.reset();
+      form.reset(defaultClientFormValues);
     }
     setIsDialogOpen(true);
   };
@@ -291,6 +347,10 @@ export default function Clients() {
       ...data,
       phone: data.phone ? formatPhoneWithCountryCode(data.phone, data.country || "AU") : "",
       mobilePhone: data.mobilePhone ? formatPhoneWithCountryCode(data.mobilePhone, data.country || "AU") : "",
+      streetAddress: data.addressLine1 || null,
+      streetAddress2: data.addressLine2 || null,
+      entityType: data.type,
+      company: data.companyName || null,
     };
     if (editingClient) {
       updateMutation.mutate({ id: editingClient.id, data: formattedData });
@@ -300,8 +360,8 @@ export default function Clients() {
   };
 
   const getClientDisplayName = (client: Client) => {
-    if (client.type === "company") {
-      return client.companyName || "Unnamed Company";
+    if (client.entityType === "company") {
+      return client.company || "Unnamed Company";
     }
     const parts = [client.firstName, client.lastName].filter(Boolean);
     return parts.length > 0 ? parts.join(" ") : "Unnamed Client";
@@ -309,7 +369,7 @@ export default function Clients() {
 
   const getClientAddress = (client: Client) => {
     const parts = [
-      client.addressLine1,
+      client.streetAddress,
       client.city,
       client.state,
       client.postalCode,
@@ -317,18 +377,11 @@ export default function Clients() {
     return parts.length > 0 ? parts.join(", ") : null;
   };
 
-  const filteredClients = clients?.filter((client) => {
-    if (!searchQuery) return true;
-    const searchLower = searchQuery.toLowerCase();
-    const name = getClientDisplayName(client).toLowerCase();
-    const email = (client.email || "").toLowerCase();
-    const phone = (client.phone || "").toLowerCase();
-    return name.includes(searchLower) || email.includes(searchLower) || phone.includes(searchLower);
-  }) || [];
-
   const clientType = form.watch("type");
 
-  if (isLoading) {
+  const isInitialLoading = isLoading && !clientsData;
+
+  if (isInitialLoading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between gap-4">
@@ -370,14 +423,14 @@ export default function Clients() {
             <Input
               placeholder="Search clients..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               className="pl-9"
               data-testid="input-search-clients"
             />
           </div>
         </CardHeader>
         <CardContent>
-          {filteredClients.length === 0 ? (
+          {clients.length === 0 ? (
             <div className="py-12 text-center">
               <UserCircle className="mx-auto h-12 w-12 text-muted-foreground/50" />
               <h3 className="mt-4 text-lg font-medium">No clients found</h3>
@@ -397,12 +450,12 @@ export default function Clients() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredClients.map((client) => (
+                {clients.map((client) => (
                   <TableRow key={client.id} data-testid={`row-client-${client.id}`}>
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
-                          {client.type === "company" ? (
+                          {client.entityType === "company" ? (
                             <Building2 className="h-5 w-5 text-muted-foreground" />
                           ) : (
                             <UserCircle className="h-5 w-5 text-muted-foreground" />
@@ -413,7 +466,7 @@ export default function Clients() {
                             {getClientDisplayName(client)}
                           </div>
                           <Badge variant="secondary" className="mt-1">
-                            {client.type === "company" ? "Company" : "Individual"}
+                            {client.entityType === "company" ? "Company" : "Individual"}
                           </Badge>
                         </div>
                       </div>
@@ -499,10 +552,79 @@ export default function Clients() {
               </TableBody>
             </Table>
           )}
+          {totalClients > 0 && (
+            <div className="flex flex-col gap-4 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-muted-foreground">
+                Showing {(page - 1) * CLIENTS_PAGE_SIZE + 1}–{Math.min(page * CLIENTS_PAGE_SIZE, totalClients)} of {totalClients}
+              </p>
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <Button
+                      variant="ghost"
+                      size="default"
+                      className="gap-1 pl-2.5"
+                      onClick={() => page > 1 && setPage((p) => p - 1)}
+                      disabled={page <= 1}
+                      aria-label="Go to previous page"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Previous
+                    </Button>
+                  </PaginationItem>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+                    .map((p, i, arr) => (
+                      <Fragment key={p}>
+                        {i > 0 && arr[i - 1] !== p - 1 && (
+                          <PaginationItem>
+                            <span className="flex h-9 w-9 items-center justify-center">…</span>
+                          </PaginationItem>
+                        )}
+                        <PaginationItem>
+                          <Button
+                            variant={page === p ? "outline" : "ghost"}
+                            size="icon"
+                            className="h-9 w-9"
+                            onClick={() => setPage(p)}
+                            aria-current={page === p ? "page" : undefined}
+                            aria-label={`Page ${p}`}
+                          >
+                            {p}
+                          </Button>
+                        </PaginationItem>
+                      </Fragment>
+                    ))}
+                  <PaginationItem>
+                    <Button
+                      variant="ghost"
+                      size="default"
+                      className="gap-1 pr-2.5"
+                      onClick={() => hasNextPage && setPage((p) => p + 1)}
+                      disabled={!hasNextPage}
+                      aria-label="Go to next page"
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog
+        open={isDialogOpen}
+        onOpenChange={(open) => {
+          setIsDialogOpen(open);
+          if (!open) {
+            setEditingClient(null);
+            form.reset(defaultClientFormValues);
+          }
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>

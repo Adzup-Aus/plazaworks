@@ -202,7 +202,7 @@ import {
   normalizePermissions,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, lte, lt, sql, inArray, isNull, or } from "drizzle-orm";
+import { eq, desc, and, gte, lte, lt, sql, inArray, isNull, or, ilike } from "drizzle-orm";
 import crypto from "crypto";
 import { reserveNextNumber } from "./services/numberingService";
 import { createPaymentLink, stripeEnabled } from "./services/stripeService";
@@ -530,6 +530,7 @@ export interface IStorage {
 
   // Client operations
   getClients(): Promise<Client[]>;
+  getClientsPaginated(options: { limit: number; offset: number; search?: string }): Promise<{ items: Client[]; total: number }>;
   getClient(id: string): Promise<Client | undefined>;
   getClientByEmail(email: string): Promise<Client | undefined>;
   createClient(client: InsertClient): Promise<Client>;
@@ -3531,6 +3532,33 @@ export class DatabaseStorage implements IStorage {
   async getClients(): Promise<Client[]> {
     return db.select().from(clients)
       .orderBy(clients.lastName, clients.firstName);
+  }
+
+  async getClientsPaginated(options: { limit: number; offset: number; search?: string }): Promise<{ items: Client[]; total: number }> {
+    const { limit, offset, search } = options;
+    const searchTerm = search?.trim();
+    const searchCondition = searchTerm
+      ? or(
+          ilike(clients.firstName, `%${searchTerm}%`),
+          ilike(clients.lastName, `%${searchTerm}%`),
+          ilike(clients.company, `%${searchTerm}%`),
+          ilike(clients.email, `%${searchTerm}%`),
+          ilike(clients.phone, `%${searchTerm}%`),
+          ilike(clients.mobilePhone, `%${searchTerm}%`)
+        )
+      : undefined;
+    const itemsQuery = db.select()
+      .from(clients)
+      .orderBy(clients.lastName, clients.firstName)
+      .limit(limit)
+      .offset(offset);
+    const countQuery = db.select({ count: sql<number>`count(*)::int` }).from(clients);
+    const [items, countResult] = await Promise.all([
+      searchCondition ? itemsQuery.where(searchCondition) : itemsQuery,
+      searchCondition ? countQuery.where(searchCondition) : countQuery,
+    ]);
+    const total = countResult[0]?.count ?? 0;
+    return { items, total };
   }
 
   async getClient(id: string): Promise<Client | undefined> {
