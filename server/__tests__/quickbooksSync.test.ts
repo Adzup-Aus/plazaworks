@@ -127,4 +127,42 @@ describe.runIf(hasDb)("QuickBooks sync service", () => {
     expect(mapping).toBeDefined();
     expect(mapping?.quickbooks_invoice_id).toBe("qb-inv-123");
   });
+
+  it("T017: proactiveRefreshQuickBooksToken refreshes token and does not clear connection on transient error", async () => {
+    const { storage: storageMod } = await import("../storage");
+    const { encrypt: encryptFn } = await import("../lib/encrypt");
+    const { proactiveRefreshQuickBooksToken } = await import("../services/quickbooksSync");
+    const storageLocal = storageMod;
+
+    // Seed a connection with an access/refresh token and an expiry in the near future
+    await storageLocal.upsertQuickBooksConnection({
+      realm_id: "test-realm-proactive",
+      encrypted_client_id: encryptFn("test-client-id"),
+      encrypted_client_secret: encryptFn("test-client-secret"),
+      encrypted_access_token: encryptFn("about-to-expire-token"),
+      encrypted_refresh_token: encryptFn("refresh-token"),
+      token_expires_at: new Date(Date.now() + 5 * 60 * 1000),
+      enabled_at: new Date(),
+    });
+
+    // First run: should refresh successfully using the mocked refreshAccessToken above.
+    await proactiveRefreshQuickBooksToken();
+    const afterSuccess = await storageLocal.getQuickBooksConnection();
+    expect(afterSuccess?.encrypted_access_token).not.toBeNull();
+    expect(afterSuccess?.encrypted_refresh_token).not.toBeNull();
+
+    // Next, simulate a transient error by having refreshAccessToken reject once.
+    const quickbooksClient = await import("../services/quickbooksClient");
+    const originalRefresh = quickbooksClient.refreshAccessToken;
+    (quickbooksClient.refreshAccessToken as unknown as ReturnType<typeof vi.fn>) = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("ECONNRESET: transient network error"))
+      .mockImplementation(originalRefresh as never);
+
+    await proactiveRefreshQuickBooksToken();
+    const afterTransient = await storageLocal.getQuickBooksConnection();
+    // Connection should still be present; transient error should not clear credentials.
+    expect(afterTransient?.encrypted_client_id).not.toBeNull();
+    expect(afterTransient?.encrypted_client_secret).not.toBeNull();
+  });
 });

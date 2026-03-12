@@ -19,6 +19,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-16
 - Dual auth: Bearer token + session cookie support (008-integrations-center)
 - TypeScript 5.x (existing) + Express (existing), Drizzle ORM (existing), QuickBooks Online API (OAuth 2.0 + REST) (009-quickbooks-integration)
 - PostgreSQL via Drizzle; new tables for QuickBooks connection and sync mapping (invoice ↔ QuickBooks ID) (009-quickbooks-integration)
+- Node.js / TypeScript (existing backend and client stack) + Express, TanStack Query, React 18, QuickBooks OAuth client (`intuit-oauth`), Drizzle ORM (011-quickbooks-integration-expiry)
+- PostgreSQL via Drizzle, using existing `quickbooks_connections` and related tables re-exported from `@shared/schema` (011-quickbooks-integration-expiry)
 
 - TypeScript 5.6 + Express, React 18, Vite, Drizzle ORM, TanStack Query, Zod, bcrypt, Resend (email) (001-admin-invite-users)
 
@@ -38,9 +40,9 @@ npm test && npm run lint
 TypeScript 5.6: Follow standard conventions
 
 ## Recent Changes
+- 011-quickbooks-integration-expiry: Added Node.js / TypeScript (existing backend and client stack) + Express, TanStack Query, React 18, QuickBooks OAuth client (`intuit-oauth`), Drizzle ORM
 - 009-quickbooks-integration: Added TypeScript 5.x (existing) + Express (existing), Drizzle ORM (existing), QuickBooks Online API (OAuth 2.0 + REST)
 - 008-integrations-center: Added TypeScript 5.x (aligned with project)
-- 007-invite-account-setup: Added TypeScript 5.x + Express, React 18, Vite, Drizzle ORM, TanStack Query, Zod, bcrypt, Resend (email); existing upload (S3/GCS) if used elsewhere
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -101,10 +101,12 @@ if (!process.env.VITEST) {
         void (async () => {
           try {
             const { proactiveRefreshQuickBooksToken } = await import("./services/quickbooksSync");
+            // On startup and every 12 hours, proactively refresh the QuickBooks access token
+            // so the integration stays connected even when no sync traffic is happening.
             await proactiveRefreshQuickBooksToken();
             setInterval(proactiveRefreshQuickBooksToken, 12 * 60 * 60 * 1000);
           } catch (_) {
-            // no QuickBooks connection or refresh failed; interval will retry
+            // No QuickBooks connection or refresh failed; the next interval run will retry.
           }
         })();
       },

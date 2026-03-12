@@ -66,6 +66,18 @@ describe.runIf(hasDb)("API QuickBooks", () => {
     expect(typeof res.body.connected).toBe("boolean");
   });
 
+  it("GET /api/quickbooks/status returns 401 when unauthenticated", async () => {
+    const res = await request(app).get("/api/quickbooks/status");
+    expect(res.status).toBe(401);
+  });
+
+  it("GET /api/quickbooks/status returns enabled flag when authenticated", async () => {
+    const res = await request(app).get("/api/quickbooks/status").set("Cookie", authCookie);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("enabled");
+    expect(typeof res.body.enabled).toBe("boolean");
+  });
+
   it("PUT /api/quickbooks/connection saves credentials and returns oauthStartUrl", async () => {
     const res = await request(app)
       .put("/api/quickbooks/connection")
@@ -104,5 +116,24 @@ describe.runIf(hasDb)("API QuickBooks", () => {
       .set("Cookie", authCookie);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
+  });
+
+  it("POST /api/quickbooks/disconnect clears connection so /connection reports not connected", async () => {
+    // Ensure credentials are saved so we start from a configured state.
+    await request(app)
+      .put("/api/quickbooks/connection")
+      .set("Cookie", authCookie)
+      .send({
+        clientId: "test-client-id",
+        clientSecret: "test-client-secret",
+      });
+
+    const disconnectRes = await request(app).post("/api/quickbooks/disconnect").set("Cookie", authCookie);
+    expect(disconnectRes.status).toBe(200);
+
+    const statusRes = await request(app).get("/api/quickbooks/connection").set("Cookie", authCookie);
+    expect(statusRes.status).toBe(200);
+    expect(statusRes.body).toHaveProperty("configured");
+    expect(statusRes.body).toHaveProperty("connected", false);
   });
 });

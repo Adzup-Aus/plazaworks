@@ -1,0 +1,20 @@
+openapi: 3.0.0
+info:
+  title: QuickBooks Proactive Token Refresh
+  version: 1.0.0
+paths:
+  /api/quickbooks/refresh-token:
+    post:
+      summary: Proactively refresh QuickBooks access token
+      description: >
+        Triggers a proactive refresh of the QuickBooks access token when
+        credentials are configured and sync is enabled. Intended for admin use
+        and for scheduled jobs; no request body.
+      responses:
+        "200":
+          description: Refresh triggered successfully
+        "401":
+          description: Unauthorized (admin only)
+        "500":
+          description: Failed to refresh token
+
