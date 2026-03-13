@@ -117,17 +117,54 @@ interface InviteUserDialogProps {
 }
 
 const InviteUserDialog = memo(function InviteUserDialog({ open, onOpenChange, roles }: InviteUserDialogProps) {
+  const [inviteActiveTab, setInviteActiveTab] = useState("roles");
   const [email, setEmail] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [roleId, setRoleId] = useState<string | undefined>("");
+  const [inviteRoles, setInviteRoles] = useState<string[]>([]);
+  const [inviteEmploymentType, setInviteEmploymentType] = useState<string>("permanent");
   const [permissions, setPermissions] = useState<string[]>([]);
+  const [inviteSalaryType, setInviteSalaryType] = useState<string>("hourly");
+  const [inviteSalaryAmount, setInviteSalaryAmount] = useState<string>("");
+  const [inviteOvertimeMultiplier, setInviteOvertimeMultiplier] = useState<string>("1.5");
+  const [inviteOvertimeThreshold, setInviteOvertimeThreshold] = useState<string>("38");
+  const [inviteEmailSignature, setInviteEmailSignature] = useState<string>("");
+  const [inviteTimezone, setInviteTimezone] = useState<string>("Australia/Sydney");
+  const [inviteLunchBreakMinutes, setInviteLunchBreakMinutes] = useState<string>("30");
+  const [inviteLunchBreakPaid, setInviteLunchBreakPaid] = useState<boolean>(false);
+  const [inviteWorkingHours, setInviteWorkingHours] = useState<{
+    dayOfWeek: number;
+    isWorkingDay: boolean;
+    startTime: string;
+    endTime: string;
+  }[]>(
+    DAYS_OF_WEEK.map((_, i) => ({
+      dayOfWeek: i,
+      isWorkingDay: i >= 1 && i <= 5,
+      startTime: "07:00",
+      endTime: "15:30",
+    }))
+  );
   const [profileImageUrl, setProfileImageUrl] = useState("");
   const [profileFile, setProfileFile] = useState<File | null>(null);
   const [profilePreview, setProfilePreview] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  const toggleInviteRole = useCallback((roleName: string) => {
+    setInviteRoles((prev) =>
+      prev.includes(roleName) ? prev.filter((r) => r !== roleName) : [...prev, roleName]
+    );
+  }, []);
+
+  const updateInviteWorkingDay = useCallback((dayIndex: number, field: "isWorkingDay" | "startTime" | "endTime", value: string | boolean) => {
+    setInviteWorkingHours((prev) =>
+      prev.map((day) =>
+        day.dayOfWeek === dayIndex ? { ...day, [field]: value } : day
+      )
+    );
+  }, []);
 
   const handleProfileFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -162,14 +199,7 @@ const InviteUserDialog = memo(function InviteUserDialog({ open, onOpenChange, ro
   }, []);
 
   const createInviteMutation = useMutation({
-    mutationFn: async (payload: {
-      email: string;
-      firstName: string;
-      lastName: string;
-      roleId?: string;
-      permissions?: string[];
-      profileImageUrl?: string;
-    }) => {
+    mutationFn: async (payload: Record<string, unknown>) => {
       const res = await apiRequest("POST", "/api/invites", payload);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -182,8 +212,25 @@ const InviteUserDialog = memo(function InviteUserDialog({ open, onOpenChange, ro
       setEmail("");
       setFirstName("");
       setLastName("");
-      setRoleId(undefined);
+      setInviteRoles([]);
+      setInviteEmploymentType("permanent");
       setPermissions([]);
+      setInviteSalaryType("hourly");
+      setInviteSalaryAmount("");
+      setInviteOvertimeMultiplier("1.5");
+      setInviteOvertimeThreshold("38");
+      setInviteEmailSignature("");
+      setInviteTimezone("Australia/Sydney");
+      setInviteLunchBreakMinutes("30");
+      setInviteLunchBreakPaid(false);
+      setInviteWorkingHours(
+        DAYS_OF_WEEK.map((_, i) => ({
+          dayOfWeek: i,
+          isWorkingDay: i >= 1 && i <= 5,
+          startTime: "07:00",
+          endTime: "15:30",
+        }))
+      );
       setProfileImageUrl("");
       removeProfileImage();
       onOpenChange(false);
@@ -244,15 +291,57 @@ const InviteUserDialog = memo(function InviteUserDialog({ open, onOpenChange, ro
       }
       setUploadingPhoto(false);
     }
+    const roleIds = inviteRoles
+      .map((rn) => roles.find((r) => r.name === rn)?.id)
+      .filter((id): id is string => !!id);
+
     createInviteMutation.mutate({
       email: emailTrim,
       firstName: firstNameTrim,
       lastName: lastNameTrim,
-      roleId: roleId || undefined,
+      roleId: roleIds[0] ?? undefined,
+      roleIds: roleIds.length > 0 ? roleIds : undefined,
       permissions: permissions.length > 0 ? permissions : undefined,
       profileImageUrl: finalProfileUrl,
+      employmentType: inviteEmploymentType,
+      salaryType: inviteSalaryType,
+      salaryAmount: inviteSalaryAmount || undefined,
+      overtimeRateMultiplier: inviteOvertimeMultiplier,
+      overtimeThresholdHours: inviteOvertimeThreshold,
+      emailSignature: inviteEmailSignature || undefined,
+      timezone: inviteTimezone,
+      lunchBreakMinutes: parseInt(inviteLunchBreakMinutes, 10) || 30,
+      lunchBreakPaid: inviteLunchBreakPaid,
+      workingHours: inviteWorkingHours.map((d) => ({
+        dayOfWeek: d.dayOfWeek,
+        isWorkingDay: d.isWorkingDay,
+        startTime: d.startTime,
+        endTime: d.endTime,
+      })),
     });
-  }, [email, firstName, lastName, roleId, permissions, profileFile, profileImageUrl, createInviteMutation, toast]);
+  }, [
+    email,
+    firstName,
+    lastName,
+    inviteRoles,
+    inviteEmploymentType,
+    inviteSalaryType,
+    inviteSalaryAmount,
+    inviteOvertimeMultiplier,
+    inviteOvertimeThreshold,
+    inviteEmailSignature,
+    inviteTimezone,
+    inviteLunchBreakMinutes,
+    inviteLunchBreakPaid,
+    inviteWorkingHours,
+    permissions,
+    profileFile,
+    profileImageUrl,
+    roles,
+    createInviteMutation,
+    toast,
+  ]);
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -269,8 +358,8 @@ const InviteUserDialog = memo(function InviteUserDialog({ open, onOpenChange, ro
             Add a new team member. They will receive an email to set their password. You set their name, role, permissions, and optional profile photo here.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid gap-3 grid-cols-1">
             <div className="space-y-2">
               <Label htmlFor="invite-email">Email</Label>
               <Input
@@ -302,40 +391,20 @@ const InviteUserDialog = memo(function InviteUserDialog({ open, onOpenChange, ro
                 disabled={createInviteMutation.isPending}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="invite-role">Role</Label>
-              <Select
-                value={roleId}
-                onValueChange={setRoleId}
-                disabled={createInviteMutation.isPending || !roles.length}
-              >
-                <SelectTrigger id="invite-role">
-                  <SelectValue placeholder={roles.length ? "Select role" : "No roles"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {roles.map((role) => (
-                    <SelectItem key={role.id} value={role.id}>
-                      {role.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           </div>
           <div className="space-y-2">
-            <Label>Optional: Profile photo</Label>
-            <p className="text-xs text-muted-foreground">Upload a photo (JPEG, PNG, WebP, max 5MB) or paste an image URL below.</p>
+            <Label>Profile photo (optional)</Label>
             <div className="flex items-center gap-4">
-              <div className="h-20 w-20 rounded-full overflow-hidden border-2 border-dashed border-muted-foreground/25 bg-muted/50 flex items-center justify-center shrink-0">
+              <div className="h-16 w-16 rounded-full overflow-hidden border-2 border-dashed border-muted-foreground/25 bg-muted/50 flex items-center justify-center shrink-0">
                 {profilePreview ? (
                   <img src={profilePreview} alt="Preview" className="h-full w-full object-cover" />
                 ) : profileImageUrl ? (
                   <img src={profileImageUrl} alt="URL preview" className="h-full w-full object-cover" />
                 ) : (
-                  <Upload className="h-8 w-8 text-muted-foreground" />
+                  <Upload className="h-6 w-6 text-muted-foreground" />
                 )}
               </div>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1 flex-1 min-w-0">
                 <input
                   ref={fileInputRef}
                   id="invite-profile-file"
@@ -345,47 +414,301 @@ const InviteUserDialog = memo(function InviteUserDialog({ open, onOpenChange, ro
                   onChange={handleProfileFileChange}
                   disabled={createInviteMutation.isPending || uploadingPhoto}
                 />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => document.getElementById("invite-profile-file")?.click()}
-                  disabled={createInviteMutation.isPending || uploadingPhoto}
-                >
-                  {uploadingPhoto ? <Loader2 className="h-4 w-4 animate-spin" /> : "Upload photo"}
-                </Button>
-                {(profilePreview || profileFile) && (
-                  <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={removeProfileImage}>
-                    <X className="h-4 w-4" />
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => document.getElementById("invite-profile-file")?.click()}
+                    disabled={createInviteMutation.isPending || uploadingPhoto}
+                  >
+                    {uploadingPhoto ? <Loader2 className="h-3 w-3 animate-spin" /> : "Upload"}
                   </Button>
-                )}
+                  {(profilePreview || profileFile) && (
+                    <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={removeProfileImage}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+                <Input
+                  id="invite-profile-url"
+                  type="url"
+                  placeholder="Or paste image URL"
+                  value={profileImageUrl}
+                  onChange={(e) => {
+                    setProfileImageUrl(e.target.value);
+                    if (e.target.value) {
+                      setProfileFile(null);
+                      setProfilePreview((p) => { if (p) URL.revokeObjectURL(p); return null; });
+                    }
+                  }}
+                  disabled={createInviteMutation.isPending || !!profileFile}
+                  className="h-8 text-sm"
+                />
               </div>
             </div>
-            <Input
-              id="invite-profile-url"
-              type="url"
-              placeholder="Or paste image URL (optional)"
-              value={profileImageUrl}
-              onChange={(e) => {
-                setProfileImageUrl(e.target.value);
-                if (e.target.value) {
-                  setProfileFile(null);
-                  setProfilePreview((p) => { if (p) URL.revokeObjectURL(p); return null; });
-                }
-              }}
-              disabled={createInviteMutation.isPending || !!profileFile}
-              className="mt-2"
-            />
           </div>
-          <div className="space-y-2">
-            <Label>Permissions (optional)</Label>
-            <p className="text-xs text-muted-foreground">Grant specific permissions in addition to role. All permissions listed below.</p>
-            <InvitePermissionsGrid
-              permissions={userPermissions}
-              selected={permissions}
-              onToggle={togglePermission}
-            />
-          </div>
+
+          <Tabs value={inviteActiveTab} onValueChange={setInviteActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="roles">
+                <Shield className="h-4 w-4 mr-2" />
+                Roles
+              </TabsTrigger>
+              <TabsTrigger value="compensation">
+                <DollarSign className="h-4 w-4 mr-2" />
+                Pay
+              </TabsTrigger>
+              <TabsTrigger value="contact">
+                <Mail className="h-4 w-4 mr-2" />
+                Contact
+              </TabsTrigger>
+              <TabsTrigger value="hours">
+                <Clock className="h-4 w-4 mr-2" />
+                Hours
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="roles" className="space-y-6 py-4">
+              <div className="space-y-3">
+                <Label className="text-base font-semibold">Roles</Label>
+                <p className="text-sm text-muted-foreground">Select one or more roles</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {roles.map((role) => (
+                    <div key={role.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`invite-role-${role.id}`}
+                        checked={inviteRoles.includes(role.name)}
+                        onCheckedChange={() => toggleInviteRole(role.name)}
+                      />
+                      <Label htmlFor={`invite-role-${role.id}`} className="text-sm font-normal cursor-pointer">
+                        {role.name}
+                      </Label>
+                    </div>
+                  ))}
+                  {roles.length === 0 && (
+                    <p className="col-span-2 text-sm text-muted-foreground">No roles defined. Create roles in Settings.</p>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-3">
+                <Label className="text-base font-semibold">Employment Type</Label>
+                <Select value={inviteEmploymentType} onValueChange={setInviteEmploymentType}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employmentTypes.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type.charAt(0).toUpperCase() + type.slice(1)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-3">
+                <Label className="text-base font-semibold">Permissions</Label>
+                <p className="text-sm text-muted-foreground">Grant specific permissions in addition to roles</p>
+                <InvitePermissionsGrid
+                  permissions={userPermissions}
+                  selected={permissions}
+                  onToggle={togglePermission}
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="compensation" className="space-y-6 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Salary Type</Label>
+                  <Select value={inviteSalaryType} onValueChange={setInviteSalaryType}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="hourly">Hourly</SelectItem>
+                      <SelectItem value="annual">Annual</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">
+                    {inviteSalaryType === "hourly" ? "Hourly Rate ($)" : "Annual Salary ($)"}
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={inviteSalaryAmount}
+                    onChange={(e) => setInviteSalaryAmount(e.target.value)}
+                    placeholder={inviteSalaryType === "hourly" ? "45.00" : "85000"}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Overtime Multiplier</Label>
+                  <Select value={inviteOvertimeMultiplier} onValueChange={setInviteOvertimeMultiplier}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1.25">1.25x</SelectItem>
+                      <SelectItem value="1.5">1.5x</SelectItem>
+                      <SelectItem value="1.75">1.75x</SelectItem>
+                      <SelectItem value="2">2x</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Overtime Threshold (hrs/week)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="60"
+                    value={inviteOvertimeThreshold}
+                    onChange={(e) => setInviteOvertimeThreshold(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="rounded-md bg-muted/50 p-4">
+                <p className="text-sm text-muted-foreground">
+                  {inviteSalaryType === "hourly" && inviteSalaryAmount ? (
+                    <>
+                      Effective rate: <span className="font-medium">${parseFloat(inviteSalaryAmount).toFixed(2)}/hr</span>
+                      {" | "}
+                      Overtime: <span className="font-medium">
+                        ${(parseFloat(inviteSalaryAmount) * parseFloat(inviteOvertimeMultiplier)).toFixed(2)}/hr
+                      </span>
+                    </>
+                  ) : inviteSalaryType === "annual" && inviteSalaryAmount ? (
+                    <>
+                      Annual: <span className="font-medium">${parseInt(inviteSalaryAmount).toLocaleString()}</span>
+                      {" | "}
+                      Approx hourly: <span className="font-medium">
+                        ${(parseFloat(inviteSalaryAmount) / 2080).toFixed(2)}/hr
+                      </span>
+                    </>
+                  ) : (
+                    "Enter salary amount to see calculations"
+                  )}
+                </p>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="contact" className="space-y-6 py-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Timezone</Label>
+                <Select value={inviteTimezone} onValueChange={setInviteTimezone}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</SelectItem>
+                    <SelectItem value="Australia/Melbourne">Australia/Melbourne (AEST/AEDT)</SelectItem>
+                    <SelectItem value="Australia/Brisbane">Australia/Brisbane (AEST)</SelectItem>
+                    <SelectItem value="Australia/Perth">Australia/Perth (AWST)</SelectItem>
+                    <SelectItem value="Australia/Adelaide">Australia/Adelaide (ACST/ACDT)</SelectItem>
+                    <SelectItem value="Pacific/Auckland">New Zealand (NZST/NZDT)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Email Signature</Label>
+                <Input
+                  value={inviteEmailSignature}
+                  onChange={(e) => setInviteEmailSignature(e.target.value)}
+                  placeholder="e.g., Best regards, John"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Lunch Break</Label>
+                  <Select value={inviteLunchBreakMinutes} onValueChange={setInviteLunchBreakMinutes}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">No lunch break</SelectItem>
+                      <SelectItem value="15">15 minutes</SelectItem>
+                      <SelectItem value="30">30 minutes</SelectItem>
+                      <SelectItem value="45">45 minutes</SelectItem>
+                      <SelectItem value="60">60 minutes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Lunch Paid</Label>
+                  <div className="flex items-center space-x-2 pt-2">
+                    <Switch
+                      checked={inviteLunchBreakPaid}
+                      onCheckedChange={setInviteLunchBreakPaid}
+                    />
+                    <Label className="text-sm font-normal">{inviteLunchBreakPaid ? "Paid" : "Unpaid"}</Label>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="hours" className="space-y-4 py-4">
+              <p className="text-sm text-muted-foreground">Configure working hours for each day</p>
+              <div className="space-y-3">
+                {inviteWorkingHours.map((day) => (
+                  <div
+                    key={day.dayOfWeek}
+                    className={`flex items-center gap-4 p-3 rounded-md border ${!day.isWorkingDay ? "bg-muted/50 opacity-70" : ""}`}
+                  >
+                    <div className="w-28">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          checked={day.isWorkingDay}
+                          onCheckedChange={(c) => updateInviteWorkingDay(day.dayOfWeek, "isWorkingDay", !!c)}
+                        />
+                        <Label className="text-sm font-normal">{DAYS_OF_WEEK[day.dayOfWeek]}</Label>
+                      </div>
+                    </div>
+                    {day.isWorkingDay && (
+                      <>
+                        <Input
+                          type="time"
+                          value={day.startTime}
+                          onChange={(e) => updateInviteWorkingDay(day.dayOfWeek, "startTime", e.target.value)}
+                          className="w-28"
+                        />
+                        <span className="text-muted-foreground">to</span>
+                        <Input
+                          type="time"
+                          value={day.endTime}
+                          onChange={(e) => updateInviteWorkingDay(day.dayOfWeek, "endTime", e.target.value)}
+                          className="w-28"
+                        />
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-md bg-muted/50 p-4">
+                <p className="text-sm text-muted-foreground">
+                  Weekly:{" "}
+                  <span className="font-medium">
+                    {inviteWorkingHours
+                      .filter((d) => d.isWorkingDay)
+                      .reduce((sum, day) => {
+                        const [sh, sm] = day.startTime.split(":").map(Number);
+                        const [eh, em] = day.endTime.split(":").map(Number);
+                        return sum + (eh * 60 + em - (sh * 60 + sm)) / 60;
+                      }, 0)
+                      .toFixed(1)}
+                    h
+                  </span>
+                  {" | "}
+                  Working days:{" "}
+                  <span className="font-medium">{inviteWorkingHours.filter((d) => d.isWorkingDay).length}</span>
+                </p>
+              </div>
+            </TabsContent>
+          </Tabs>
+
           <DialogFooter>
             <Button
               type="button"
@@ -395,7 +718,7 @@ const InviteUserDialog = memo(function InviteUserDialog({ open, onOpenChange, ro
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={createInviteMutation.isPending || uploadingPhoto || !roles.length}>
+            <Button type="submit" disabled={createInviteMutation.isPending || uploadingPhoto}>
               {createInviteMutation.isPending || uploadingPhoto ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
@@ -664,166 +987,166 @@ export default function Team() {
         </TabsList>
 
         <TabsContent value="members" className="space-y-4 mt-4">
-      <Card className="overflow-visible">
-        <CardHeader className="pb-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search team members..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-                data-testid="input-search-team"
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Select value={roleFilter} onValueChange={setRoleFilter}>
-                <SelectTrigger className="w-[160px]" data-testid="select-role-filter">
-                  <Filter className="mr-2 h-4 w-4" />
-                  <SelectValue placeholder="Role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Roles</SelectItem>
-                  {(rolesList || []).map((role) => (
-                    <SelectItem key={role.id} value={role.name}>
-                      {role.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={employmentFilter} onValueChange={setEmploymentFilter}>
-                <SelectTrigger className="w-[160px]" data-testid="select-employment-filter">
-                  <Briefcase className="mr-2 h-4 w-4" />
-                  <SelectValue placeholder="Employment" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  {employmentTypes.map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {type.charAt(0).toUpperCase() + type.slice(1)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-4">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="flex items-center gap-4">
-                  <Skeleton className="h-10 w-10 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-1/4" />
-                    <Skeleton className="h-3 w-1/3" />
-                  </div>
-                  <Skeleton className="h-6 w-20" />
+          <Card className="overflow-visible">
+            <CardHeader className="pb-4">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search team members..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9"
+                    data-testid="input-search-team"
+                  />
                 </div>
-              ))}
-            </div>
-          ) : filteredStaff.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Users className="h-12 w-12 text-muted-foreground/50" />
-              <h3 className="mt-4 text-lg font-medium">No team members found</h3>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {searchQuery || roleFilter !== "all" || employmentFilter !== "all"
-                  ? "Try adjusting your search or filters"
-                  : "Team members will appear here when they log in"}
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Member</TableHead>
-                    <TableHead>Roles</TableHead>
-                    <TableHead>Employment</TableHead>
-                    <TableHead>Permissions</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredStaff.map((staff) => (
-                    <TableRow key={staff.id} data-testid={`staff-row-${staff.id}`}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <UserAvatar user={staff.user} size="md" />
-                          <div>
-                            <p className="font-medium">
-                              {staff.user?.firstName} {staff.user?.lastName}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {staff.user?.email}
-                            </p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {(staff.roles || []).slice(0, 2).map((role) => (
-                            <Badge
-                              key={role}
-                              variant="secondary"
-                              className={getRoleColor(role)}
-                            >
-                              {formatRoleDisplay(role)}
-                            </Badge>
-                          ))}
-                          {(staff.roles || []).length > 2 && (
-                            <Badge variant="outline">
-                              +{(staff.roles || []).length - 2}
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">
-                          {staff.employmentType?.charAt(0).toUpperCase() +
-                            (staff.employmentType?.slice(1) || "")}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Shield className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm text-muted-foreground">
-                            {(staff.permissions || []).length} permissions
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="secondary"
-                          className={
-                            staff.isActive
-                              ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                              : "bg-red-500/10 text-red-600 dark:text-red-400"
-                          }
-                        >
-                          {staff.isActive ? "Active" : "Inactive"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => openEditDialog(staff)}
-                          data-testid={`button-edit-staff-${staff.id}`}
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select value={roleFilter} onValueChange={setRoleFilter}>
+                    <SelectTrigger className="w-[160px]" data-testid="select-role-filter">
+                      <Filter className="mr-2 h-4 w-4" />
+                      <SelectValue placeholder="Role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Roles</SelectItem>
+                      {(rolesList || []).map((role) => (
+                        <SelectItem key={role.id} value={role.name}>
+                          {role.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={employmentFilter} onValueChange={setEmploymentFilter}>
+                    <SelectTrigger className="w-[160px]" data-testid="select-employment-filter">
+                      <Briefcase className="mr-2 h-4 w-4" />
+                      <SelectValue placeholder="Employment" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Types</SelectItem>
+                      {employmentTypes.map((type) => (
+                        <SelectItem key={type} value={type}>
+                          {type.charAt(0).toUpperCase() + type.slice(1)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="space-y-4">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="flex items-center gap-4">
+                      <Skeleton className="h-10 w-10 rounded-full" />
+                      <div className="flex-1 space-y-2">
+                        <Skeleton className="h-4 w-1/4" />
+                        <Skeleton className="h-3 w-1/3" />
+                      </div>
+                      <Skeleton className="h-6 w-20" />
+                    </div>
                   ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                </div>
+              ) : filteredStaff.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Users className="h-12 w-12 text-muted-foreground/50" />
+                  <h3 className="mt-4 text-lg font-medium">No team members found</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {searchQuery || roleFilter !== "all" || employmentFilter !== "all"
+                      ? "Try adjusting your search or filters"
+                      : "Team members will appear here when they log in"}
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Member</TableHead>
+                        <TableHead>Roles</TableHead>
+                        <TableHead>Employment</TableHead>
+                        <TableHead>Permissions</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredStaff.map((staff) => (
+                        <TableRow key={staff.id} data-testid={`staff-row-${staff.id}`}>
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <UserAvatar user={staff.user} size="md" />
+                              <div>
+                                <p className="font-medium">
+                                  {staff.user?.firstName} {staff.user?.lastName}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {staff.user?.email}
+                                </p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {(staff.roles || []).slice(0, 2).map((role) => (
+                                <Badge
+                                  key={role}
+                                  variant="secondary"
+                                  className={getRoleColor(role)}
+                                >
+                                  {formatRoleDisplay(role)}
+                                </Badge>
+                              ))}
+                              {(staff.roles || []).length > 2 && (
+                                <Badge variant="outline">
+                                  +{(staff.roles || []).length - 2}
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {staff.employmentType?.charAt(0).toUpperCase() +
+                                (staff.employmentType?.slice(1) || "")}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Shield className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-sm text-muted-foreground">
+                                {(staff.permissions || []).length} permissions
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="secondary"
+                              className={
+                                staff.isActive
+                                  ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                                  : "bg-red-500/10 text-red-600 dark:text-red-400"
+                              }
+                            >
+                              {staff.isActive ? "Active" : "Inactive"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEditDialog(staff)}
+                              data-testid={`button-edit-staff-${staff.id}`}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="invites" className="space-y-4 mt-4">

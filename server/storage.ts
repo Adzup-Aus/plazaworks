@@ -482,6 +482,7 @@ export interface IStorage {
       firstName?: string | null;
       lastName?: string | null;
       profileImageUrl?: string | null;
+      staffConfig?: Record<string, unknown> | null;
     }
   ): Promise<UserInvite | undefined>;
 
@@ -3179,6 +3180,7 @@ export class DatabaseStorage implements IStorage {
       firstName?: string | null;
       lastName?: string | null;
       profileImageUrl?: string | null;
+      staffConfig?: Record<string, unknown> | null;
     }
   ): Promise<UserInvite | undefined> {
     return this.authRepo.updateUserInvite(id, data);

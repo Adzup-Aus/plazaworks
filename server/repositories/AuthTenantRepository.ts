@@ -149,6 +149,7 @@ export class AuthTenantRepository {
       firstName?: string | null;
       lastName?: string | null;
       profileImageUrl?: string | null;
+      staffConfig?: Record<string, unknown> | null;
     }
   ): Promise<UserInvite | undefined> {
     const updateData: Record<string, unknown> = {
@@ -166,6 +167,9 @@ export class AuthTenantRepository {
     }
     if (data.profileImageUrl !== undefined) {
       updateData.profileImageUrl = data.profileImageUrl;
+    }
+    if (data.staffConfig !== undefined) {
+      updateData.staffConfig = data.staffConfig;
     }
     const [updated] = await this.db
       .update(userInvites)

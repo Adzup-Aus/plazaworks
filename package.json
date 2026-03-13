@@ -14,6 +14,7 @@
     "db:migrate:object-key": "tsx scripts/run-migration.ts migrations/004_add_object_key_columns.sql",
     "db:migrate:quotes-version": "tsx scripts/run-migration.ts migrations/007_quotes_version_revision.sql",
     "db:migrate:user-invites-admin-fields": "tsx scripts/run-migration.ts migrations/008_user_invites_admin_fields.sql",
+    "db:migrate:user-invites-staff-config": "tsx scripts/run-migration.ts migrations/009_user_invites_staff_config.sql",
     "seed:admin": "tsx scripts/seed-admin.ts",
     "seed:activities": "tsx scripts/seed-default-activities.ts",
     "seed:roles": "tsx scripts/seed-roles.ts",

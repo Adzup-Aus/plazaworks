@@ -37,6 +37,7 @@ export const userInvites = pgTable(
     firstName: varchar("first_name", { length: 255 }),
     lastName: varchar("last_name", { length: 255 }),
     profileImageUrl: varchar("profile_image_url", { length: 1024 }),
+    staffConfig: jsonb("staff_config"),
     expiresAt: timestamp("expires_at").notNull(),
     usedAt: timestamp("used_at"),
     createdAt: timestamp("created_at").defaultNow(),
