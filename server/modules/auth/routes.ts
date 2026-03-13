@@ -617,12 +617,22 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(403).json({ message: "Only an admin can invite users" });
       }
 
-      const { email, roleId: rawRoleId } = req.body;
+      const { email, roleId: rawRoleId, firstName: rawFirstName, lastName: rawLastName, profileImageUrl: rawProfileImageUrl, permissions: rawPermissions } = req.body;
       const normalized = typeof email === "string" ? email.trim().toLowerCase() : "";
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!normalized || !emailRegex.test(normalized)) {
         return res.status(400).json({ message: "Invalid email" });
       }
+
+      const rawFirst = typeof rawFirstName === "string" ? rawFirstName.trim() : "";
+      const rawLast = typeof rawLastName === "string" ? rawLastName.trim() : "";
+      if (!rawFirst || !rawLast) {
+        return res.status(400).json({ message: "First name and last name are required" });
+      }
+      const maxLen = 100;
+      const firstName = rawFirst.length > maxLen ? rawFirst.slice(0, maxLen) : rawFirst;
+      const lastName = rawLast.length > maxLen ? rawLast.slice(0, maxLen) : rawLast;
+      const profileImageUrl = typeof rawProfileImageUrl === "string" ? rawProfileImageUrl.trim() || null : null;
 
       const roleId = typeof rawRoleId === "string" ? rawRoleId.trim() : undefined;
       let role: Role | undefined;
@@ -641,6 +651,9 @@ export function registerAuthRoutes(app: Express): void {
       const token = crypto.randomBytes(32).toString("hex");
       const expiresAt = new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 
+      const invitePerms = Array.isArray(rawPermissions) ? rawPermissions.filter((p: unknown) => typeof p === "string") : [];
+      const validPerms = invitePerms.filter((p: string) => userPermissions.includes(p as any));
+
       const existingInvites = await storage.listUserInvites({ status: "pending" });
       const pendingForEmail = existingInvites.find((i) => i.email === normalized);
       let invite;
@@ -649,6 +662,9 @@ export function registerAuthRoutes(app: Express): void {
           token,
           expiresAt,
           roleId: role ? role.id : pendingForEmail.roleId ?? null,
+          firstName,
+          lastName,
+          profileImageUrl,
         });
         invite = updated ?? pendingForEmail;
       } else {
@@ -658,6 +674,10 @@ export function registerAuthRoutes(app: Express): void {
           invitedBy: userId,
           roleId: role ? role.id : null,
           expiresAt,
+          firstName,
+          lastName,
+          profileImageUrl,
+          permissions: validPerms.length > 0 ? validPerms : ([] as string[]),
         });
       }
 
@@ -673,9 +693,13 @@ export function registerAuthRoutes(app: Express): void {
         message: "Invitation sent",
         inviteId: invite.id,
         email: normalized,
+        firstName: invite.firstName ?? undefined,
+        lastName: invite.lastName ?? undefined,
+        profileImageUrl: invite.profileImageUrl ?? undefined,
         expiresAt: invite.expiresAt.toISOString(),
         roleId: invite.roleId,
         roleName: role ? role.name : undefined,
+        permissions: Array.isArray(invite.permissions) ? invite.permissions : [],
       });
     } catch (err: any) {
       console.error("Error creating invite:", err);
@@ -697,8 +721,12 @@ export function registerAuthRoutes(app: Express): void {
         invites: invites.map((i) => ({
           id: i.id,
           email: i.email,
+          firstName: i.firstName ?? null,
+          lastName: i.lastName ?? null,
+          profileImageUrl: i.profileImageUrl ?? null,
           roleId: i.roleId,
           roleName: i.roleId ? roleMap.get(i.roleId)?.name : undefined,
+          permissions: Array.isArray(i.permissions) ? i.permissions : [],
           expiresAt: i.expiresAt,
           usedAt: i.usedAt,
           createdAt: i.createdAt,
@@ -779,7 +807,13 @@ export function registerAuthRoutes(app: Express): void {
       if (new Date() > invite.expiresAt) {
         return res.status(400).json({ message: "Invalid or expired invite link", valid: false });
       }
-      return res.json({ email: invite.email, valid: true, inviteId: invite.id });
+      return res.json({
+        email: invite.email,
+        valid: true,
+        inviteId: invite.id,
+        firstName: invite.firstName ?? undefined,
+        lastName: invite.lastName ?? undefined,
+      });
     } catch (err: any) {
       console.error("Error validating invite:", err);
       res.status(500).json({ message: "Invalid or expired invite link", valid: false });
@@ -788,7 +822,7 @@ export function registerAuthRoutes(app: Express): void {
 
   app.post("/api/invites/accept", async (req: any, res) => {
     try {
-      const { token, password, firstName, lastName, profileImageUrl } = req.body;
+      const { token, password } = req.body;
       const t = typeof token === "string" ? token.trim() : "";
       if (!t) {
         return res.status(400).json({ message: "Invalid or expired invite link" });
@@ -796,15 +830,6 @@ export function registerAuthRoutes(app: Express): void {
       if (!password || typeof password !== "string" || password.length < 8) {
         return res.status(400).json({ message: "Password must be at least 8 characters" });
       }
-      const rawFirst = typeof firstName === "string" ? firstName.trim() : "";
-      const rawLast = typeof lastName === "string" ? lastName.trim() : "";
-      if (!rawFirst || !rawLast) {
-        return res.status(400).json({ message: "First name and last name are required" });
-      }
-      const maxLen = 100;
-      const first = rawFirst.length > maxLen ? rawFirst.slice(0, maxLen) : rawFirst;
-      const last = rawLast.length > maxLen ? rawLast.slice(0, maxLen) : rawLast;
-      const profileUrl = typeof profileImageUrl === "string" ? profileImageUrl.trim() || null : null;
 
       const invite = await storage.getUserInviteByToken(t);
       if (!invite) {
@@ -821,6 +846,10 @@ export function registerAuthRoutes(app: Express): void {
       if (existingIdentity) {
         return res.status(400).json({ message: "Email is already registered" });
       }
+
+      const first = (invite.firstName ?? "").trim().slice(0, 100) || null;
+      const last = (invite.lastName ?? "").trim().slice(0, 100) || null;
+      const profileUrl = (invite.profileImageUrl ?? "").trim() || null;
 
       const bcrypt = await import("bcrypt");
       const passwordHash = await bcrypt.hash(password, 12);

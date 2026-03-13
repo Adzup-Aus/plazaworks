@@ -46,7 +46,11 @@ describe.runIf(hasDb)("API auth", () => {
   });
 
   it("POST /api/invites unauthenticated returns 401", async () => {
-    const res = await request(app).post("/api/invites").send({ email: "new@example.com" });
+    const res = await request(app).post("/api/invites").send({
+      email: "new@example.com",
+      firstName: "New",
+      lastName: "User",
+    });
     expect(res.status).toBe(401);
   });
 
@@ -55,7 +59,7 @@ describe.runIf(hasDb)("API auth", () => {
     expect(res.status).toBe(401);
   });
 
-  it("POST /api/invites as admin with valid email returns 201", async () => {
+  it("POST /api/invites as admin with valid email and name returns 201", async () => {
     const loginRes = await request(app).post("/api/auth/login").send({
       email: "cliffcoelho@gmail.com",
       password: "secret1234",
@@ -63,11 +67,29 @@ describe.runIf(hasDb)("API auth", () => {
     const cookie = loginRes.headers["set-cookie"];
     expect(loginRes.status).toBe(200);
     const email = `invite-${Date.now()}@example.com`;
-    const res = await request(app).post("/api/invites").set("Cookie", cookie).send({ email });
+    const res = await request(app).post("/api/invites").set("Cookie", cookie).send({
+      email,
+      firstName: "Invited",
+      lastName: "User",
+    });
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty("inviteId");
     expect(res.body.email).toBe(email);
+    expect(res.body.firstName).toBe("Invited");
+    expect(res.body.lastName).toBe("User");
     expect(res.body).toHaveProperty("expiresAt");
+  });
+
+  it("POST /api/invites without firstName or lastName returns 400", async () => {
+    const loginRes = await request(app).post("/api/auth/login").send({
+      email: "cliffcoelho@gmail.com",
+      password: "secret1234",
+    });
+    const cookie = loginRes.headers["set-cookie"];
+    const email = `invite-missing-name-${Date.now()}@example.com`;
+    const res = await request(app).post("/api/invites").set("Cookie", cookie).send({ email });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/first name|last name/i);
   });
 
   it("POST /api/invites with already registered email returns 400", async () => {
@@ -76,12 +98,16 @@ describe.runIf(hasDb)("API auth", () => {
       password: "secret1234",
     });
     const cookie = loginRes.headers["set-cookie"];
-    const res = await request(app).post("/api/invites").set("Cookie", cookie).send({ email: "cliffcoelho@gmail.com" });
+    const res = await request(app).post("/api/invites").set("Cookie", cookie).send({
+      email: "cliffcoelho@gmail.com",
+      firstName: "Cliff",
+      lastName: "Coelho",
+    });
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/already registered/i);
   });
 
-  it("GET /api/invites as admin returns 200 with array", async () => {
+  it("GET /api/invites as admin returns 200 with array including firstName, lastName", async () => {
     const loginRes = await request(app).post("/api/auth/login").send({
       email: "cliffcoelho@gmail.com",
       password: "secret1234",
@@ -90,6 +116,10 @@ describe.runIf(hasDb)("API auth", () => {
     const res = await request(app).get("/api/invites").set("Cookie", cookie);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.invites)).toBe(true);
+    res.body.invites.forEach((inv: { firstName?: string; lastName?: string }) => {
+      expect(inv).toHaveProperty("firstName");
+      expect(inv).toHaveProperty("lastName");
+    });
   });
 
   it("GET /api/invites/accept without token returns 400", async () => {
@@ -119,11 +149,15 @@ describe.runIf(hasDb)("API auth", () => {
       token,
       invitedBy: adminUserId,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      firstName: "Accept",
+      lastName: "Tester",
     });
     const getRes = await request(app).get(`/api/invites/accept?token=${encodeURIComponent(token)}`);
     expect(getRes.status).toBe(200);
     expect(getRes.body.valid).toBe(true);
     expect(getRes.body.email).toBe(email);
+    expect(getRes.body.firstName).toBe("Accept");
+    expect(getRes.body.lastName).toBe("Tester");
     const postRes = await request(app).post("/api/invites/accept").send({
       token,
       password: "newpassword123",
@@ -131,6 +165,40 @@ describe.runIf(hasDb)("API auth", () => {
     expect(postRes.status).toBe(201);
     expect(postRes.body).toHaveProperty("userId");
     expect(postRes.body.message).toMatch(/sign in/i);
+  });
+
+  it("POST /api/invites/accept creates user with firstName and lastName from invite (password only)", async () => {
+    const { storage } = await import("../storage");
+    const loginRes = await request(app).post("/api/auth/login").send({
+      email: "cliffcoelho@gmail.com",
+      password: "secret1234",
+    });
+    expect(loginRes.status).toBe(200);
+    const email = `accept-name-${Date.now()}@example.com`;
+    const token = "test-name-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+    await storage.createUserInvite({
+      email,
+      token,
+      invitedBy: loginRes.body.userId,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      firstName: "From",
+      lastName: "Invite",
+    });
+    const postRes = await request(app).post("/api/invites/accept").send({
+      token,
+      password: "pass12345",
+    });
+    expect(postRes.status).toBe(201);
+    const signInRes = await request(app).post("/api/auth/login").send({
+      email,
+      password: "pass12345",
+    });
+    expect(signInRes.status).toBe(200);
+    const cookie = signInRes.headers["set-cookie"];
+    const userRes = await request(app).get("/api/auth/user").set("Cookie", cookie);
+    expect(userRes.status).toBe(200);
+    expect(userRes.body.firstName).toBe("From");
+    expect(userRes.body.lastName).toBe("Invite");
   });
 
   it("after accept invite, login with new email and password succeeds", async () => {

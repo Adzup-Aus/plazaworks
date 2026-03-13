@@ -78,11 +78,6 @@ const adminNavItems = [
     url: "/admin",
     icon: Shield,
   },
-  {
-    title: "Invite users",
-    url: "/admin/invites",
-    icon: UserPlus,
-  },
 ];
 
 export function AppSidebar() {
