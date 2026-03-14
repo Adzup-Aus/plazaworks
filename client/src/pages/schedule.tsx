@@ -69,7 +69,10 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Loader2, ChevronDown, X } from "lucide-react";
-import type { Activity, Job, ScheduleEntry, StaffProfile } from "@shared/schema";
+import { UserAvatar } from "@/components/user-avatar";
+import type { Activity, Job, ScheduleEntry, StaffProfile, User as UserType } from "@shared/schema";
+
+type StaffWithUser = StaffProfile & { user?: UserType };
 
 const ACTIVITY_ICON_MAP: Record<string, LucideIcon> = {
   briefcase: Briefcase,
@@ -581,8 +584,21 @@ export default function Schedule() {
 
   const getStaffName = (staffId: string) => {
     if (!staffProfiles) return "Unassigned";
-    const staff = staffProfiles.find((s) => s.id === staffId);
-    return staff?.userId || "Unassigned";
+    const staff = staffProfiles.find((s) => s.id === staffId) as StaffWithUser | undefined;
+    if (!staff) return "Unassigned";
+    if (staff.user) {
+      const name = [staff.user.firstName, staff.user.lastName].filter(Boolean).join(" ").trim();
+      return name || staff.user.email || staff.userId || "Unassigned";
+    }
+    return staff.userId || "Unassigned";
+  };
+
+  const getStaffDisplayName = (staff: StaffWithUser) => {
+    if (staff.user) {
+      const name = [staff.user.firstName, staff.user.lastName].filter(Boolean).join(" ").trim();
+      return name || staff.user.email || staff.userId || staff.id.slice(0, 8);
+    }
+    return staff.userId?.split("@")[0] || staff.id.slice(0, 8);
   };
 
   const isLoading =
@@ -782,7 +798,7 @@ export default function Schedule() {
                     ) : selectedStaffFilter.length === 1 ? (
                       (() => {
                         const s = staffList.find((x) => x.id === selectedStaffFilter[0]);
-                        return s ? (s.userId || s.id.slice(0, 8)) : "Filter by staff...";
+                        return s ? getStaffDisplayName(s as StaffWithUser) : "Filter by staff...";
                       })()
                     ) : (
                       `${selectedStaffFilter.length} staff selected`
@@ -825,10 +841,11 @@ export default function Schedule() {
                               }}
                             >
                               <div className="flex items-center gap-2 flex-1">
-                                <div className="h-4 w-4 flex items-center justify-center">
+                                <div className="h-4 w-4 flex items-center justify-center shrink-0">
                                   {isSelected && <Check className="h-4 w-4" />}
                                 </div>
-                                <span className="truncate">{staff.userId || staff.id.slice(0, 8)}</span>
+                                <UserAvatar user={(staff as StaffWithUser).user} size="sm" className="shrink-0" />
+                                <span className="truncate">{getStaffDisplayName(staff as StaffWithUser)}</span>
                               </div>
                             </CommandItem>
                           );
@@ -923,10 +940,11 @@ export default function Schedule() {
                       {filteredStaffList.map((staff) => (
                         <React.Fragment key={staff.id}>
                           <div
-                            className="border-b border-r bg-muted/50 p-2 text-sm font-medium sticky left-0 z-10 break-words whitespace-normal"
-                            title={staff.userId}
+                            className="border-b border-r bg-muted/50 p-2 text-sm font-medium sticky left-0 z-10 break-words whitespace-normal flex items-center gap-2"
+                            title={getStaffDisplayName(staff as StaffWithUser)}
                           >
-                            {staff.userId?.split("@")[0] || staff.id.slice(0, 8)}
+                            <UserAvatar user={(staff as StaffWithUser).user} size="sm" />
+                            <span className="truncate">{getStaffDisplayName(staff as StaffWithUser)}</span>
                           </div>
                           {HOURS.map((hour) => {
                             const cellStartSlot = hour * SLOTS_PER_HOUR;
@@ -1193,11 +1211,12 @@ export default function Schedule() {
                         return (
                           <React.Fragment key={staff.id}>
                             <div
-                              className={`sticky left-0 z-10 border-b border-r border-border/50 px-3 py-2 text-sm font-medium break-words ${rowBg} shrink-0 w-[140px]`}
+                              className={`sticky left-0 z-10 border-b border-r border-border/50 px-3 py-2 text-sm font-medium break-words ${rowBg} shrink-0 w-[140px] flex items-center gap-2`}
                               style={{ minHeight: WEEK_VIEW_ROW_HEIGHT_PX }}
-                              title={staff.userId}
+                              title={getStaffDisplayName(staff as StaffWithUser)}
                             >
-                              {staff.userId?.split("@")[0] || staff.id.slice(0, 8)}
+                              <UserAvatar user={(staff as StaffWithUser).user} size="sm" />
+                              <span className="truncate">{getStaffDisplayName(staff as StaffWithUser)}</span>
                             </div>
                             {weekDates.map((day) => {
                               const dayEntries = (weekScheduleEntries || []).filter(
@@ -1485,7 +1504,12 @@ export default function Schedule() {
                       {selectedSlotStaffId
                         ? (() => {
                           const s = staffList.find((x) => x.id === selectedSlotStaffId);
-                          return s ? (s.userId?.split("@")[0] || s.id.slice(0, 8)) : "Select staff...";
+                          return s ? (
+                            <span className="flex items-center gap-2">
+                              <UserAvatar user={(s as StaffWithUser).user} size="sm" className="shrink-0" />
+                              {getStaffDisplayName(s as StaffWithUser)}
+                            </span>
+                          ) : "Select staff...";
                         })()
                         : "Select staff..."}
                       <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -1506,7 +1530,10 @@ export default function Schedule() {
                                 setStaffComboboxOpen(false);
                               }}
                             >
-                              {staff.userId?.split("@")[0] || staff.id.slice(0, 8)}
+                              <div className="flex items-center gap-2">
+                                <UserAvatar user={(staff as StaffWithUser).user} size="sm" className="shrink-0" />
+                                <span className="truncate">{getStaffDisplayName(staff as StaffWithUser)}</span>
+                              </div>
                             </CommandItem>
                           ))}
                         </CommandGroup>
