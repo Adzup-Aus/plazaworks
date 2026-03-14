@@ -2485,10 +2485,17 @@ export default function JobForm() {
   const [newClientPhone, setNewClientPhone] = useState("");
   const [newClientAddress, setNewClientAddress] = useState("");
 
-  const { data: clientsList } = useQuery<Client[]>({
+  const { data: clientsResponse } = useQuery<{
+    items: Client[];
+    total: number;
+    page: number;
+    limit: number;
+    nextPageUrl: string | null;
+  }>({
     queryKey: ["/api/clients"],
     enabled: canViewClients,
   });
+  const clientsList = clientsResponse?.items ?? [];
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -2757,7 +2764,7 @@ export default function JobForm() {
                               return;
                             }
                             field.onChange(value);
-                            const client = (clientsList || []).find((c) => c.id === value);
+                            const client = clientsList.find((c) => c.id === value);
                             if (client) {
                               form.setValue("clientName", `${client.firstName} ${client.lastName}`);
                               form.setValue("clientEmail", client.email || "");
@@ -2774,7 +2781,7 @@ export default function JobForm() {
                           </FormControl>
                           <SelectContent>
                             <SelectItem value="_manual">Manual entry</SelectItem>
-                            {(clientsList || []).map((c) => (
+                            {clientsList.map((c) => (
                               <SelectItem key={c.id} value={c.id}>
                                 {c.company ? `${c.company} (${c.firstName} ${c.lastName})` : `${c.firstName} ${c.lastName}`}
                               </SelectItem>

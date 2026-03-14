@@ -78,9 +78,10 @@ export default function QuoteForm() {
     queryKey: ["/api/jobs"],
   });
 
-  const { data: clients } = useQuery<Client[]>({
+  const { data: clientsResponse } = useQuery<{ items: Client[]; total: number; page: number; limit: number; nextPageUrl: string | null }>({
     queryKey: ["/api/clients"],
   });
+  const clients = clientsResponse?.items ?? [];
 
   const form = useForm<QuoteFormValues>({
     resolver: zodResolver(quoteFormSchema),
