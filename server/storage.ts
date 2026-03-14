@@ -476,7 +476,15 @@ export interface IStorage {
   markUserInviteUsed(id: string): Promise<void>;
   updateUserInvite(
     id: string,
-    data: { token: string; expiresAt: Date; roleId?: string | null }
+    data: {
+      token: string;
+      expiresAt: Date;
+      roleId?: string | null;
+      firstName?: string | null;
+      lastName?: string | null;
+      profileImageUrl?: string | null;
+      staffConfig?: Record<string, unknown> | null;
+    }
   ): Promise<UserInvite | undefined>;
 
   // Client operations
@@ -3173,7 +3181,15 @@ export class DatabaseStorage implements IStorage {
 
   async updateUserInvite(
     id: string,
-    data: { token: string; expiresAt: Date; roleId?: string | null }
+    data: {
+      token: string;
+      expiresAt: Date;
+      roleId?: string | null;
+      firstName?: string | null;
+      lastName?: string | null;
+      profileImageUrl?: string | null;
+      staffConfig?: Record<string, unknown> | null;
+    }
   ): Promise<UserInvite | undefined> {
     return this.authRepo.updateUserInvite(id, data);
   }

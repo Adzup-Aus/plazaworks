@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -34,7 +34,6 @@ import Productivity from "@/pages/productivity";
 import Capacity from "@/pages/capacity";
 import KpiDashboard from "@/pages/kpi-dashboard";
 import Admin from "@/pages/admin";
-import Invite from "@/pages/invite";
 import AcceptUserInvite from "@/pages/accept-user-invite";
 import Account from "@/pages/account";
 import Clients from "@/pages/clients";
@@ -94,7 +93,9 @@ function AuthenticatedRouter() {
       <Route path="/roles" component={Roles} />
       <Route path="/settings" component={Settings} />
       <Route path="/admin" component={Admin} />
-      <Route path="/admin/invites" component={Invite} />
+      <Route path="/admin/invites">
+        <Redirect to="/team" />
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );

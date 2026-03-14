@@ -142,7 +142,15 @@ export class AuthTenantRepository {
 
   async updateUserInvite(
     id: string,
-    data: { token: string; expiresAt: Date; roleId?: string | null }
+    data: {
+      token: string;
+      expiresAt: Date;
+      roleId?: string | null;
+      firstName?: string | null;
+      lastName?: string | null;
+      profileImageUrl?: string | null;
+      staffConfig?: Record<string, unknown> | null;
+    }
   ): Promise<UserInvite | undefined> {
     const updateData: Record<string, unknown> = {
       token: data.token,
@@ -150,6 +158,18 @@ export class AuthTenantRepository {
     };
     if (data.roleId !== undefined) {
       updateData.roleId = data.roleId;
+    }
+    if (data.firstName !== undefined) {
+      updateData.firstName = data.firstName;
+    }
+    if (data.lastName !== undefined) {
+      updateData.lastName = data.lastName;
+    }
+    if (data.profileImageUrl !== undefined) {
+      updateData.profileImageUrl = data.profileImageUrl;
+    }
+    if (data.staffConfig !== undefined) {
+      updateData.staffConfig = data.staffConfig;
     }
     const [updated] = await this.db
       .update(userInvites)
