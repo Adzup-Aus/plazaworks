@@ -383,7 +383,91 @@ export default function QuoteWizard() {
         total = subtotal + taxAmount;
       }
 
-      const response = await apiRequest("POST", "/api/quotes", {
+      const milestones = data.milestones.map((m, index) => {
+        const title = `Milestone ${index + 1}`;
+        const itemPrice = useSinglePrice
+          ? (index === data.milestones.length - 1 ? (data.singleTotalPrice || 0) : 0)
+          : (m.price || 0);
+        return {
+          title,
+          description: m.richDescription || null,
+          sequence: index + 1,
+          lineItem: {
+            heading: title,
+            description: title,
+            richDescription: m.richDescription || null,
+            quantity: "1",
+            unitPrice: itemPrice.toFixed(2),
+            amount: itemPrice.toFixed(2),
+            sortOrder: 0,
+          },
+        };
+      });
+
+      let paymentSchedules: Array<{ type: string; name: string; isPercentage?: boolean; percentage?: string; fixedAmount?: string; calculatedAmount?: string; sortOrder: number }> = [];
+      if (data.depositType !== "none") {
+        if (data.depositType === "percentage") {
+          const depositAmount = (total * (data.depositPercentage || 20)) / 100;
+          const remainingAmount = total - depositAmount;
+          paymentSchedules.push({
+            type: "deposit",
+            name: "Deposit",
+            isPercentage: true,
+            percentage: data.depositPercentage?.toString() || "20",
+            calculatedAmount: depositAmount.toFixed(2),
+            sortOrder: 0,
+          });
+          if (data.depositBalanceStrategy === "milestones" && data.milestones.length > 0) {
+            const milestoneCount = data.milestones.length;
+            const baseAmountPerMilestone = Math.floor((remainingAmount * 100) / milestoneCount) / 100;
+            let allocatedTotal = 0;
+            data.milestones.forEach((_, index) => {
+              const milestoneAmount = index === milestoneCount - 1
+                ? Math.round((remainingAmount - allocatedTotal) * 100) / 100
+                : baseAmountPerMilestone;
+              if (index < milestoneCount - 1) allocatedTotal += milestoneAmount;
+              paymentSchedules.push({
+                type: "milestone",
+                name: `Milestone ${index + 1}`,
+                isPercentage: false,
+                fixedAmount: milestoneAmount.toFixed(2),
+                calculatedAmount: milestoneAmount.toFixed(2),
+                sortOrder: index + 1,
+              });
+            });
+          } else {
+            paymentSchedules.push({
+              type: "final",
+              name: "Final Payment",
+              isPercentage: true,
+              percentage: (100 - (data.depositPercentage || 20)).toString(),
+              calculatedAmount: remainingAmount.toFixed(2),
+              sortOrder: 1,
+            });
+          }
+        } else if (data.depositType === "fixed") {
+          paymentSchedules = [
+            { type: "deposit", name: "Deposit", isPercentage: false, fixedAmount: data.depositAmount?.toString() || "0", calculatedAmount: data.depositAmount?.toFixed(2) || "0", sortOrder: 0 },
+            { type: "final", name: "Final Payment", isPercentage: false, fixedAmount: (total - (data.depositAmount || 0)).toFixed(2), calculatedAmount: (total - (data.depositAmount || 0)).toFixed(2), sortOrder: 1 },
+          ];
+        }
+      }
+
+      const customSections = data.customSections?.length
+        ? data.customSections.map((section, index) => ({
+            heading: `Section ${index + 1}`,
+            content: section.content || null,
+            sortOrder: index,
+          }))
+        : undefined;
+
+      const mode = submissionModeRef.current;
+      const options = {
+        status: (mode === "send" || mode === "mark_sent" ? "sent" : "draft") as "draft" | "sent",
+        sendEmail: mode === "send",
+      };
+
+      const response = await apiRequest("POST", "/api/quotes/full", {
         clientId: data.clientId,
         clientName: data.clientName,
         clientEmail: data.clientEmail || null,
@@ -399,138 +483,12 @@ export default function QuoteWizard() {
         total: total.toFixed(2),
         termsOfTradeTemplateId: data.termsOfTradeTemplateId || null,
         termsOfTradeContent: data.termsOfTradeContent || null,
+        milestones,
+        paymentSchedules: paymentSchedules.length > 0 ? paymentSchedules : undefined,
+        customSections,
+        options,
       });
       const newQuote = await response.json();
-
-      for (let milestoneIndex = 0; milestoneIndex < data.milestones.length; milestoneIndex++) {
-        const milestone = data.milestones[milestoneIndex];
-
-        const milestoneTitle = `Milestone ${milestoneIndex + 1}`;
-        const milestoneResponse = await apiRequest("POST", `/api/quotes/${newQuote.id}/milestones`, {
-          title: milestoneTitle,
-          description: milestone.richDescription || null,
-          sequence: milestoneIndex + 1,
-        });
-        const savedMilestone = await milestoneResponse.json();
-
-        const itemPrice = useSinglePrice
-          ? (milestoneIndex === data.milestones.length - 1 ? (data.singleTotalPrice || 0) : 0)
-          : (milestone.price || 0);
-
-        const lineItemPayload: Record<string, unknown> = {
-          quoteMilestoneId: savedMilestone.id,
-          heading: milestoneTitle,
-          description: milestoneTitle,
-          quantity: "1",
-          unitPrice: itemPrice.toFixed(2),
-          amount: itemPrice.toFixed(2),
-          sortOrder: 0,
-        };
-        if (milestone.richDescription) {
-          lineItemPayload.richDescription = milestone.richDescription;
-        }
-        await apiRequest("POST", `/api/quotes/${newQuote.id}/line-items`, lineItemPayload);
-      }
-
-      if (data.depositType !== "none") {
-        const schedules = [];
-
-        if (data.depositType === "percentage") {
-          const depositAmount = (total * (data.depositPercentage || 20)) / 100;
-          const remainingAmount = total - depositAmount;
-
-          schedules.push({
-            type: "deposit",
-            name: "Deposit",
-            isPercentage: true,
-            percentage: data.depositPercentage?.toString() || "20",
-            calculatedAmount: depositAmount.toFixed(2),
-            sortOrder: 0,
-          });
-
-          if (data.depositBalanceStrategy === "milestones" && data.milestones.length > 0) {
-            const milestoneCount = data.milestones.length;
-            const baseAmountPerMilestone = Math.floor((remainingAmount * 100) / milestoneCount) / 100;
-            let allocatedTotal = 0;
-
-            data.milestones.forEach((milestone, index) => {
-              let milestoneAmount: number;
-              if (index === milestoneCount - 1) {
-                milestoneAmount = Math.round((remainingAmount - allocatedTotal) * 100) / 100;
-              } else {
-                milestoneAmount = baseAmountPerMilestone;
-                allocatedTotal += milestoneAmount;
-              }
-
-              schedules.push({
-                type: "milestone",
-                name: `Milestone ${index + 1}`,
-                isPercentage: false,
-                fixedAmount: milestoneAmount.toFixed(2),
-                calculatedAmount: milestoneAmount.toFixed(2),
-                sortOrder: index + 1,
-              });
-            });
-          } else {
-            schedules.push({
-              type: "final",
-              name: "Final Payment",
-              isPercentage: true,
-              percentage: (100 - (data.depositPercentage || 20)).toString(),
-              calculatedAmount: remainingAmount.toFixed(2),
-              sortOrder: 1,
-            });
-          }
-        } else if (data.depositType === "fixed") {
-          schedules.push({
-            type: "deposit",
-            name: "Deposit",
-            isPercentage: false,
-            fixedAmount: data.depositAmount?.toString() || "0",
-            calculatedAmount: data.depositAmount?.toFixed(2) || "0",
-            sortOrder: 0,
-          });
-          schedules.push({
-            type: "final",
-            name: "Final Payment",
-            isPercentage: false,
-            fixedAmount: (total - (data.depositAmount || 0)).toFixed(2),
-            calculatedAmount: (total - (data.depositAmount || 0)).toFixed(2),
-            sortOrder: 1,
-          });
-        }
-
-        for (const schedule of schedules) {
-          await apiRequest("POST", `/api/quotes/${newQuote.id}/payment-schedules`, schedule);
-        }
-      }
-
-      if (data.customSections && data.customSections.length > 0) {
-        for (let sectionIndex = 0; sectionIndex < data.customSections.length; sectionIndex++) {
-          const section = data.customSections[sectionIndex];
-          await apiRequest("POST", `/api/quotes/${newQuote.id}/custom-sections`, {
-            heading: `Section ${sectionIndex + 1}`,
-            content: section.content || null,
-            sortOrder: sectionIndex,
-          });
-        }
-      }
-
-      const mode = submissionModeRef.current;
-      if (mode === "send" || mode === "mark_sent") {
-        await apiRequest("PATCH", `/api/quotes/${newQuote.id}`, {
-          status: "sent",
-        });
-
-        if (mode === "send") {
-          try {
-            await apiRequest("POST", `/api/quotes/${newQuote.id}/send`);
-          } catch (err) {
-            console.log("Email send may not be configured:", err);
-          }
-        }
-      }
-
       return { quote: newQuote, mode };
     },
     onSuccess: (result) => {

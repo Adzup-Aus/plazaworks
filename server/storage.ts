@@ -13,6 +13,7 @@ import {
   type InsertClientAccessToken,
   type Quote,
   type InsertQuote,
+  type InsertFullQuote,
   type Invoice,
   type InsertInvoice,
   type LineItem,
@@ -312,6 +313,7 @@ export interface IStorage {
   getQuotesByStatus(status: string): Promise<Quote[]>;
   getQuotesByClient(clientId: string): Promise<Quote[]>;
   createQuote(quote: InsertQuote): Promise<Quote>;
+  createFullQuote(data: InsertFullQuote, createdById: string): Promise<QuoteWithLineItems>;
   updateQuote(id: string, quote: Partial<InsertQuote>): Promise<Quote | undefined>;
   sendQuote(id: string): Promise<Quote | undefined>;
   acceptQuote(id: string): Promise<Quote | undefined>;
@@ -1248,6 +1250,107 @@ export class DatabaseStorage implements IStorage {
       }
     }
     throw new Error("Failed to create quote: could not generate unique quote number");
+  }
+
+  async createFullQuote(data: InsertFullQuote, createdById: string): Promise<QuoteWithLineItems> {
+    const quoteId = await db.transaction(async (tx) => {
+      const [numRow] = await tx
+        .select({ next: sql<number>`COALESCE(MAX(quote_number::int), 0) + 1` })
+        .from(quotes);
+      const quoteNumber = String(numRow?.next ?? 1).padStart(6, "0");
+      const status = data.options?.status ?? "draft";
+
+      const quotePayload = {
+        clientId: data.clientId,
+        clientName: data.clientName,
+        clientEmail: data.clientEmail ?? null,
+        clientPhone: data.clientPhone ?? null,
+        clientAddress: data.clientAddress,
+        jobType: data.jobType,
+        description: data.description ?? null,
+        validUntil: data.validUntil === "" || data.validUntil == null ? null : data.validUntil,
+        notes: data.notes ?? null,
+        taxRate: data.taxRate ?? "10",
+        subtotal: data.subtotal ?? "0",
+        taxAmount: data.taxAmount ?? "0",
+        total: data.total ?? "0",
+        termsOfTradeTemplateId: data.termsOfTradeTemplateId ?? null,
+        termsOfTradeContent: data.termsOfTradeContent ?? null,
+        quoteNumber,
+        createdById,
+        status,
+      };
+
+      const [created] = await tx.insert(quotes).values(quotePayload as InsertQuote & { quoteNumber: string }).returning();
+      const id = created.id;
+
+      if (data.milestones?.length) {
+        for (let i = 0; i < data.milestones.length; i++) {
+          const m = data.milestones[i];
+          const [milestone] = await tx
+            .insert(quoteMilestones)
+            .values({
+              quoteId: id,
+              title: m.title,
+              description: m.description ?? null,
+              sequence: m.sequence ?? i + 1,
+            })
+            .returning();
+          await tx.insert(lineItems).values({
+            quoteId: id,
+            quoteMilestoneId: milestone.id,
+            heading: m.lineItem.heading ?? null,
+            description: m.lineItem.description,
+            richDescription: m.lineItem.richDescription ?? null,
+            quantity: m.lineItem.quantity ?? "1",
+            unitPrice: m.lineItem.unitPrice,
+            amount: m.lineItem.amount,
+            sortOrder: m.lineItem.sortOrder ?? 0,
+          });
+        }
+      }
+
+      if (data.paymentSchedules?.length) {
+        for (const ps of data.paymentSchedules) {
+          await tx.insert(quotePaymentSchedules).values({
+            quoteId: id,
+            type: ps.type,
+            name: ps.name,
+            isPercentage: ps.isPercentage ?? true,
+            percentage: ps.percentage ?? null,
+            fixedAmount: ps.fixedAmount ?? null,
+            calculatedAmount: ps.calculatedAmount ?? null,
+            dueDaysFromAcceptance: ps.dueDaysFromAcceptance ?? 0,
+            sortOrder: ps.sortOrder ?? 0,
+          });
+        }
+      }
+
+      if (data.customSections?.length) {
+        for (let i = 0; i < data.customSections.length; i++) {
+          const cs = data.customSections[i];
+          await tx.insert(quoteCustomSections).values({
+            quoteId: id,
+            heading: cs.heading,
+            content: cs.content ?? "",
+            sortOrder: cs.sortOrder ?? i,
+          });
+        }
+      }
+
+      if (data.options?.status === "sent") {
+        await tx
+          .update(quotes)
+          .set({ status: "sent", sentAt: new Date(), updatedAt: new Date() })
+          .where(eq(quotes.id, id));
+      }
+
+      return id;
+    });
+
+    const result = await this.getQuoteWithLineItems(quoteId);
+    if (!result) throw new Error("Quote created but could not be retrieved");
+    return result;
   }
 
   async updateQuote(id: string, quote: Partial<InsertQuote>): Promise<Quote | undefined> {

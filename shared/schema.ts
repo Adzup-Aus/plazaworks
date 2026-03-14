@@ -689,6 +689,58 @@ export const insertQuoteCustomSectionSchema = createInsertSchema(quoteCustomSect
   sortOrder: z.number().optional(),
 });
 
+/** Schema for creating a complete quote in one request (base + milestones with line items + payment schedules + custom sections). */
+export const insertFullQuoteSchema = z.object({
+  clientId: z.string().min(1, "Client is required"),
+  clientName: z.string().min(1, "Client name is required"),
+  clientEmail: z.string().nullable().optional(),
+  clientPhone: z.string().nullable().optional(),
+  clientAddress: z.string().min(1, "Address is required"),
+  jobType: z.enum(jobTypes),
+  description: z.string().nullable().optional(),
+  validUntil: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  taxRate: z.string().optional(),
+  subtotal: z.string().optional(),
+  taxAmount: z.string().optional(),
+  total: z.string().optional(),
+  termsOfTradeTemplateId: z.string().nullable().optional(),
+  termsOfTradeContent: z.string().nullable().optional(),
+  milestones: z.array(z.object({
+    title: z.string().min(1),
+    description: z.string().nullable().optional(),
+    sequence: z.number().optional(),
+    lineItem: z.object({
+      heading: z.string().nullable().optional(),
+      description: z.string().min(1, "Description is required"),
+      richDescription: z.string().nullable().optional(),
+      quantity: z.string().optional(),
+      unitPrice: z.string(),
+      amount: z.string(),
+      sortOrder: z.number().optional(),
+    }),
+  })).optional(),
+  paymentSchedules: z.array(z.object({
+    type: z.enum(["deposit", "progress", "final", "milestone"]),
+    name: z.string().min(1, "Payment name is required"),
+    isPercentage: z.boolean().optional(),
+    percentage: z.string().optional(),
+    fixedAmount: z.string().optional(),
+    calculatedAmount: z.string().optional(),
+    dueDaysFromAcceptance: z.number().optional(),
+    sortOrder: z.number().optional(),
+  })).optional(),
+  customSections: z.array(z.object({
+    heading: z.string().min(1),
+    content: z.string().nullable().optional(),
+    sortOrder: z.number().optional(),
+  })).optional(),
+  options: z.object({
+    status: z.enum(["draft", "sent"]).optional(),
+    sendEmail: z.boolean().optional(),
+  }).optional(),
+});
+
 export const insertInvoicePaymentSchema = createInsertSchema(invoicePayments).omit({
   id: true,
   createdAt: true,
@@ -704,6 +756,7 @@ export const insertInvoicePaymentSchema = createInsertSchema(invoicePayments).om
 // Phase 3 Types
 export type Quote = typeof quotes.$inferSelect;
 export type InsertQuote = z.infer<typeof insertQuoteSchema>;
+export type InsertFullQuote = z.infer<typeof insertFullQuoteSchema>;
 
 export type Invoice = typeof invoices.$inferSelect;
 export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
