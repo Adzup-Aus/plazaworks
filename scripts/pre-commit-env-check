@@ -1,0 +1,35 @@
+#!/bin/sh
+# Only allow commit when .env DATABASE_URL is the safe local dev value.
+# Runs only for normal commits (skips merge, cherry-pick, revert).
+# Install: ./scripts/install-pre-commit-env-check.sh
+
+# Skip check for non-normal commits
+[ -f ".git/MERGE_HEAD" ] && exit 0
+[ -f ".git/CHERRY_PICK_HEAD" ] && exit 0
+[ -f ".git/REVERT_HEAD" ] && exit 0
+
+SAFE_URL='postgresql://plazaworks:postgres@localhost:5432/plazaworks'
+ENV_FILE='.env'
+
+if [ ! -f "$ENV_FILE" ]; then
+  echo "pre-commit: $ENV_FILE not found, skipping DATABASE_URL check."
+  exit 0
+fi
+
+# Get DATABASE_URL from .env (last uncommented assignment wins)
+CURRENT_URL=$(grep -E '^\s*DATABASE_URL\s*=' "$ENV_FILE" | tail -1 | sed 's/^[^=]*=\s*//; s/^["'\'']//; s/["'\'']$//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+
+if [ -z "$CURRENT_URL" ]; then
+  echo "pre-commit: DATABASE_URL not set in $ENV_FILE. Commit blocked for safety."
+  exit 1
+fi
+
+if [ "$CURRENT_URL" != "$SAFE_URL" ]; then
+  echo "pre-commit: Commit blocked — DATABASE_URL in .env is not the safe local value."
+  echo "  Current: $CURRENT_URL"
+  echo "  Allowed: $SAFE_URL"
+  echo "Change DATABASE_URL to the allowed value if you intend to commit."
+  exit 1
+fi
+
+exit 0

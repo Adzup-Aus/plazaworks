@@ -823,8 +823,22 @@ export default function Team() {
       timezone?: string;
       lunchBreakMinutes?: number;
       lunchBreakPaid?: boolean;
+      workingHours?: { dayOfWeek: number; isWorkingDay: boolean; startTime: string; endTime: string }[];
     }) => {
-      return apiRequest("PATCH", `/api/staff/${data.id}`, data);
+      const { workingHours, ...profile } = data;
+      const patchRes = await apiRequest("PATCH", `/api/staff/${data.id}`, profile);
+      if (!patchRes.ok) {
+        const err = await patchRes.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Failed to update staff");
+      }
+      if (workingHours && workingHours.length >= 0) {
+        const putRes = await apiRequest("PUT", `/api/staff/${data.id}/working-hours`, { hours: workingHours });
+        if (!putRes.ok) {
+          const err = await putRes.json().catch(() => ({}));
+          throw new Error((err as { message?: string }).message ?? "Failed to save working hours");
+        }
+      }
+      return patchRes;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/staff"] });
@@ -919,12 +933,36 @@ export default function Team() {
       endTime: "15:30",
     }));
     setEditWorkingHours(defaultHours);
-
     setIsDialogOpen(true);
   };
 
+  useEffect(() => {
+    if (!isDialogOpen || !editingStaff?.id) return;
+    let cancelled = false;
+    (async () => {
+      const res = await apiRequest("GET", `/api/staff/${editingStaff.id}/working-hours`);
+      if (cancelled || !res.ok) return;
+      const hours = (await res.json()) as UserWorkingHours[];
+      const byDay = new Map(hours.map((h) => [h.dayOfWeek, h]));
+      const merged = DAYS_OF_WEEK.map((_, i) => {
+        const existing = byDay.get(i);
+        return existing
+          ? { dayOfWeek: i, isWorkingDay: existing.isWorkingDay, startTime: existing.startTime ?? "07:00", endTime: existing.endTime ?? "15:30" }
+          : { dayOfWeek: i, isWorkingDay: i >= 1 && i <= 5, startTime: "07:00", endTime: "15:30" };
+      });
+      if (!cancelled) setEditWorkingHours(merged);
+    })();
+    return () => { cancelled = true; };
+  }, [isDialogOpen, editingStaff?.id]);
+
   const handleSaveEdit = () => {
     if (!editingStaff) return;
+    const workingHoursPayload = editWorkingHours.map((h) => ({
+      dayOfWeek: h.dayOfWeek,
+      isWorkingDay: h.isWorkingDay,
+      startTime: h.startTime,
+      endTime: h.endTime,
+    }));
     updateStaffMutation.mutate({
       id: editingStaff.id,
       roles: editRoles,
@@ -938,6 +976,7 @@ export default function Team() {
       timezone: editTimezone,
       lunchBreakMinutes: parseInt(editLunchBreakMinutes) || 30,
       lunchBreakPaid: editLunchBreakPaid,
+      workingHours: workingHoursPayload,
     });
   };
 
