@@ -29,8 +29,17 @@ export function registerStaffRoutes(app: Express): void {
         );
         return res.json(withResolvedUrls);
       }
-      const profile = await storage.getStaffProfileByUserId(userId);
-      res.json(profile ? [profile] : []);
+      const profile = await storage.getStaffProfileWithUserByUserId(userId);
+      if (!profile) {
+        return res.json([]);
+      }
+      if (profile.user?.profileImageUrl) {
+        const raw = profile.user.profileImageUrl;
+        const isFullUrl = raw.startsWith("http://") || raw.startsWith("https://");
+        const displayUrl = isFullUrl ? raw : (await resolveDisplayUrl(null, raw)) || raw;
+        return res.json([{ ...profile, user: { ...profile.user, profileImageUrl: displayUrl } }]);
+      }
+      res.json([profile]);
     } catch (err: any) {
       console.error("Error fetching staff:", err);
       res.status(500).json({ message: "Failed to fetch staff profiles" });
