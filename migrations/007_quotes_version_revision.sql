@@ -12,4 +12,12 @@ UPDATE quotes SET version = revision_number;
 ALTER TABLE quotes DROP CONSTRAINT IF EXISTS quotes_quote_number_key;
 
 -- 4. Add composite unique so same quote_number can have multiple revisions (versions)
-ALTER TABLE quotes ADD CONSTRAINT quotes_quote_number_version_key UNIQUE (quote_number, version);
+--    Idempotent: skip if already present (e.g. after drizzle push in db:reset)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'quotes_quote_number_version_key'
+  ) THEN
+    ALTER TABLE quotes ADD CONSTRAINT quotes_quote_number_version_key UNIQUE (quote_number, version);
+  END IF;
+END $$;
