@@ -232,9 +232,16 @@ export default function QuoteWizard() {
   const [currentStep, setCurrentStep] = useState(1);
   const submissionModeRef = useRef<"draft" | "send" | "mark_sent">("draft");
 
-  const { data: clients, isLoading: clientsLoading } = useQuery<Client[]>({
+  const { data: clientsData, isLoading: clientsLoading } = useQuery<{
+    items: Client[];
+    total: number;
+    page: number;
+    limit: number;
+    nextPageUrl: string | null;
+  }>({
     queryKey: ["/api/clients"],
   });
+  const clients = clientsData?.items ?? [];
 
   const { data: termsTemplates } = useQuery<TermsTemplate[]>({
     queryKey: ["/api/terms-templates"],
